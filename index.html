@@ -470,7 +470,7 @@ function getClientId() {
   return localStorage.getItem('relateflow_client_id') || '';
 }
 
-function initMSAL() {
+async function initMSAL() {
   const clientId = getClientId();
   if (!clientId) return null;
   const config = {
@@ -486,9 +486,17 @@ function initMSAL() {
   };
   try {
     msalInstance = new msal.PublicClientApplication(config);
+    // v3+ requires initialize(); v2 does not have it
+    if (typeof msalInstance.initialize === 'function') {
+      await msalInstance.initialize();
+    }
+    // Handle redirect promise (works in both v2 and v3)
+    try { await msalInstance.handleRedirectPromise(); } catch(e) { console.warn('Redirect handle:', e); }
     return msalInstance;
   } catch(e) {
     console.error('MSAL init error:', e);
+    alert('MSAL initialization failed: ' + e.message);
+    msalInstance = null;
     return null;
   }
 }
@@ -498,8 +506,8 @@ async function signIn() {
     openSettings();
     return;
   }
-  if (!msalInstance) initMSAL();
-  if (!msalInstance) { openSettings(); return; }
+  if (!msalInstance) await initMSAL();
+  if (!msalInstance) { alert('Could not initialize Microsoft authentication. Check your Client ID.'); openSettings(); return; }
 
   try {
     const resp = await msalInstance.loginPopup({
@@ -512,7 +520,13 @@ async function signIn() {
   } catch(e) {
     console.error('Sign-in error:', e);
     if (e.errorCode === 'user_cancelled') return;
-    alert('Sign-in failed: ' + (e.message || e));
+    // If popup blocked, try redirect
+    if (e.errorCode === 'popup_window_error' || e.errorCode === 'empty_window_error') {
+      alert('Popup was blocked by your browser. Trying redirect login instead...');
+      msalInstance.loginRedirect({ scopes: ['Mail.Read','User.Read'] });
+      return;
+    }
+    alert('Sign-in failed: ' + (e.errorCode || '') + ' — ' + (e.message || e));
   }
 }
 
@@ -912,7 +926,7 @@ function closeSettings() {
   document.getElementById('settingsModal').classList.remove('active');
 }
 
-function saveSettings() {
+async function saveSettings() {
   const clientId = document.getElementById('clientIdInput').value.trim();
   if (!clientId) { alert('Please enter your Application (Client) ID'); return; }
   if (!/^[a-f0-9-]{36}$/i.test(clientId)) {
@@ -921,8 +935,8 @@ function saveSettings() {
   localStorage.setItem('relateflow_client_id', clientId);
   closeSettings();
   msalInstance = null;
-  initMSAL();
-  signIn();
+  await initMSAL();
+  await signIn();
 }
 
 // ──────────────────────────────────────────────
@@ -999,9 +1013,9 @@ function esc(text) {
 // ──────────────────────────────────────────────
 // INIT — check for existing session
 // ──────────────────────────────────────────────
-(function init() {
+(async function init() {
   if (getClientId()) {
-    initMSAL();
+    await initMSAL();
     if (msalInstance) {
       const accounts = msalInstance.getAllAccounts();
       if (accounts.length > 0) {
