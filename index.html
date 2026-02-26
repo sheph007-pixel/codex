@@ -2222,23 +2222,36 @@ async function onSignedIn() {
 
   // Load cached data from IndexedDB — show instantly (no waiting for scan)
   const cached = await loadPersistedData();
+  let needsFreshScan = false;
   if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
-    domainMap = cached.domainMap;
-    lastScanTime = cached.lastScanTime;
-    fullScanDone = cached.fullScanDone || false;
-    if (cached.seenMsgIds) seenMsgIds = cached.seenMsgIds;
-    buildCompaniesFromDomainMap();
-    renderTableHeader();
-    renderTable();
-    updateStats();
-    updateLastSyncDisplay();
-    resolveCompanyNames();
-    runEnrichment();
+    if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
+      // Valid cache with dedup tracking — safe to use
+      domainMap = cached.domainMap;
+      lastScanTime = cached.lastScanTime;
+      fullScanDone = cached.fullScanDone || false;
+      seenMsgIds = cached.seenMsgIds;
+      buildCompaniesFromDomainMap();
+      renderTableHeader();
+      renderTable();
+      updateStats();
+      updateLastSyncDisplay();
+      resolveCompanyNames();
+      runEnrichment();
+    } else {
+      // Old cache without dedup — counts are unreliable.
+      // Clear everything and rebuild from scratch.
+      domainMap = {};
+      seenMsgIds = new Set();
+      lastScanTime = null;
+      fullScanDone = false;
+      needsFreshScan = true;
+      await clearPersistedData();
+    }
   }
   updateBlockedCount();
 
-  // Scan: full if first time, incremental if full scan already done
-  await scanOutlookEmails();
+  // Scan: full fresh scan if cache was invalid, otherwise normal scan logic
+  await scanOutlookEmails(needsFreshScan);
 
   // Start auto-sync (every 5 min) after initial scan completes
   startAutoSync();
