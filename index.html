@@ -40,12 +40,11 @@ body{min-height:100vh;overflow-x:hidden}
 
 /* ── LAYOUT ── */
 .layout{display:flex;height:calc(100vh - 56px)}
-.sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto;transition:width .15s ease,padding .15s ease}
-.sidebar.collapsed{width:0;padding:0;overflow:hidden;border-right:none}
+.sidebar{width:240px;min-width:0;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto;overflow-x:hidden;transition:width .15s,padding .15s,border .15s}
+.sidebar.collapsed{width:0!important;padding:0!important;border-right-color:transparent;overflow:hidden}
 .sidebar-toggle{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:28px;height:28px;border-radius:6px;display:grid;place-items:center;transition:.15s}
 .sidebar-toggle:hover{background:var(--surface2);color:var(--text)}
-.sidebar-toggle svg{width:16px;height:16px;transition:transform .15s}
-.sidebar.collapsed ~ .main .sidebar-toggle svg{transform:rotate(180deg)}
+.sidebar-toggle svg{width:16px;height:16px}
 .sidebar-section{margin-top:16px;margin-bottom:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text2);padding:0 12px}
 .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:var(--text2);cursor:pointer;transition:.15s;font-size:13px;font-weight:500}
 .sidebar-item:hover,.sidebar-item.active{background:var(--surface2);color:var(--text)}
@@ -99,9 +98,10 @@ body{min-height:100vh;overflow-x:hidden}
 .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;flex:1}
 table{width:100%;border-collapse:collapse}
 thead{position:sticky;top:0;z-index:2}
-th{background:var(--surface2);text-align:left;padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:.15s}
+th{background:var(--surface2);text-align:left;padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
 th:hover{color:var(--text)}
 td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
+table{will-change:auto;contain:layout style}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(108,92,231,.04)}
 tr.row-selected td{background:rgba(108,92,231,.08)}
@@ -144,11 +144,14 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .trend-spark .bar:last-child{opacity:1}
 
 .ai-score{display:flex;align-items:center;gap:6px}
+.score-num{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11px;border:3px solid}
 .score-ring{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11px;position:relative}
 .score-ring svg{position:absolute;inset:0;transform:rotate(-90deg)}
 .score-ring circle{fill:none;stroke-width:3}
 .score-ring .track{stroke:var(--surface2)}
-.score-ring .fill{stroke-linecap:round;transition:.5s}
+.score-ring .fill{stroke-linecap:round}
+.show-more-row td{text-align:center;padding:12px;cursor:pointer;color:var(--accent2);font-weight:600;font-size:13px}
+.show-more-row:hover td{background:rgba(108,92,231,.06)}
 
 /* ── DETAIL PANEL (right side, inline) ── */
 .detail-panel{position:fixed;right:0;top:56px;width:0;height:calc(100vh - 56px);background:var(--surface);border-left:1px solid var(--border);z-index:90;transition:width .15s ease;overflow:hidden;display:flex;flex-direction:column}
@@ -1413,6 +1416,9 @@ function hideScanBanner() {
 // ──────────────────────────────────────────────
 // TABLE RENDERING
 // ──────────────────────────────────────────────
+const TABLE_PAGE_SIZE = 100;
+let tableShowAll = false;
+
 function renderTable() {
   let data = [...companies];
   if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
@@ -1435,35 +1441,44 @@ function renderTable() {
     return;
   }
 
-  tbody.innerHTML = data.map(c => {
+  // Cap visible rows for performance
+  const totalCount = data.length;
+  const visible = tableShowAll ? data : data.slice(0, TABLE_PAGE_SIZE);
+
+  const rows = [];
+  for (let i = 0; i < visible.length; i++) {
+    const c = visible[i];
     const color = COLORS[c.id % COLORS.length];
     const total = c.sent + c.received;
     const sentPct = total ? (c.sent / total * 100) : 50;
-    const recvPct = 100 - sentPct;
-    const circumference = 2 * Math.PI * 12;
-    const offset = circumference - (c.score / 100) * circumference;
-    const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
-    const initials = c.contact.split(' ').map(n => n[0]).join('').substring(0,2);
-    const checked = selectedIds.has(c.id) ? 'checked' : '';
-    const rowClass = selectedIds.has(c.id) ? ' row-selected' : '';
+    const scoreColor = c.score >= 75 ? '#00cec9' : c.score >= 50 ? '#fdcb6e' : '#ff7675';
+    const initials = c.contact ? c.contact.split(' ').map(n => n[0]).join('').substring(0,2) : '';
+    const sel = selectedIds.has(c.id);
 
-    return `<tr class="${rowClass}" data-id="${c.id}" style="cursor:pointer">
-      <td class="col-check"><input type="checkbox" class="row-checkbox" ${checked} data-rid="${c.id}"></td>
-      <td><div class="company-cell"><div class="company-logo" style="background:${color}">${c.name[0].toUpperCase()}</div><div class="company-info"><span class="company-name">${esc(c.name)}</span><span class="company-domain">${esc(c.domain)}</span></div></div></td>
-      <td><div class="contact-cell"><div class="avatar" style="background:${color}">${esc(initials)}</div><span class="contact-name">${esc(c.contact)}</span></div></td>
-      <td><span style="color:var(--accent2);font-weight:600">${c.sent}</span></td>
-      <td><span style="color:var(--green);font-weight:600">${c.received}</span></td>
-      <td><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:${sentPct}%"></div><div class="bar-recv" style="width:${recvPct}%"></div></div></div></td>
-      <td><span class="badge ${STATUS_CLASS[c.status]}">${c.status}</span></td>
-      <td><div class="ai-score"><div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div></div></td>
-      <td style="color:var(--text2)">${esc(c.lastActivity)}</td>
-    </tr>`;
-  }).join('');
+    rows.push('<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">' +
+      '<td class="col-check"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>' +
+      '<td><div class="company-cell"><div class="company-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div></td>' +
+      '<td><div class="contact-cell"><div class="avatar" style="background:' + color + '">' + esc(initials) + '</div><span class="contact-name">' + esc(c.contact) + '</span></div></td>' +
+      '<td><span style="color:var(--accent2);font-weight:600">' + c.sent + '</span></td>' +
+      '<td><span style="color:var(--green);font-weight:600">' + c.received + '</span></td>' +
+      '<td><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:' + sentPct + '%"></div><div class="bar-recv" style="width:' + (100 - sentPct) + '%"></div></div></div></td>' +
+      '<td><span class="badge ' + STATUS_CLASS[c.status] + '">' + c.status + '</span></td>' +
+      '<td><div class="ai-score"><div class="score-num" style="color:' + scoreColor + ';border-color:' + scoreColor + '">' + c.score + '</div></div></td>' +
+      '<td style="color:var(--text2)">' + esc(c.lastActivity) + '</td>' +
+    '</tr>');
+  }
+
+  // "Show more" row if truncated
+  if (!tableShowAll && totalCount > TABLE_PAGE_SIZE) {
+    rows.push('<tr class="show-more-row" data-action="showmore"><td colspan="9">Show all ' + totalCount + ' companies (' + (totalCount - TABLE_PAGE_SIZE) + ' more)</td></tr>');
+  }
+
+  tbody.innerHTML = rows.join('');
 
   // Sync select-all checkbox
   const selectAll = document.getElementById('selectAllCheckbox');
   if (selectAll) {
-    const visibleIds = data.map(c => c.id);
+    const visibleIds = visible.map(c => c.id);
     const allChecked = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
     const someChecked = visibleIds.some(id => selectedIds.has(id));
     selectAll.checked = allChecked;
@@ -1495,6 +1510,7 @@ function toggleSidebar() {
 
 function filterByStatus(status, el) {
   currentFilter = status;
+  tableShowAll = false;
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
   clearSelection();
@@ -2222,6 +2238,9 @@ function esc(text) {
 // (Avoids hundreds of inline onclick handlers)
 // ──────────────────────────────────────────────
 document.getElementById('tableBody').addEventListener('click', function(e) {
+  // "Show more" row
+  const showMore = e.target.closest('[data-action="showmore"]');
+  if (showMore) { tableShowAll = true; renderTable(); return; }
   // Checkbox handling
   const checkbox = e.target.closest('input.row-checkbox');
   if (checkbox) {
@@ -2242,6 +2261,7 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
 let _searchTimer = null;
 document.getElementById('searchInput').oninput = function() {
   clearTimeout(_searchTimer);
+  tableShowAll = false;
   _searchTimer = setTimeout(renderTable, 150);
 };
 </script>
