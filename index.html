@@ -275,8 +275,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .tl-date-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);padding:6px 0;position:sticky;top:0;background:var(--surface);z-index:1}
 .tl-item{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:6px;transition:.15s;cursor:pointer;position:relative}
 .tl-item:hover{background:var(--surface2)}
-.tl-open-icon{position:absolute;top:8px;right:8px;color:var(--text2);opacity:0;transition:.15s}
-.tl-item:hover .tl-open-icon{opacity:.6}
 .tl-icon{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;flex-shrink:0}
 .tl-icon.sent{background:rgba(26,115,232,.08);color:var(--accent)}
 .tl-icon.received{background:var(--green-bg);color:var(--green)}
@@ -300,6 +298,22 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .compose-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
 .compose-overlay.active{display:grid}
 .compose-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:560px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 24px rgba(60,64,67,.15)}
+
+/* ── EMAIL VIEWER ── */
+.email-viewer-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:720px;max-width:94vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 24px rgba(60,64,67,.15)}
+.ev-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);gap:8px}
+.ev-header-left,.ev-header-right{display:flex;align-items:center;gap:6px}
+.ev-subject{font-size:17px;font-weight:600;padding:14px 20px 6px;color:var(--text);line-height:1.3}
+.ev-meta{padding:4px 20px 12px;font-size:12px;color:var(--text2);display:flex;flex-direction:column;gap:3px;border-bottom:1px solid var(--border)}
+.ev-meta strong{color:var(--text);font-weight:500}
+.ev-attachments{padding:8px 20px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px}
+.ev-att-chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--text);cursor:pointer;text-decoration:none;transition:.15s}
+.ev-att-chip:hover{background:var(--ms-blue);color:#fff;border-color:var(--ms-blue)}
+.ev-att-chip svg{flex-shrink:0}
+.ev-body-wrap{flex:1;overflow:auto;padding:0}
+.ev-body-frame{width:100%;height:100%;border:none;background:#fff}
+.ev-loading{display:none;padding:40px;text-align:center;color:var(--text2);font-size:13px}
+.ev-loading.active{display:flex;align-items:center;justify-content:center;gap:10px}
 .compose-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
 .compose-header h3{font-size:14px;font-weight:600}
 .compose-fields{padding:12px 18px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--border)}
@@ -387,6 +401,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   .search-box{width:100%}
   .toolbar{flex-direction:column;align-items:stretch}
   .compose-box{width:100%;max-width:100%;border-radius:0;max-height:100vh}
+  .email-viewer-box{width:100%;max-width:100%;border-radius:0;max-height:100vh}
 }
 </style>
 </head>
@@ -624,6 +639,36 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <span style="font-size:11px;color:var(--text2)" id="composeSendStatus"></span>
       <button class="btn-send" id="composeSendBtn" onclick="sendComposedEmail()">Send</button>
     </div>
+  </div>
+</div>
+
+<!-- EMAIL VIEWER MODAL -->
+<div class="compose-overlay" id="emailViewerOverlay">
+  <div class="email-viewer-box">
+    <div class="ev-header">
+      <div class="ev-header-left">
+        <button class="btn btn-ghost btn-xs" onclick="closeEmailViewer()" title="Back">&larr; Back</button>
+      </div>
+      <div class="ev-header-right">
+        <button class="btn btn-ghost btn-xs" id="evReplyBtn" onclick="replyFromViewer()">Reply</button>
+        <button class="btn btn-ghost btn-xs" id="evOutlookBtn" onclick="openInOutlook()" title="Open in Outlook">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Outlook
+        </button>
+        <button class="dp-close" onclick="closeEmailViewer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+    <div class="ev-subject" id="evSubject"></div>
+    <div class="ev-meta">
+      <div class="ev-from" id="evFrom"></div>
+      <div class="ev-to" id="evTo"></div>
+      <div class="ev-date" id="evDate"></div>
+    </div>
+    <div class="ev-attachments" id="evAttachments" style="display:none"></div>
+    <div class="ev-body-wrap">
+      <iframe id="evBodyFrame" sandbox="allow-same-origin" class="ev-body-frame"></iframe>
+    </div>
+    <div class="ev-loading" id="evLoading"><div class="scan-spinner"></div> Loading email...</div>
   </div>
 </div>
 
@@ -1840,8 +1885,9 @@ function processEmailBatch(messages) {
     const isSent = (fromEmail === myEmailLower);
 
     if (isSent) {
-      // SENT email — track all recipients
+      // SENT email — count 1 per unique email per domain (not per recipient)
       const recipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
+      const countedDomains = new Set();
       for (const r of recipients) {
         const toEmail = r.emailAddress?.address;
         const toName = r.emailAddress?.name;
@@ -1851,7 +1897,11 @@ function processEmailBatch(messages) {
         ensureContact(domain, toEmail, toName);
         const le = toEmail.toLowerCase();
         domainMap[domain].contacts[le].sent++;
-        domainMap[domain].totalSent++;
+        // Only count 1 sent email per domain per message
+        if (!countedDomains.has(domain)) {
+          countedDomains.add(domain);
+          domainMap[domain].totalSent++;
+        }
         const sentDt = msg.sentDateTime || msg.receivedDateTime;
         updateDate(domainMap[domain], sentDt);
         updateDate(domainMap[domain].contacts[le], sentDt);
@@ -1915,12 +1965,8 @@ function buildCompaniesFromDomainMap() {
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
 
-    // Derive domain totals from contact sums — single source of truth
-    // This guarantees contact counts always add up to the domain total
-    let derivedSent = 0, derivedReceived = 0;
-    for (const ct of contactArr) { derivedSent += ct.sent; derivedReceived += ct.received; }
-    data.totalSent = derivedSent;
-    data.totalReceived = derivedReceived;
+    // Domain-level totalSent/totalReceived count unique emails
+    // (not the sum of per-contact interactions, which inflates multi-recipient emails)
 
     // SELECTIVE: only create company if user has sent at least 1 email to this domain
     if (data.totalSent === 0) continue;
@@ -2260,11 +2306,15 @@ async function onSignedIn() {
     if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
       seenMsgIds = cached.seenMsgIds;
     } else {
-      // Upgrade from old cache: no seenMsgIds yet.
-      // Keep all existing data — just force incremental mode so we
-      // don't re-fetch (and double-count) old emails.
+      // Upgrade from old cache: counts are inaccurate (old counting bug).
+      // Keep domain structure / company names / enrichment, but reset
+      // all counts and re-scan from scratch for accurate numbers.
       seenMsgIds = new Set();
-      fullScanDone = true;   // skip full scan, only fetch new emails
+      for (const d of Object.values(domainMap)) {
+        d.totalSent = 0; d.totalReceived = 0;
+        for (const c of Object.values(d.contacts)) { c.sent = 0; c.received = 0; }
+      }
+      fullScanDone = false;  // force full rescan for correct counts
     }
     buildCompaniesFromDomainMap();
     renderTableHeader();
@@ -2949,15 +2999,13 @@ function renderTimeline(email) {
       const replyBtn = item.type !== 'meeting'
         ? ' <button class="tl-reply-btn" onclick="event.stopPropagation();openReply(\'' + item.id.replace(/'/g, "\\'") + '\',\'' + (currentContactOverlay ? currentContactOverlay.email.replace(/'/g, "\\'") : '') + '\',\'' + esc(item.subject).replace(/'/g, "\\'") + '\')">Reply</button>'
         : '';
-      const openAttr = item.webLink ? ' onclick="window.open(\'' + item.webLink.replace(/'/g, "\\'") + '\',\'_blank\')"' : '';
-      const openHint = item.webLink ? ' title="Open in Outlook"' : '';
-      html += '<div class="tl-item"' + openAttr + openHint + '>' +
+      const clickAttr = item.type !== 'meeting' ? ' onclick="openEmailViewer(\'' + item.id.replace(/'/g, "\\'") + '\')"' : '';
+      html += '<div class="tl-item"' + clickAttr + ' title="View email">' +
         '<div class="tl-icon ' + item.type + '">' + icon + '</div>' +
         '<div class="tl-content"><div class="tl-subject">' + esc(item.subject) + '</div>' +
         (item.preview ? '<div class="tl-preview">' + esc(item.preview.substring(0, 100)) + '</div>' : '') +
         '</div>' +
         '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><div class="tl-time">' + time + '</div>' + replyBtn + '</div>' +
-        (item.webLink ? '<svg class="tl-open-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' : '') +
       '</div>';
     }
     html += '</div>';
@@ -2975,6 +3023,130 @@ function formatDateGroup(date) {
   if (diff === 1) return 'Yesterday';
   if (diff < 7) return date.toLocaleDateString([], { weekday: 'long' });
   return date.toLocaleDateString([], { month: 'long', day: 'numeric', year: now.getFullYear() !== date.getFullYear() ? 'numeric' : undefined });
+}
+
+// ──────────────────────────────────────────────
+// EMAIL VIEWER — inline viewer for reading emails inside CRM
+// ──────────────────────────────────────────────
+let currentViewerMsgId = null;
+let currentViewerWebLink = null;
+
+async function openEmailViewer(messageId) {
+  currentViewerMsgId = messageId;
+  currentViewerWebLink = null;
+  const overlay = document.getElementById('emailViewerOverlay');
+  const loading = document.getElementById('evLoading');
+  overlay.classList.add('active');
+  loading.classList.add('active');
+  document.getElementById('evSubject').textContent = '';
+  document.getElementById('evFrom').innerHTML = '';
+  document.getElementById('evTo').innerHTML = '';
+  document.getElementById('evDate').textContent = '';
+  document.getElementById('evAttachments').style.display = 'none';
+  document.getElementById('evBodyFrame').srcdoc = '';
+
+  try {
+    const token = await getAccessToken();
+    const headers = { 'Authorization': 'Bearer ' + token };
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '?$select=subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments,webLink', { headers });
+    if (!resp.ok) throw new Error('Failed to load email (' + resp.status + ')');
+    const msg = await resp.json();
+
+    currentViewerWebLink = msg.webLink || null;
+
+    // Subject
+    document.getElementById('evSubject').textContent = msg.subject || '(no subject)';
+
+    // From
+    const fromName = msg.from?.emailAddress?.name || '';
+    const fromAddr = msg.from?.emailAddress?.address || '';
+    document.getElementById('evFrom').innerHTML = '<strong>From:</strong> ' + esc(fromName) + (fromName ? ' &lt;' + esc(fromAddr) + '&gt;' : esc(fromAddr));
+
+    // To + CC
+    const toList = (msg.toRecipients || []).map(r => esc(r.emailAddress?.name || r.emailAddress?.address || '')).join(', ');
+    const ccList = (msg.ccRecipients || []).map(r => esc(r.emailAddress?.name || r.emailAddress?.address || '')).join(', ');
+    let toHtml = '<strong>To:</strong> ' + toList;
+    if (ccList) toHtml += '<br><strong>CC:</strong> ' + ccList;
+    document.getElementById('evTo').innerHTML = toHtml;
+
+    // Date
+    const dt = new Date(msg.receivedDateTime || msg.sentDateTime);
+    document.getElementById('evDate').textContent = dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    // Body — render in sandboxed iframe
+    const bodyContent = msg.body?.content || '';
+    const bodyType = msg.body?.contentType || 'text';
+    const frame = document.getElementById('evBodyFrame');
+    if (bodyType === 'html') {
+      frame.srcdoc = '<html><head><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:#333;padding:16px;margin:0;line-height:1.5;word-break:break-word}img{max-width:100%;height:auto}a{color:#1a73e8}pre,code{white-space:pre-wrap;word-break:break-all}</style></head><body>' + bodyContent + '</body></html>';
+    } else {
+      frame.srcdoc = '<html><head><style>body{font-family:monospace;font-size:13px;color:#333;padding:16px;margin:0;white-space:pre-wrap;word-break:break-word}</style></head><body>' + esc(bodyContent) + '</body></html>';
+    }
+
+    // Attachments
+    if (msg.hasAttachments) {
+      loadAttachments(messageId, token);
+    }
+
+    loading.classList.remove('active');
+  } catch(e) {
+    loading.classList.remove('active');
+    document.getElementById('evSubject').textContent = 'Error loading email';
+    document.getElementById('evFrom').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+    console.error('Email viewer error:', e);
+  }
+}
+
+async function loadAttachments(messageId, token) {
+  try {
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/attachments?$select=id,name,contentType,size', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const atts = data.value || [];
+    if (atts.length === 0) return;
+
+    const el = document.getElementById('evAttachments');
+    const clipSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>';
+    let html = '';
+    for (const att of atts) {
+      const sizeKB = Math.round((att.size || 0) / 1024);
+      const sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
+      html += '<a class="ev-att-chip" href="#" onclick="event.preventDefault();downloadAttachment(\'' + messageId + '\',\'' + att.id.replace(/'/g, "\\'") + '\',\'' + esc(att.name).replace(/'/g, "\\'") + '\')">' + clipSvg + ' ' + esc(att.name) + ' <span style="opacity:.6">(' + sizeStr + ')</span></a>';
+    }
+    el.innerHTML = html;
+    el.style.display = 'flex';
+  } catch(e) { console.warn('Attachment load error:', e); }
+}
+
+async function downloadAttachment(messageId, attachmentId, fileName) {
+  try {
+    const token = await getAccessToken();
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/attachments/' + attachmentId + '/$value', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('Could not download attachment: ' + e.message); }
+}
+
+function closeEmailViewer() {
+  document.getElementById('emailViewerOverlay').classList.remove('active');
+  currentViewerMsgId = null;
+  currentViewerWebLink = null;
+}
+
+function replyFromViewer() {
+  if (!currentViewerMsgId) return;
+  const subject = document.getElementById('evSubject').textContent || '';
+  const contactEmail = currentContactOverlay ? currentContactOverlay.email : '';
+  closeEmailViewer();
+  openReply(currentViewerMsgId, contactEmail, subject);
+}
+
+function openInOutlook() {
+  if (currentViewerWebLink) window.open(currentViewerWebLink, '_blank');
 }
 
 // ──────────────────────────────────────────────
