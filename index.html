@@ -120,14 +120,21 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .bulk-bar .btn-danger:hover{background:rgba(255,118,117,.2)}
 
 .company-cell{display:flex;align-items:center;gap:10px}
-.company-logo{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.company-logo{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
+.company-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:3px;border-radius:inherit}
 .company-info{display:flex;flex-direction:column}
 .company-name{font-weight:600;color:var(--text)}
 .company-domain{font-size:11px;color:var(--text2)}
 
 .contact-cell{display:flex;align-items:center;gap:8px}
-.avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0}
+.avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
+.avatar img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:inherit}
 .contact-name{font-weight:500}
+.contact-title{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.linkedin-link{display:inline-flex;align-items:center;gap:3px;color:#0a66c2;font-size:10px;text-decoration:none;font-weight:500;transition:.15s;flex-shrink:0}
+.linkedin-link:hover{text-decoration:underline}
+.linkedin-link svg{width:12px;height:12px}
+[data-placeholder]:empty::before{content:attr(data-placeholder);color:var(--text2);opacity:.5;font-style:italic}
 
 .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 .badge-hot{background:var(--green-bg);color:var(--green)}
@@ -198,7 +205,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-left{width:340px;min-width:280px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
 .dp-left-head{padding:20px 20px 0;flex-shrink:0}
 .dp-company-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.dp-co-logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0}
+.dp-co-logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
+.dp-co-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:4px;border-radius:inherit}
 .dp-co-info h2{font-size:15px;font-weight:700;letter-spacing:-.2px}
 .dp-co-info .dp-domain{font-size:11px;color:var(--text2)}
 .dp-co-meta{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
@@ -212,7 +220,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-contact{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:.15s;margin-bottom:2px}
 .dp-contact:hover{background:var(--surface2)}
 .dp-contact.selected{background:var(--surface2);box-shadow:inset 3px 0 0 var(--accent)}
-.dp-contact .dp-ct-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0}
+.dp-contact .dp-ct-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
+.dp-contact .dp-ct-avatar img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:inherit}
 .dp-contact .dp-ct-info{flex:1;min-width:0}
 .dp-contact .dp-ct-name{font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dp-contact .dp-ct-email{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -230,7 +239,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-right-empty p{font-size:13px}
 .dp-right-head{padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0}
 .dp-ct-head{display:flex;align-items:center;gap:12px;margin-bottom:0}
-.dp-ct-big-avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.dp-ct-big-avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
+.dp-ct-big-avatar img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:inherit}
 .dp-ct-head-info h2{font-size:15px;font-weight:700}
 .dp-ct-head-info .dp-ct-head-email{font-size:11px;color:var(--text2)}
 .dp-ct-actions{display:flex;gap:6px;margin-top:10px}
@@ -843,6 +853,88 @@ function getCellValue(company, col) {
     return (customColumnData[company.domain] && customColumnData[company.domain][col.id]) || '';
   }
   return '';
+}
+
+// ──────────────────────────────────────────────
+// CONTACT & COMPANY ENRICHMENT (photos, LinkedIn, titles)
+// ──────────────────────────────────────────────
+let contactEnrichment = {}; // { "email": { photo, title, linkedin, photoFailed } }
+let companyLogoFailed = {}; // { "domain": true } — tracks failed logo loads
+
+function loadContactEnrichment() {
+  try {
+    const raw = localStorage.getItem('kennion_contact_enrich');
+    if (raw) contactEnrichment = JSON.parse(raw);
+  } catch(e) {}
+}
+
+function saveContactEnrichment() {
+  localStorage.setItem('kennion_contact_enrich', JSON.stringify(contactEnrichment));
+}
+
+// Company logo: Clearbit Logo API (free, no auth)
+function companyLogoHTML(domain, color, name, size) {
+  const sz = size || 32;
+  const initial = name ? name[0].toUpperCase() : domain[0].toUpperCase();
+  const imgSrc = 'https://logo.clearbit.com/' + encodeURIComponent(domain);
+  return '<img src="' + imgSrc + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' + initial;
+}
+
+// Contact photo: unavatar.io (aggregates Gravatar, Google, GitHub, Twitter)
+function contactPhotoHTML(email, color, initials, size) {
+  const sz = size || 26;
+  const enrich = contactEnrichment[email.toLowerCase()];
+  // If we know the photo failed, skip the img
+  if (enrich && enrich.photoFailed) return esc(initials);
+  const imgSrc = 'https://unavatar.io/' + encodeURIComponent(email.toLowerCase()) + '?fallback=false';
+  return '<img src="' + imgSrc + '" alt="" loading="lazy" onerror="markPhotoFailed(this,\'' + email.toLowerCase().replace(/'/g, "\\'") + '\')">' + esc(initials);
+}
+
+function markPhotoFailed(img, email) {
+  img.style.display = 'none';
+  if (!contactEnrichment[email]) contactEnrichment[email] = {};
+  contactEnrichment[email].photoFailed = true;
+  saveContactEnrichment();
+}
+
+// LinkedIn search URL generators
+function linkedInPersonURL(name, companyName) {
+  const q = (name + (companyName ? ' ' + companyName : '')).trim();
+  return 'https://www.linkedin.com/search/results/people/?keywords=' + encodeURIComponent(q);
+}
+
+function linkedInCompanyURL(domain) {
+  // Try company name from domain prefix, or use known match
+  const prefix = domain.split('.')[0];
+  return 'https://www.linkedin.com/search/results/companies/?keywords=' + encodeURIComponent(prefix);
+}
+
+function linkedInIconSVG() {
+  return '<svg viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>';
+}
+
+// Get or set contact title
+function getContactTitle(email) {
+  const e = contactEnrichment[email.toLowerCase()];
+  return e && e.title ? e.title : '';
+}
+
+function setContactTitle(email, title) {
+  if (!contactEnrichment[email.toLowerCase()]) contactEnrichment[email.toLowerCase()] = {};
+  contactEnrichment[email.toLowerCase()].title = title;
+  saveContactEnrichment();
+}
+
+// Get or set contact LinkedIn URL (manual override)
+function getContactLinkedIn(email) {
+  const e = contactEnrichment[email.toLowerCase()];
+  return e && e.linkedin ? e.linkedin : '';
+}
+
+function setContactLinkedIn(email, url) {
+  if (!contactEnrichment[email.toLowerCase()]) contactEnrichment[email.toLowerCase()] = {};
+  contactEnrichment[email.toLowerCase()].linkedin = url;
+  saveContactEnrichment();
 }
 
 // ──────────────────────────────────────────────
@@ -1908,10 +2000,11 @@ function buildCellHTML(col, c, color) {
   if (col.type === 'builtin') {
     switch (col.id) {
       case 'company':
-        return '<div class="company-cell"><div class="company-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div>';
+        return '<div class="company-cell"><div class="company-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name) + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div>';
       case 'contact':
         var initials = c.contact ? c.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2) : '';
-        return '<div class="contact-cell"><div class="avatar" style="background:' + color + '">' + esc(initials) + '</div><span class="contact-name">' + esc(c.contact) + '</span></div>';
+        var ctTitle = getContactTitle(c.contactEmail || '');
+        return '<div class="contact-cell"><div class="avatar" style="background:' + color + '">' + contactPhotoHTML(c.contactEmail || '', color, initials) + '</div><div><span class="contact-name">' + esc(c.contact) + '</span>' + (ctTitle ? '<div class="contact-title">' + esc(ctTitle) + '</div>' : '') + '</div></div>';
       case 'sent':
         return '<span style="color:var(--accent2);font-weight:600">' + c.sent + '</span>';
       case 'received':
@@ -2199,8 +2292,8 @@ function showCompanyPanel(id) {
 
   // Left head: company info
   let headHtml = '<div class="dp-company-head">' +
-    '<div class="dp-co-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div>' +
-    '<div class="dp-co-info"><h2>' + esc(c.name) + '</h2><div class="dp-domain">' + esc(c.domain) + '</div></div>' +
+    '<div class="dp-co-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name, 44) + '</div>' +
+    '<div class="dp-co-info"><h2>' + esc(c.name) + '</h2><div class="dp-domain">' + esc(c.domain) + ' <a href="' + linkedInCompanyURL(c.domain) + '" target="_blank" class="linkedin-link" title="Find on LinkedIn">' + linkedInIconSVG() + '</a></div></div>' +
   '</div>';
 
   headHtml += '<div class="dp-co-meta">' +
@@ -2227,11 +2320,12 @@ function showCompanyPanel(id) {
     const eSafe = ct.email.replace(/'/g, "\\'");
     const dSafe = c.domain.replace(/'/g, "\\'");
 
+    const ctTitle = getContactTitle(ct.email);
     ctHtml += '<div class="dp-contact" data-email="' + esc(ct.email) + '" onclick="selectContact(\'' + eSafe + '\',\'' + dSafe + '\',' + c.id + ')">' +
-      '<div class="dp-ct-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
+      '<div class="dp-ct-avatar" style="background:' + color + '">' + contactPhotoHTML(ct.email, color, initials, 30) + '</div>' +
       '<div class="dp-ct-info">' +
         '<div class="dp-ct-name">' + esc(ct.name) + (isPrimary ? ' <span class="dp-primary-badge">Primary</span>' : '') + '</div>' +
-        '<div class="dp-ct-email">' + esc(ct.email) + '</div>' +
+        '<div class="dp-ct-email">' + esc(ct.email) + (ctTitle ? ' · ' + esc(ctTitle) : '') + '</div>' +
       '</div>' +
       '<div class="dp-ct-count">' + total + '</div>' +
       '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="event.stopPropagation();toggleStar(\'' + dSafe + '\',\'' + eSafe + '\')" title="' + (isPrimary ? 'Primary' : 'Set primary') + '">&#9733;</button>' +
@@ -2280,12 +2374,24 @@ function selectContact(email, domain, companyId) {
   const isPrimary = starredContacts[domain] === email.toLowerCase();
   const eSafe = ct.email.replace(/'/g, "\\'");
 
+  const companyName = c ? c.name : domain;
+  const ctTitle = getContactTitle(ct.email);
+  const ctLinkedIn = getContactLinkedIn(ct.email) || linkedInPersonURL(ct.name, companyName);
+  const titleESafe = ct.email.replace(/'/g, "\\'");
+
   // Right head
   let headHtml = '<div class="dp-ct-head">' +
-    '<div class="dp-ct-big-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
+    '<div class="dp-ct-big-avatar" style="background:' + color + '">' + contactPhotoHTML(ct.email, color, initials, 40) + '</div>' +
     '<div class="dp-ct-head-info">' +
       '<h2>' + esc(ct.name) + '</h2>' +
       '<div class="dp-ct-head-email">' + esc(ct.email) + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:3px">' +
+        '<span class="contact-title" contenteditable="true" style="min-width:60px;padding:1px 4px;border:1px solid transparent;border-radius:3px;cursor:text;font-size:11px;color:var(--text2)" ' +
+          'onblur="setContactTitle(\'' + titleESafe + '\',this.textContent);this.style.borderColor=\'transparent\'" ' +
+          'onfocus="this.style.borderColor=\'var(--border)\'" ' +
+          'data-placeholder="Add title...">' + esc(ctTitle) + '</span>' +
+        '<a href="' + ctLinkedIn + '" target="_blank" class="linkedin-link" title="LinkedIn profile">' + linkedInIconSVG() + ' LinkedIn</a>' +
+      '</div>' +
     '</div>' +
     '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="toggleStarInPanel(\'' + domain.replace(/'/g, "\\'") + '\',\'' + email.toLowerCase().replace(/'/g, "\\'") + '\')" style="font-size:20px">&#9733;</button>' +
   '</div>';
@@ -2770,6 +2876,7 @@ function esc(text) {
   loadColumnConfig();
   loadCustomColumnData();
   loadEnrichmentCache();
+  loadContactEnrichment();
   renderTableHeader();
   if (getClientId()) {
     await initMSAL();
