@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RelateFlow — AI-Driven CRM</title>
+<title>Kennion CRM</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <!-- MSAL loaded dynamically in initMSAL() with CDN fallbacks -->
 <style>
@@ -40,7 +40,12 @@ body{min-height:100vh;overflow-x:hidden}
 
 /* ── LAYOUT ── */
 .layout{display:flex;height:calc(100vh - 56px)}
-.sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto;transition:width .15s ease,padding .15s ease}
+.sidebar.collapsed{width:0;padding:0;overflow:hidden;border-right:none}
+.sidebar-toggle{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:28px;height:28px;border-radius:6px;display:grid;place-items:center;transition:.15s}
+.sidebar-toggle:hover{background:var(--surface2);color:var(--text)}
+.sidebar-toggle svg{width:16px;height:16px;transition:transform .15s}
+.sidebar.collapsed ~ .main .sidebar-toggle svg{transform:rotate(180deg)}
 .sidebar-section{margin-top:16px;margin-bottom:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text2);padding:0 12px}
 .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:var(--text2);cursor:pointer;transition:.15s;font-size:13px;font-weight:500}
 .sidebar-item:hover,.sidebar-item.active{background:var(--surface2);color:var(--text)}
@@ -306,7 +311,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 <header class="topbar">
   <div class="logo">
     <svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="7" fill="#6c5ce7"/><path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    RelateFlow
+    Kennion CRM
   </div>
   <div class="topbar-actions" id="topbarActions">
     <button class="btn btn-ghost btn-sm" id="settingsBtn" onclick="openSettings()" style="display:none" title="Configure Azure App">
@@ -372,7 +377,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
     <!-- WELCOME / SIGN IN -->
     <div class="welcome-screen" id="welcomeScreen">
       <div class="welcome-card">
-        <h1>Welcome to RelateFlow</h1>
+        <h1>Welcome to Kennion CRM</h1>
         <p class="subtitle">AI-powered CRM that scans your Outlook emails to automatically build your sales pipeline. Zero data entry.</p>
 
         <button class="ms-btn" onclick="signIn()">
@@ -441,9 +446,12 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
       <!-- TOOLBAR -->
       <div class="toolbar">
         <div class="toolbar-left">
+          <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
           <div class="search-box">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="searchInput" placeholder="Search companies, contacts..." oninput="renderTable()">
+            <input type="text" id="searchInput" placeholder="Search companies, contacts...">
           </div>
         </div>
         <div class="toolbar-right">
@@ -515,12 +523,12 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <h2>Azure App Configuration</h2>
-    <p>To connect your Outlook, you need a Microsoft Azure App Registration. This gives RelateFlow permission to read your emails.</p>
+    <p>To connect your Outlook, you need a Microsoft Azure App Registration. This gives Kennion CRM permission to read your emails.</p>
 
     <div class="steps">
       <ol>
         <li>Go to <strong>portal.azure.com</strong> &rarr; <strong>Microsoft Entra ID</strong> &rarr; <strong>App registrations</strong></li>
-        <li>Click <strong>New registration</strong>, name it "RelateFlow CRM"</li>
+        <li>Click <strong>New registration</strong>, name it "Kennion CRM"</li>
         <li>Set <strong>Redirect URI</strong> (SPA) to: <code id="redirectDisplay">https://sheph007-pixel.github.io/codex/</code></li>
         <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code> and <code>Mail.Send</code> (Delegated)</li>
         <li>Click <strong>Grant admin consent</strong> (or have your admin do it)</li>
@@ -560,7 +568,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
 </button>
 <div class="ai-chat" id="aiChat">
-  <div class="ai-chat-header"><span class="dot"></span> RelateFlow AI</div>
+  <div class="ai-chat-header"><span class="dot"></span> Kennion AI</div>
   <div class="ai-chat-messages" id="aiMessages">
     <div class="ai-msg bot">Hi! I'm analyzing your real email data. Ask me anything — "Who should I follow up with?" or "Show me my hottest leads."</div>
   </div>
@@ -1188,18 +1196,19 @@ async function fetchEmailsProgressively(token, sinceDate) {
 
     if (data.value && data.value.length > 0) {
       totalFetched += data.value.length;
-
-      // Process this page immediately
       processEmailBatch(data.value);
 
-      // Rebuild companies and update UI live
-      buildCompaniesFromDomainMap();
-      renderTable();
-      updateStats();
+      // Throttle UI: only rebuild table every 5 pages (heavy DOM work)
+      // Always update on page 1 so user sees instant results
+      if (page === 1 || page % 5 === 0) {
+        buildCompaniesFromDomainMap();
+        renderTable();
+        updateStats();
+      }
       updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails — ' + companies.length + ' companies found');
 
-      // Persist every 3 pages so progress survives tab close/refresh
-      if (page === 1 || page % 3 === 0) {
+      // Persist every 5 pages
+      if (page === 1 || page % 5 === 0) {
         lastScanTime = new Date();
         persistData();
       }
@@ -1302,11 +1311,11 @@ function startAutoSync() {
   stopAutoSync();
   autoSyncTimer = setInterval(() => {
     if (!isScanning && fullScanDone && currentAccount) {
-      console.log('[RelateFlow] Auto-sync triggered');
+      console.log('[Kennion CRM] Auto-sync triggered');
       scanOutlookEmails();
     }
   }, AUTO_SYNC_INTERVAL);
-  console.log('[RelateFlow] Auto-sync started (every ' + (AUTO_SYNC_INTERVAL / 60000) + ' min)');
+  console.log('[Kennion CRM] Auto-sync started (every ' + (AUTO_SYNC_INTERVAL / 60000) + ' min)');
 }
 
 function stopAutoSync() {
@@ -1321,7 +1330,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && fullScanDone && currentAccount && !isScanning) {
     // If more than 5 minutes since last sync, trigger immediately
     if (lastScanTime && (Date.now() - lastScanTime.getTime()) > AUTO_SYNC_INTERVAL) {
-      console.log('[RelateFlow] Tab visible — syncing stale data');
+      console.log('[Kennion CRM] Tab visible — syncing stale data');
       scanOutlookEmails();
     }
   }
@@ -1357,7 +1366,9 @@ function showWelcome() {
 async function onSignedIn() {
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
-  document.getElementById('sidebar').style.display = 'flex';
+  const sb = document.getElementById('sidebar');
+  sb.style.display = 'flex';
+  if (localStorage.getItem('relateflow_sidebar') === 'collapsed') sb.classList.add('collapsed');
   document.getElementById('scanOutlookBtn').style.display = '';
   document.getElementById('exportBtn').style.display = '';
   document.getElementById('settingsBtn').style.display = '';
@@ -1436,16 +1447,16 @@ function renderTable() {
     const checked = selectedIds.has(c.id) ? 'checked' : '';
     const rowClass = selectedIds.has(c.id) ? ' row-selected' : '';
 
-    return `<tr class="${rowClass}" style="cursor:pointer">
-      <td class="col-check" onclick="event.stopPropagation()"><input type="checkbox" class="row-checkbox" ${checked} onchange="toggleRowSelect(${c.id}, this.checked)"></td>
-      <td onclick="openDetail(${c.id})"><div class="company-cell"><div class="company-logo" style="background:${color}">${c.name[0].toUpperCase()}</div><div class="company-info"><span class="company-name">${esc(c.name)}</span><span class="company-domain">${esc(c.domain)}</span></div></div></td>
-      <td onclick="openDetail(${c.id})"><div class="contact-cell"><div class="avatar" style="background:${color}">${esc(initials)}</div><span class="contact-name">${esc(c.contact)}</span></div></td>
-      <td onclick="openDetail(${c.id})"><span style="color:var(--accent2);font-weight:600">${c.sent}</span></td>
-      <td onclick="openDetail(${c.id})"><span style="color:var(--green);font-weight:600">${c.received}</span></td>
-      <td onclick="openDetail(${c.id})"><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:${sentPct}%"></div><div class="bar-recv" style="width:${recvPct}%"></div></div></div></td>
-      <td onclick="openDetail(${c.id})"><span class="badge ${STATUS_CLASS[c.status]}">${c.status}</span></td>
-      <td onclick="openDetail(${c.id})"><div class="ai-score"><div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div></div></td>
-      <td onclick="openDetail(${c.id})" style="color:var(--text2)">${esc(c.lastActivity)}</td>
+    return `<tr class="${rowClass}" data-id="${c.id}" style="cursor:pointer">
+      <td class="col-check"><input type="checkbox" class="row-checkbox" ${checked} data-rid="${c.id}"></td>
+      <td><div class="company-cell"><div class="company-logo" style="background:${color}">${c.name[0].toUpperCase()}</div><div class="company-info"><span class="company-name">${esc(c.name)}</span><span class="company-domain">${esc(c.domain)}</span></div></div></td>
+      <td><div class="contact-cell"><div class="avatar" style="background:${color}">${esc(initials)}</div><span class="contact-name">${esc(c.contact)}</span></div></td>
+      <td><span style="color:var(--accent2);font-weight:600">${c.sent}</span></td>
+      <td><span style="color:var(--green);font-weight:600">${c.received}</span></td>
+      <td><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:${sentPct}%"></div><div class="bar-recv" style="width:${recvPct}%"></div></div></div></td>
+      <td><span class="badge ${STATUS_CLASS[c.status]}">${c.status}</span></td>
+      <td><div class="ai-score"><div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div></div></td>
+      <td style="color:var(--text2)">${esc(c.lastActivity)}</td>
     </tr>`;
   }).join('');
 
@@ -1474,6 +1485,12 @@ function sortTable(key) {
   if (currentSort.key === key) currentSort.asc = !currentSort.asc;
   else { currentSort.key = key; currentSort.asc = key === 'company' || key === 'contact'; }
   renderTable();
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  localStorage.setItem('relateflow_sidebar', sb.classList.contains('collapsed') ? 'collapsed' : '');
 }
 
 function filterByStatus(status, el) {
@@ -2171,10 +2188,10 @@ function generateAIReply(msg) {
   return `You have ${companies.length} companies in your pipeline. Try:<br>• "Who should I follow up with?"<br>• "Show me hot leads"<br>• "Give me a summary"<br>• Or ask about any company by name`;
 }
 
+const _escMap = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
 function esc(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  if (!text) return '';
+  return String(text).replace(/[&<>"']/g, c => _escMap[c]);
 }
 
 // ──────────────────────────────────────────────
@@ -2199,6 +2216,34 @@ function esc(text) {
   document.getElementById('settingsBtn').style.display = '';
   showWelcome();
 })();
+
+// ──────────────────────────────────────────────
+// EVENT DELEGATION — single listener on table body
+// (Avoids hundreds of inline onclick handlers)
+// ──────────────────────────────────────────────
+document.getElementById('tableBody').addEventListener('click', function(e) {
+  // Checkbox handling
+  const checkbox = e.target.closest('input.row-checkbox');
+  if (checkbox) {
+    e.stopPropagation();
+    const rid = parseInt(checkbox.dataset.rid, 10);
+    if (checkbox.checked) selectedIds.add(rid); else selectedIds.delete(rid);
+    renderTable();
+    return;
+  }
+  // Skip if clicking inside col-check area
+  if (e.target.closest('.col-check')) return;
+  // Row click → open detail
+  const row = e.target.closest('tr[data-id]');
+  if (row) openDetail(parseInt(row.dataset.id, 10));
+});
+
+// Debounced search input
+let _searchTimer = null;
+document.getElementById('searchInput').oninput = function() {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(renderTable, 150);
+};
 </script>
 </body>
 </html>
