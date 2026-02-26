@@ -145,31 +145,104 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .score-ring .track{stroke:var(--surface2)}
 .score-ring .fill{stroke-linecap:round;transition:.5s}
 
-/* ── DETAIL PANEL ── */
-.detail-panel{position:fixed;right:-420px;top:56px;width:420px;height:calc(100vh - 56px);background:var(--surface);border-left:1px solid var(--border);z-index:90;transition:right .3s ease;overflow-y:auto;padding:24px}
-.detail-panel.open{right:0}
-.detail-header{display:flex;align-items:start;justify-content:space-between;margin-bottom:20px}
-.detail-company{display:flex;align-items:center;gap:12px}
-.detail-company .company-logo{width:44px;height:44px;font-size:17px;border-radius:10px}
-.detail-title{font-size:18px;font-weight:700}
-.detail-domain{font-size:13px;color:var(--text2)}
-.detail-section{margin-top:20px}
-.detail-section h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:10px}
-.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.detail-stat{background:var(--surface2);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:4px}
-.detail-stat .label{font-size:11px;color:var(--text2)}
-.detail-stat .value{font-size:18px;font-weight:700}
+/* ── DETAIL PANEL (right side, inline) ── */
+.detail-panel{position:fixed;right:0;top:56px;width:0;height:calc(100vh - 56px);background:var(--surface);border-left:1px solid var(--border);z-index:90;transition:width .25s ease;overflow:hidden;display:flex;flex-direction:column}
+.detail-panel.open{width:440px}
+.dp-scroll{flex:1;overflow-y:auto;padding:20px}
+.dp-header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.dp-back{background:none;border:none;color:var(--text2);cursor:pointer;padding:4px;border-radius:6px;display:none;transition:.15s}
+.dp-back:hover{background:var(--surface2);color:var(--text)}
+.dp-back svg{width:16px;height:16px}
+.dp-back.visible{display:flex}
+.dp-breadcrumb{font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-breadcrumb b{color:var(--text);font-weight:600}
+.dp-close{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:28px;height:28px;border-radius:6px;display:grid;place-items:center;flex-shrink:0;transition:.15s}
+.dp-close:hover{background:var(--surface2);color:var(--text)}
+.dp-close svg{width:14px;height:14px}
 
-.ai-insight{background:linear-gradient(135deg,rgba(108,92,231,.1),rgba(162,155,254,.08));border:1px solid rgba(108,92,231,.2);border-radius:10px;padding:14px;margin-top:10px;display:flex;gap:10px}
-.ai-insight svg{width:20px;height:20px;color:var(--accent2);flex-shrink:0;margin-top:2px}
-.ai-insight p{font-size:13px;line-height:1.5;color:var(--text)}
-.ai-insight .label{font-size:11px;font-weight:600;color:var(--accent2);margin-bottom:4px}
+/* Panel — Company State */
+.dp-company-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.dp-co-logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0}
+.dp-co-info h2{font-size:16px;font-weight:700;letter-spacing:-.2px}
+.dp-co-info .dp-domain{font-size:12px;color:var(--text2)}
+.dp-co-meta{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.dp-mini-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.dp-mini-stat{background:var(--surface2);border-radius:8px;padding:10px 12px}
+.dp-mini-stat .label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.dp-mini-stat .value{font-size:18px;font-weight:700;margin-top:2px}
+.dp-section{margin-top:16px}
+.dp-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.dp-section-title .cnt{font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:8px;color:var(--text)}
 
-.timeline{display:flex;flex-direction:column;gap:12px;margin-top:10px}
-.timeline-item{display:flex;gap:10px;font-size:12px}
-.timeline-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:4px;flex-shrink:0}
-.timeline-content{display:flex;flex-direction:column;gap:2px}
-.timeline-content .time{color:var(--text2);font-size:11px}
+/* Contact rows in panel */
+.dp-contact{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:.15s;margin-bottom:4px}
+.dp-contact:hover{background:var(--surface2)}
+.dp-contact .dp-ct-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:11px;color:#fff;flex-shrink:0}
+.dp-contact .dp-ct-info{flex:1;min-width:0}
+.dp-contact .dp-ct-name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-contact .dp-ct-email{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-contact .dp-ct-count{font-size:11px;color:var(--text2);flex-shrink:0;font-weight:600}
+.dp-star{background:none;border:none;cursor:pointer;font-size:16px;color:var(--border);padding:2px;transition:.15s;flex-shrink:0;line-height:1}
+.dp-star:hover{color:var(--orange);transform:scale(1.15)}
+.dp-star.active{color:var(--orange)}
+.dp-primary-badge{font-size:9px;padding:1px 6px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;flex-shrink:0}
+
+/* Panel — Contact State */
+.dp-ct-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.dp-ct-big-avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0}
+.dp-ct-head-info h2{font-size:16px;font-weight:700}
+.dp-ct-head-info .dp-ct-head-email{font-size:12px;color:var(--text2)}
+.dp-ct-head-info .dp-ct-head-company{font-size:11px;color:var(--accent2);cursor:pointer}
+.dp-ct-head-info .dp-ct-head-company:hover{text-decoration:underline}
+.dp-ct-actions{display:flex;gap:6px;margin-bottom:16px}
+.dp-ct-actions .btn{font-size:11px;padding:5px 10px}
+.dp-tabs{display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)}
+.dp-tab{padding:6px 12px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
+.dp-tab:hover{color:var(--text)}
+.dp-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+
+/* Timeline items in panel */
+.tl-loading{display:flex;align-items:center;gap:8px;padding:16px;color:var(--text2);font-size:12px}
+.tl-loading .scan-spinner{width:14px;height:14px;border-width:2px}
+.tl-empty{text-align:center;padding:32px 16px;color:var(--text2);font-size:12px}
+.tl-list{display:flex;flex-direction:column;gap:1px}
+.tl-date-group{margin-top:12px}
+.tl-date-group:first-child{margin-top:0}
+.tl-date-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);padding:6px 0;position:sticky;top:0;background:var(--surface);z-index:1}
+.tl-item{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:6px;transition:.15s;cursor:pointer}
+.tl-item:hover{background:var(--surface2)}
+.tl-icon{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;flex-shrink:0}
+.tl-icon.sent{background:rgba(108,92,231,.12);color:var(--accent2)}
+.tl-icon.received{background:var(--green-bg);color:var(--green)}
+.tl-icon.meeting{background:var(--orange-bg);color:var(--orange)}
+.tl-icon svg{width:14px;height:14px}
+.tl-content{flex:1;min-width:0}
+.tl-subject{font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-meta{font-size:10px;color:var(--text2);margin-top:1px}
+.tl-preview{font-size:11px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-time{font-size:10px;color:var(--text2);flex-shrink:0;white-space:nowrap}
+.tl-reply-btn{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;padding:3px 6px;border-radius:4px;font-size:10px;flex-shrink:0;transition:.15s;font-family:inherit}
+.tl-reply-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--accent)}
+
+/* Compose email modal */
+.compose-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
+.compose-overlay.active{display:grid}
+.compose-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:560px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+.compose-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.compose-header h3{font-size:14px;font-weight:600}
+.compose-fields{padding:12px 18px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid var(--border)}
+.compose-field{display:flex;align-items:center;gap:8px;font-size:12px}
+.compose-field label{color:var(--text2);min-width:32px;font-weight:500}
+.compose-field input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;padding:4px 0}
+.compose-body{flex:1;padding:0}
+.compose-body textarea{width:100%;min-height:180px;background:none;border:none;outline:none;color:var(--text);font-size:13px;font-family:inherit;padding:14px 18px;resize:none;line-height:1.6}
+.compose-footer{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-top:1px solid var(--border)}
+.compose-footer .btn-send{background:var(--accent);color:#fff;font-weight:600;padding:7px 20px;border-radius:8px;border:none;font-size:13px;cursor:pointer;font-family:inherit;transition:.15s}
+.compose-footer .btn-send:hover{background:#7c6df0}
+.compose-footer .btn-send:disabled{opacity:.5;cursor:not-allowed}
+
+/* Shift main when panel is open */
+.main.panel-open{margin-right:440px}
 
 /* ── SETTINGS MODAL ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
@@ -210,98 +283,23 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .crm-content{display:none;flex-direction:column;gap:20px;flex:1}
 .crm-content.active{display:flex}
 
-/* ── COMPANY DETAIL OVERLAY ── */
-.company-overlay{position:fixed;inset:0;z-index:150;display:none;background:var(--bg)}
-.company-overlay.open{display:flex;flex-direction:column}
-.co-topbar{display:flex;align-items:center;gap:12px;padding:16px 24px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-.co-back{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--text2);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;border-radius:6px;transition:.15s}
-.co-back:hover{background:var(--surface2);color:var(--text)}
-.co-back svg{width:18px;height:18px}
-.co-breadcrumb{font-size:13px;color:var(--text2)}
-.co-breadcrumb span{color:var(--text);font-weight:600}
-.co-body{flex:1;overflow-y:auto;padding:32px;max-width:960px;margin:0 auto;width:100%}
-.co-header{display:flex;align-items:center;gap:16px;margin-bottom:28px}
-.co-logo{width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-weight:700;font-size:22px;color:#fff;flex-shrink:0}
-.co-header-info h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:2px}
-.co-header-info .co-domain{font-size:13px;color:var(--text2)}
-.co-header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
-.co-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
-.co-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
-.co-stat .label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
-.co-stat .value{font-size:22px;font-weight:700;margin-top:4px}
-.co-section-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.co-section-title .count{font-size:11px;background:var(--surface2);padding:2px 8px;border-radius:10px;font-weight:700;color:var(--text)}
-
-/* ── CONTACT ROW IN COMPANY VIEW ── */
-.contact-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:.15s}
-.contact-row:hover{border-color:var(--accent);background:rgba(108,92,231,.04)}
-.contact-row .cr-avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
-.contact-row .cr-info{flex:1;min-width:0}
-.contact-row .cr-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px}
-.contact-row .cr-email{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis}
-.contact-row .cr-stats{display:flex;gap:16px;font-size:12px;flex-shrink:0}
-.contact-row .cr-stats span{display:flex;align-items:center;gap:4px}
-.contact-row .cr-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;flex-shrink:0}
-.cr-badge-primary{background:var(--accent);color:#fff}
-.cr-star{background:none;border:none;cursor:pointer;font-size:18px;color:var(--text2);padding:4px;transition:.15s;flex-shrink:0;line-height:1}
-.cr-star:hover{color:var(--orange);transform:scale(1.2)}
-.cr-star.active{color:var(--orange)}
-
-/* ── CONTACT DETAIL OVERLAY ── */
-.contact-overlay{position:fixed;inset:0;z-index:160;display:none;background:var(--bg)}
-.contact-overlay.open{display:flex;flex-direction:column}
-.ct-body{flex:1;overflow-y:auto;padding:32px;max-width:960px;margin:0 auto;width:100%}
-.ct-header{display:flex;align-items:center;gap:16px;margin-bottom:8px}
-.ct-avatar{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:20px;color:#fff;flex-shrink:0}
-.ct-header-info h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:2px}
-.ct-header-info .ct-email{font-size:13px;color:var(--text2)}
-.ct-header-info .ct-company{font-size:12px;color:var(--accent2);margin-top:2px;cursor:pointer}
-.ct-header-info .ct-company:hover{text-decoration:underline}
-.ct-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0 28px}
-.ct-tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:0}
-.ct-tab{padding:8px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
-.ct-tab:hover{color:var(--text)}
-.ct-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
-
-/* ── TIMELINE ── */
-.tl-loading{display:flex;align-items:center;gap:10px;padding:20px;color:var(--text2);font-size:13px}
-.tl-loading .scan-spinner{width:16px;height:16px;border-width:2px}
-.tl-empty{text-align:center;padding:40px;color:var(--text2);font-size:13px}
-.tl-list{display:flex;flex-direction:column;gap:2px}
-.tl-date-group{margin-top:16px}
-.tl-date-group:first-child{margin-top:0}
-.tl-date-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);padding:8px 0;position:sticky;top:0;background:var(--bg);z-index:1}
-.tl-item{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:8px;transition:.15s;cursor:default}
-.tl-item:hover{background:var(--surface)}
-.tl-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;flex-shrink:0}
-.tl-icon.sent{background:rgba(108,92,231,.12);color:var(--accent2)}
-.tl-icon.received{background:var(--green-bg);color:var(--green)}
-.tl-icon.meeting{background:var(--orange-bg);color:var(--orange)}
-.tl-icon svg{width:16px;height:16px}
-.tl-content{flex:1;min-width:0}
-.tl-subject{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-meta{font-size:11px;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:8px}
-.tl-preview{font-size:12px;color:var(--text2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:600px}
-.tl-time{font-size:11px;color:var(--text2);flex-shrink:0;white-space:nowrap}
+.ai-insight{background:linear-gradient(135deg,rgba(108,92,231,.1),rgba(162,155,254,.08));border:1px solid rgba(108,92,231,.2);border-radius:8px;padding:10px;margin-top:8px;display:flex;gap:8px}
+.ai-insight svg{width:16px;height:16px;color:var(--accent2);flex-shrink:0;margin-top:2px}
+.ai-insight p{font-size:12px;line-height:1.4;color:var(--text)}
+.ai-insight .label{font-size:10px;font-weight:600;color:var(--accent2);margin-bottom:2px}
 
 /* ── RESPONSIVE ── */
 @media(max-width:900px){
   .sidebar{display:none}
   .stats{grid-template-columns:repeat(2,1fr)}
-  .detail-panel{width:100%}
-  .co-stats-row{grid-template-columns:repeat(2,1fr)}
-  .ct-stats-row{grid-template-columns:repeat(3,1fr)}
-  .co-body,.ct-body{padding:20px}
-  .contact-row .cr-stats{flex-direction:column;gap:4px;font-size:11px}
+  .detail-panel.open{width:100%;position:fixed}
+  .main.panel-open{margin-right:0}
 }
 @media(max-width:600px){
   .stats{grid-template-columns:1fr}
   .search-box{width:100%}
   .toolbar{flex-direction:column;align-items:stretch}
-  .co-stats-row{grid-template-columns:1fr 1fr}
-  .ct-stats-row{grid-template-columns:1fr}
-  .contact-row{flex-wrap:wrap}
-  .contact-row .cr-stats{width:100%;justify-content:flex-start;padding-left:52px}
+  .compose-box{width:100%;max-width:100%;border-radius:0;max-height:100vh}
 }
 </style>
 </head>
@@ -490,130 +488,28 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
   <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Cancel</button>
 </div>
 
-<!-- DETAIL PANEL -->
+<!-- INLINE DETAIL PANEL (right side) -->
 <div class="detail-panel" id="detailPanel">
-  <div class="detail-header">
-    <div class="detail-company">
-      <div class="company-logo" id="detailLogo">A</div>
-      <div>
-        <div class="detail-title" id="detailTitle"></div>
-        <div class="detail-domain" id="detailDomain"></div>
-      </div>
-    </div>
-    <button class="btn-icon" onclick="closeDetail()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-  <div class="detail-section">
-    <h3>Email Activity</h3>
-    <div class="detail-grid">
-      <div class="detail-stat"><span class="label">Emails Sent</span><span class="value" id="detailSent">0</span></div>
-      <div class="detail-stat"><span class="label">Emails Received</span><span class="value" id="detailRecv">0</span></div>
-      <div class="detail-stat"><span class="label">Total Contacts</span><span class="value" id="detailContacts">0</span></div>
-      <div class="detail-stat"><span class="label">Response Ratio</span><span class="value" id="detailRate">0%</span></div>
-    </div>
-  </div>
-  <div class="detail-section">
-    <h3>AI Insight</h3>
-    <div class="ai-insight">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-      <div>
-        <div class="label">AI Analysis</div>
-        <p id="detailInsight"></p>
-      </div>
-    </div>
-  </div>
-  <div class="detail-section">
-    <h3>All Contacts at Domain</h3>
-    <div id="detailContactsList" style="display:flex;flex-direction:column;gap:8px"></div>
-  </div>
-  <div class="detail-section" style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
-    <button class="btn btn-ghost btn-sm" id="blockDomainBtn" onclick="" style="color:var(--red);border-color:var(--red);font-size:12px">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-      Block this domain
-    </button>
-    <p class="help-text" style="margin-top:4px;font-size:11px;color:var(--text2)">Removes this domain from your CRM and prevents it from appearing again.</p>
-  </div>
+  <div class="dp-scroll" id="dpScroll"></div>
 </div>
 
-<!-- COMPANY DETAIL OVERLAY -->
-<div class="company-overlay" id="companyOverlay">
-  <div class="co-topbar">
-    <button class="co-back" onclick="closeCompanyOverlay()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Back
-    </button>
-    <div class="co-breadcrumb">Companies &rsaquo; <span id="coBreadcrumbName"></span></div>
-  </div>
-  <div class="co-body">
-    <div class="co-header">
-      <div class="co-logo" id="coLogo">A</div>
-      <div class="co-header-info">
-        <h1 id="coTitle"></h1>
-        <div class="co-domain" id="coDomain"></div>
-      </div>
-      <div class="co-header-right">
-        <span class="badge" id="coStatus"></span>
-        <div class="ai-score" id="coScoreWrap"></div>
-      </div>
+<!-- COMPOSE EMAIL MODAL -->
+<div class="compose-overlay" id="composeOverlay">
+  <div class="compose-box">
+    <div class="compose-header">
+      <h3 id="composeTitle">New Email</h3>
+      <button class="dp-close" onclick="closeCompose()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div class="co-stats-row">
-      <div class="co-stat"><span class="label">Emails Sent</span><div class="value" id="coSent">0</div></div>
-      <div class="co-stat"><span class="label">Emails Received</span><div class="value" id="coRecv">0</div></div>
-      <div class="co-stat"><span class="label">Contacts</span><div class="value" id="coContactCount">0</div></div>
-      <div class="co-stat"><span class="label">Last Activity</span><div class="value" id="coLastActivity" style="font-size:14px">—</div></div>
+    <div class="compose-fields">
+      <div class="compose-field"><label>To</label><input type="text" id="composeTo" readonly></div>
+      <div class="compose-field"><label>Subj</label><input type="text" id="composeSubject" placeholder="Subject"></div>
     </div>
-    <div class="detail-section">
-      <h3>AI Insight</h3>
-      <div class="ai-insight">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <div>
-          <div class="label">AI Analysis</div>
-          <p id="coInsight"></p>
-        </div>
-      </div>
+    <div class="compose-body">
+      <textarea id="composeBody" placeholder="Write your message..."></textarea>
     </div>
-    <div style="margin-top:28px">
-      <div class="co-section-title">Relationships <span class="count" id="coRelCount">0</span></div>
-      <div id="coContactsList"></div>
-    </div>
-  </div>
-</div>
-
-<!-- CONTACT DETAIL OVERLAY -->
-<div class="contact-overlay" id="contactOverlay">
-  <div class="co-topbar">
-    <button class="co-back" onclick="closeContactOverlay()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      Back
-    </button>
-    <div class="co-breadcrumb" id="ctBreadcrumb">Companies &rsaquo; <span id="ctBreadcrumbCompany"></span> &rsaquo; <span id="ctBreadcrumbName"></span></div>
-  </div>
-  <div class="ct-body">
-    <div class="ct-header">
-      <div class="ct-avatar" id="ctAvatar">AB</div>
-      <div class="ct-header-info">
-        <h1 id="ctName"></h1>
-        <div class="ct-email" id="ctEmail"></div>
-        <div class="ct-company" id="ctCompany" onclick="backToCompanyFromContact()"></div>
-      </div>
-      <div class="co-header-right">
-        <button class="cr-star active" id="ctStarBtn" onclick="toggleStarFromContact()" title="Toggle primary contact">&#9733;</button>
-      </div>
-    </div>
-    <div class="ct-stats-row">
-      <div class="co-stat"><span class="label">Emails Sent</span><div class="value" id="ctSent">0</div></div>
-      <div class="co-stat"><span class="label">Emails Received</span><div class="value" id="ctRecv">0</div></div>
-      <div class="co-stat"><span class="label">Last Contact</span><div class="value" id="ctLastDate" style="font-size:14px">—</div></div>
-    </div>
-    <div class="ct-tabs">
-      <button class="ct-tab active" onclick="switchContactTab('all',this)">All Activity</button>
-      <button class="ct-tab" onclick="switchContactTab('sent',this)">Sent</button>
-      <button class="ct-tab" onclick="switchContactTab('received',this)">Received</button>
-      <button class="ct-tab" onclick="switchContactTab('meetings',this)">Meetings</button>
-    </div>
-    <div id="ctTimeline">
-      <div class="tl-empty">Click a contact to see their activity timeline.</div>
+    <div class="compose-footer">
+      <span style="font-size:11px;color:var(--text2)" id="composeSendStatus"></span>
+      <button class="btn-send" id="composeSendBtn" onclick="sendComposedEmail()">Send</button>
     </div>
   </div>
 </div>
@@ -629,7 +525,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
         <li>Go to <strong>portal.azure.com</strong> &rarr; <strong>Microsoft Entra ID</strong> &rarr; <strong>App registrations</strong></li>
         <li>Click <strong>New registration</strong>, name it "RelateFlow CRM"</li>
         <li>Set <strong>Redirect URI</strong> (SPA) to: <code id="redirectDisplay">https://sheph007-pixel.github.io/codex/</code></li>
-        <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code> (Delegated)</li>
+        <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code> and <code>Mail.Send</code> (Delegated)</li>
         <li>Click <strong>Grant admin consent</strong> (or have your admin do it)</li>
         <li>Copy the <strong>Application (client) ID</strong> and paste it below</li>
       </ol>
@@ -1044,7 +940,7 @@ async function signIn() {
 
   try {
     const resp = await msalInstance.loginPopup({
-      scopes: ['Mail.Read','User.Read'],
+      scopes: ['Mail.Read','Mail.Send','User.Read'],
       prompt: 'select_account'
     });
     currentAccount = resp.account;
@@ -1056,7 +952,7 @@ async function signIn() {
     // If popup blocked, try redirect
     if (e.errorCode === 'popup_window_error' || e.errorCode === 'empty_window_error') {
       alert('Popup was blocked by your browser. Trying redirect login instead...');
-      msalInstance.loginRedirect({ scopes: ['Mail.Read','User.Read'] });
+      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read'] });
       return;
     }
     alert('Sign-in failed: ' + (e.errorCode || '') + ' — ' + (e.message || e));
@@ -1082,13 +978,13 @@ async function getAccessToken() {
   if (!msalInstance || !currentAccount) throw new Error('Not signed in');
   try {
     const resp = await msalInstance.acquireTokenSilent({
-      scopes: ['Mail.Read','User.Read'],
+      scopes: ['Mail.Read','Mail.Send','User.Read'],
       account: currentAccount
     });
     return resp.accessToken;
   } catch(e) {
     const resp = await msalInstance.acquireTokenPopup({
-      scopes: ['Mail.Read','User.Read']
+      scopes: ['Mail.Read','Mail.Send','User.Read']
     });
     currentAccount = resp.account;
     return resp.accessToken;
@@ -1708,86 +1604,158 @@ function unblockDomain(domain) {
 }
 
 // ──────────────────────────────────────────────
-// DETAIL PANEL (legacy — redirect to overlay)
+// INLINE DETAIL PANEL — single page, no overlays
+// States: 'company' (contacts list) or 'contact' (timeline)
 // ──────────────────────────────────────────────
-function openDetail(id) {
-  openCompanyOverlay(id);
-}
+let panelState = null; // null | { view:'company', companyId } | { view:'contact', email, domain, companyId }
 
-function closeDetail() {
-  document.getElementById('detailPanel').classList.remove('open');
-}
+function openDetail(id) { showCompanyPanel(id); }
 
-// ──────────────────────────────────────────────
-// COMPANY OVERLAY — full-page company detail
-// ──────────────────────────────────────────────
-function openCompanyOverlay(id) {
+function showCompanyPanel(id) {
   const c = companies.find(x => x.id === id);
   if (!c) return;
   currentCompanyOverlay = c;
+  panelState = { view: 'company', companyId: id };
   const color = COLORS[c.id % COLORS.length];
-
-  document.getElementById('coBreadcrumbName').textContent = c.name;
-  document.getElementById('coLogo').style.background = color;
-  document.getElementById('coLogo').textContent = c.name[0].toUpperCase();
-  document.getElementById('coTitle').textContent = c.name;
-  document.getElementById('coDomain').textContent = c.domain;
-  document.getElementById('coSent').textContent = c.sent.toLocaleString();
-  document.getElementById('coRecv').textContent = c.received.toLocaleString();
   const contacts = c.allContacts || [];
-  document.getElementById('coContactCount').textContent = contacts.length;
-  document.getElementById('coLastActivity').textContent = c.lastActivity || '—';
-  document.getElementById('coRelCount').textContent = contacts.length;
-
-  // Status badge
-  const statusEl = document.getElementById('coStatus');
-  statusEl.className = 'badge ' + (STATUS_CLASS[c.status] || '');
-  statusEl.textContent = c.status;
-
-  // Score
-  const circumference = 2 * Math.PI * 12;
-  const offset = circumference - (c.score / 100) * circumference;
-  const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
-  document.getElementById('coScoreWrap').innerHTML = `<div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div>`;
+  const sorted = [...contacts].sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
+  const primaryEmail = starredContacts[c.domain] || (sorted[0] ? sorted[0].email : '');
 
   // AI insight
   let insight = '';
-  if (c.score >= 75) insight = 'High engagement with ' + c.name + '. ' + (c.sent + c.received) + ' total emails exchanged. This is one of your most active relationships — consider a direct call or meeting.';
-  else if (c.score >= 50) insight = 'Moderate engagement with ' + c.name + '. The conversation is active but could use more follow-up. ' + (c.received > c.sent ? 'They reply more than you send — great responsiveness.' : 'You send more than they reply — try a different approach.');
-  else if (c.score >= 30) insight = 'Early-stage relationship with ' + c.name + '. Only ' + (c.sent + c.received) + ' emails exchanged so far. Consider increasing outreach to build momentum.';
-  else insight = 'Low activity with ' + c.name + '. Risk of going cold — last email was ' + c.lastActivity + '. AI recommends re-engaging with a personalized message.';
-  document.getElementById('coInsight').textContent = insight;
+  if (c.score >= 75) insight = 'High engagement. ' + (c.sent + c.received) + ' emails exchanged — consider scheduling a call.';
+  else if (c.score >= 50) insight = 'Active relationship. ' + (c.received > c.sent ? 'Good responsiveness from them.' : 'You send more than they reply — try a new angle.');
+  else if (c.score >= 30) insight = 'Early stage — only ' + (c.sent + c.received) + ' emails. Increase outreach to build momentum.';
+  else insight = 'Going cold — last activity ' + c.lastActivity + '. Re-engage with a personalized message.';
 
-  // Render contacts sorted by total emails
-  const sorted = [...contacts].sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
-  const primaryEmail = starredContacts[c.domain] || (sorted[0] ? sorted[0].email : '');
-  const container = document.getElementById('coContactsList');
-  container.innerHTML = sorted.map(ct => {
+  const circumference = 2 * Math.PI * 12;
+  const offset = circumference - (c.score / 100) * circumference;
+  const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
+
+  let html = '<div class="dp-header">' +
+    '<button class="dp-back" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>' +
+    '<div class="dp-breadcrumb"><b>' + esc(c.name) + '</b></div>' +
+    '<button class="dp-close" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
+  '</div>';
+
+  html += '<div class="dp-company-head">' +
+    '<div class="dp-co-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div>' +
+    '<div class="dp-co-info"><h2>' + esc(c.name) + '</h2><div class="dp-domain">' + esc(c.domain) + '</div></div>' +
+  '</div>';
+
+  html += '<div class="dp-co-meta">' +
+    '<span class="badge ' + (STATUS_CLASS[c.status] || '') + '">' + c.status + '</span>' +
+    '<div class="ai-score"><div class="score-ring" style="color:' + scoreColor + '"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="' + scoreColor + '" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + offset + '"/></svg>' + c.score + '</div></div>' +
+    '<span style="font-size:11px;color:var(--text2)">' + esc(c.lastActivity) + '</span>' +
+  '</div>';
+
+  html += '<div class="dp-mini-stats">' +
+    '<div class="dp-mini-stat"><span class="label">Sent</span><div class="value" style="color:var(--accent2)">' + c.sent + '</div></div>' +
+    '<div class="dp-mini-stat"><span class="label">Received</span><div class="value" style="color:var(--green)">' + c.received + '</div></div>' +
+  '</div>';
+
+  html += '<div class="ai-insight"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><div><div class="label">AI Insight</div><p>' + esc(insight) + '</p></div></div>';
+
+  html += '<div class="dp-section" style="margin-top:16px"><div class="dp-section-title">Relationships <span class="cnt">' + sorted.length + '</span></div>';
+
+  for (const ct of sorted) {
     const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
     const total = ct.sent + ct.received;
     const isPrimary = ct.email === primaryEmail;
-    const starClass = isPrimary ? 'cr-star active' : 'cr-star';
-    return '<div class="contact-row" onclick="openContactOverlay(\'' + ct.email.replace(/'/g, "\\'") + '\',\'' + c.domain.replace(/'/g, "\\'") + '\')">' +
-      '<div class="cr-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
-      '<div class="cr-info">' +
-        '<div class="cr-name">' + esc(ct.name) + (isPrimary ? ' <span class="cr-badge cr-badge-primary">Primary</span>' : '') + '</div>' +
-        '<div class="cr-email">' + esc(ct.email) + '</div>' +
-      '</div>' +
-      '<div class="cr-stats">' +
-        '<span style="color:var(--accent2)">' + ct.sent + ' sent</span>' +
-        '<span style="color:var(--green)">' + ct.received + ' recv</span>' +
-        '<span style="color:var(--text2);font-weight:600">' + total + ' total</span>' +
-      '</div>' +
-      '<button class="' + starClass + '" onclick="event.stopPropagation();toggleStar(\'' + c.domain.replace(/'/g, "\\'") + '\',\'' + ct.email.replace(/'/g, "\\'") + '\')" title="' + (isPrimary ? 'Primary contact' : 'Set as primary') + '">&#9733;</button>' +
-    '</div>';
-  }).join('');
+    const eSafe = ct.email.replace(/'/g, "\\'");
+    const dSafe = c.domain.replace(/'/g, "\\'");
 
-  document.getElementById('companyOverlay').classList.add('open');
+    html += '<div class="dp-contact" onclick="showContactPanel(\'' + eSafe + '\',\'' + dSafe + '\',' + c.id + ')">' +
+      '<div class="dp-ct-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
+      '<div class="dp-ct-info">' +
+        '<div class="dp-ct-name">' + esc(ct.name) + (isPrimary ? ' <span class="dp-primary-badge">Primary</span>' : '') + '</div>' +
+        '<div class="dp-ct-email">' + esc(ct.email) + '</div>' +
+      '</div>' +
+      '<div class="dp-ct-count">' + total + '</div>' +
+      '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="event.stopPropagation();toggleStar(\'' + dSafe + '\',\'' + eSafe + '\')" title="' + (isPrimary ? 'Primary' : 'Set primary') + '">&#9733;</button>' +
+    '</div>';
+  }
+
+  html += '</div>';
+
+  // Block domain button
+  html += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">' +
+    '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + c.domain.replace(/'/g, "\\'") + '\')" style="color:var(--red);border-color:var(--red);font-size:11px">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Block domain</button></div>';
+
+  document.getElementById('dpScroll').innerHTML = html;
+  document.getElementById('detailPanel').classList.add('open');
+  document.querySelector('.main').classList.add('panel-open');
 }
 
-function closeCompanyOverlay() {
-  document.getElementById('companyOverlay').classList.remove('open');
+function showContactPanel(email, domain, companyId) {
+  const data = domainMap[domain];
+  if (!data) return;
+  const ct = data.contacts[email.toLowerCase()];
+  if (!ct) return;
+  const c = companies.find(x => x.domain === domain);
+  const companyName = c ? c.name : domain;
+  const color = COLORS[(c ? c.id : 0) % COLORS.length];
+  currentContactOverlay = { contact: ct, company: c, domain: domain, email: email.toLowerCase() };
+  panelState = { view: 'contact', email: email.toLowerCase(), domain: domain, companyId: companyId || (c ? c.id : 0) };
+  currentContactTab = 'all';
+
+  const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const isPrimary = starredContacts[domain] === email.toLowerCase() || (!starredContacts[domain] && c && c.contactEmail === email.toLowerCase());
+
+  let html = '<div class="dp-header">' +
+    '<button class="dp-back visible" onclick="showCompanyPanel(' + panelState.companyId + ')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>' +
+    '<div class="dp-breadcrumb">' + esc(companyName) + ' &rsaquo; <b>' + esc(ct.name) + '</b></div>' +
+    '<button class="dp-close" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
+  '</div>';
+
+  html += '<div class="dp-ct-head">' +
+    '<div class="dp-ct-big-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
+    '<div class="dp-ct-head-info">' +
+      '<h2>' + esc(ct.name) + '</h2>' +
+      '<div class="dp-ct-head-email">' + esc(ct.email) + '</div>' +
+      '<div class="dp-ct-head-company" onclick="showCompanyPanel(' + panelState.companyId + ')">' + esc(companyName) + '</div>' +
+    '</div>' +
+    '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="toggleStarInPanel(\'' + domain.replace(/'/g, "\\'") + '\',\'' + email.toLowerCase().replace(/'/g, "\\'") + '\')" style="font-size:20px">&#9733;</button>' +
+  '</div>';
+
+  // Actions: Email + Reply
+  const eSafe = ct.email.replace(/'/g, "\\'");
+  html += '<div class="dp-ct-actions">' +
+    '<button class="btn btn-primary btn-sm" onclick="openCompose(\'' + eSafe + '\',\'' + esc(ct.name) + '\',\'\',\'\')">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Email' +
+    '</button>' +
+  '</div>';
+
+  html += '<div class="dp-mini-stats" style="grid-template-columns:1fr 1fr 1fr">' +
+    '<div class="dp-mini-stat"><span class="label">Sent</span><div class="value" style="font-size:16px;color:var(--accent2)">' + ct.sent + '</div></div>' +
+    '<div class="dp-mini-stat"><span class="label">Received</span><div class="value" style="font-size:16px;color:var(--green)">' + ct.received + '</div></div>' +
+    '<div class="dp-mini-stat"><span class="label">Last</span><div class="value" style="font-size:12px">' + (ct.lastDate ? timeAgo(ct.lastDate) : '—') + '</div></div>' +
+  '</div>';
+
+  // Tabs
+  html += '<div class="dp-tabs">' +
+    '<button class="dp-tab active" onclick="switchTab(\'all\',this)">All</button>' +
+    '<button class="dp-tab" onclick="switchTab(\'sent\',this)">Sent</button>' +
+    '<button class="dp-tab" onclick="switchTab(\'received\',this)">Received</button>' +
+    '<button class="dp-tab" onclick="switchTab(\'meetings\',this)">Meetings</button>' +
+  '</div>';
+
+  html += '<div id="dpTimeline"><div class="tl-loading"><div class="scan-spinner"></div>Loading...</div></div>';
+
+  document.getElementById('dpScroll').innerHTML = html;
+  document.getElementById('detailPanel').classList.add('open');
+  document.querySelector('.main').classList.add('panel-open');
+
+  fetchContactTimeline(email.toLowerCase(), domain);
+}
+
+function closePanel() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.querySelector('.main').classList.remove('panel-open');
+  panelState = null;
   currentCompanyOverlay = null;
+  currentContactOverlay = null;
 }
 
 function toggleStar(domain, email) {
@@ -1797,95 +1765,41 @@ function toggleStar(domain, email) {
     starredContacts[domain] = email;
   }
   saveStarredContacts();
-  // Rebuild to update primary contact in main table
   buildCompaniesFromDomainMap();
   renderTable();
   updateStats();
-  // Re-render the company overlay if open
-  if (currentCompanyOverlay) {
+  // Re-render current panel state
+  if (panelState && panelState.view === 'company') {
     const c = companies.find(x => x.domain === domain);
-    if (c) openCompanyOverlay(c.id);
+    if (c) showCompanyPanel(c.id);
   }
 }
 
-// ──────────────────────────────────────────────
-// CONTACT OVERLAY — full-page contact timeline
-// ──────────────────────────────────────────────
-function openContactOverlay(email, domain) {
-  const data = domainMap[domain];
-  if (!data) return;
-  const ct = data.contacts[email.toLowerCase()];
-  if (!ct) return;
-  const c = companies.find(x => x.domain === domain);
-  const companyName = c ? c.name : domain;
-  const color = COLORS[(c ? c.id : 0) % COLORS.length];
-  currentContactOverlay = { contact: ct, company: c, domain: domain, email: email.toLowerCase() };
-
-  const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  document.getElementById('ctBreadcrumbCompany').textContent = companyName;
-  document.getElementById('ctBreadcrumbName').textContent = ct.name;
-  document.getElementById('ctAvatar').style.background = color;
-  document.getElementById('ctAvatar').textContent = initials;
-  document.getElementById('ctName').textContent = ct.name;
-  document.getElementById('ctEmail').textContent = ct.email;
-  document.getElementById('ctCompany').textContent = companyName + ' · ' + domain;
-  document.getElementById('ctSent').textContent = ct.sent;
-  document.getElementById('ctRecv').textContent = ct.received;
-  document.getElementById('ctLastDate').textContent = ct.lastDate ? timeAgo(ct.lastDate) : '—';
-
-  // Star button
-  const isPrimary = starredContacts[domain] === email.toLowerCase() ||
-    (!starredContacts[domain] && c && c.contactEmail === email.toLowerCase());
-  const starBtn = document.getElementById('ctStarBtn');
-  starBtn.className = isPrimary ? 'cr-star active' : 'cr-star';
-
-  // Reset tabs
-  currentContactTab = 'all';
-  document.querySelectorAll('.ct-tab').forEach(t => t.classList.remove('active'));
-  document.querySelector('.ct-tab').classList.add('active');
-
-  document.getElementById('contactOverlay').classList.add('open');
-
-  // Fetch timeline from Outlook
-  fetchContactTimeline(email.toLowerCase(), domain);
-}
-
-function closeContactOverlay() {
-  document.getElementById('contactOverlay').classList.remove('open');
-  currentContactOverlay = null;
-}
-
-function backToCompanyFromContact() {
-  if (currentContactOverlay && currentContactOverlay.company) {
-    closeContactOverlay();
-    // Company overlay should still be open underneath
+function toggleStarInPanel(domain, email) {
+  toggleStar(domain, email);
+  // If on contact view, refresh it
+  if (panelState && panelState.view === 'contact') {
+    showContactPanel(panelState.email, panelState.domain, panelState.companyId);
   }
 }
 
-function toggleStarFromContact() {
-  if (!currentContactOverlay) return;
-  toggleStar(currentContactOverlay.domain, currentContactOverlay.email);
-  // Update the star button state
-  const isPrimary = starredContacts[currentContactOverlay.domain] === currentContactOverlay.email;
-  document.getElementById('ctStarBtn').className = isPrimary ? 'cr-star active' : 'cr-star';
-}
-
-function switchContactTab(tab, el) {
+function switchTab(tab, el) {
   currentContactTab = tab;
-  document.querySelectorAll('.ct-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.dp-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
-  if (currentContactOverlay) {
-    renderContactTimeline(currentContactOverlay.email);
-  }
+  if (currentContactOverlay) renderTimeline(currentContactOverlay.email);
 }
 
+// ──────────────────────────────────────────────
+// TIMELINE — fetch from Outlook and render inline
+// ──────────────────────────────────────────────
 async function fetchContactTimeline(email, domain) {
-  const el = document.getElementById('ctTimeline');
+  const el = document.getElementById('dpTimeline');
+  if (!el) return;
   el.innerHTML = '<div class="tl-loading"><div class="scan-spinner"></div>Loading activity from Outlook...</div>';
 
-  // Check cache first
   if (contactTimelineCache[email] && contactTimelineCache[email].length > 0) {
-    renderContactTimeline(email);
+    renderTimeline(email);
     return;
   }
 
@@ -1893,118 +1807,91 @@ async function fetchContactTimeline(email, domain) {
     const token = await getAccessToken();
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
     const items = [];
-
-    // Fetch emails involving this contact (sent to or received from)
-    const filterFrom = "from/emailAddress/address eq '" + email + "'";
-    const filterTo = "toRecipients/any(r:r/emailAddress/address eq '" + email + "')";
-    const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead';
+    const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,conversationId';
     const orderBy = '$orderby=receivedDateTime desc';
     const top = '$top=50';
 
-    // Fetch received from this contact
-    const url1 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent(filterFrom);
+    // Received from this contact
+    const url1 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
     const resp1 = await fetch(url1, { headers });
     if (resp1.ok) {
       const d1 = await resp1.json();
-      if (d1.value) {
-        for (const m of d1.value) {
-          items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id });
-        }
-      }
+      if (d1.value) for (const m of d1.value) items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
     }
 
-    // Fetch sent to this contact
-    const url2 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent(filterTo);
+    // Sent to this contact
+    const url2 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent("toRecipients/any(r:r/emailAddress/address eq '" + email + "')");
     const resp2 = await fetch(url2, { headers });
     if (resp2.ok) {
       const d2 = await resp2.json();
-      if (d2.value) {
-        for (const m of d2.value) {
-          const isSent = m.from?.emailAddress?.address?.toLowerCase() === userEmail.toLowerCase();
-          if (isSent) {
-            items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id });
-          }
+      if (d2.value) for (const m of d2.value) {
+        if (m.from?.emailAddress?.address?.toLowerCase() === userEmail.toLowerCase()) {
+          items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
         }
       }
     }
 
-    // Fetch calendar events with this contact (if Calendars.Read scope available)
+    // Calendar events
     try {
-      const calUrl = "https://graph.microsoft.com/v1.0/me/events?$top=30&$select=subject,start,end,attendees,organizer,isOnlineMeeting&$orderby=start/dateTime desc&$filter=" + encodeURIComponent("attendees/any(a:a/emailAddress/address eq '" + email + "')");
+      const calUrl = "https://graph.microsoft.com/v1.0/me/events?$top=20&$select=subject,start,end,attendees,isOnlineMeeting&$orderby=start/dateTime desc&$filter=" + encodeURIComponent("attendees/any(a:a/emailAddress/address eq '" + email + "')");
       const calResp = await fetch(calUrl, { headers });
       if (calResp.ok) {
         const calData = await calResp.json();
-        if (calData.value) {
-          for (const ev of calData.value) {
-            items.push({ type: 'meeting', subject: ev.subject || 'Meeting', date: new Date(ev.start?.dateTime || ev.end?.dateTime), preview: (ev.isOnlineMeeting ? 'Online meeting' : 'In-person') + ' · ' + (ev.attendees?.length || 0) + ' attendees', id: ev.id });
-          }
-        }
+        if (calData.value) for (const ev of calData.value) items.push({ type: 'meeting', subject: ev.subject || 'Meeting', date: new Date(ev.start?.dateTime), preview: (ev.isOnlineMeeting ? 'Online' : 'In-person') + ' · ' + (ev.attendees?.length || 0) + ' attendees', id: ev.id });
       }
-    } catch(e) { /* Calendar scope may not be available */ }
+    } catch(e) {}
 
-    // Dedupe by id and sort by date desc
+    // Dedupe and sort
     const seen = new Set();
     const unique = [];
-    for (const item of items) {
-      if (!seen.has(item.id)) { seen.add(item.id); unique.push(item); }
-    }
+    for (const item of items) { if (!seen.has(item.id)) { seen.add(item.id); unique.push(item); } }
     unique.sort((a, b) => b.date - a.date);
-
     contactTimelineCache[email] = unique;
-    renderContactTimeline(email);
-
+    renderTimeline(email);
   } catch(e) {
     console.error('Timeline fetch error:', e);
-    el.innerHTML = '<div class="tl-empty">Could not load activity. ' + esc(e.message) + '</div>';
+    if (el) el.innerHTML = '<div class="tl-empty">Could not load activity. ' + esc(e.message) + '</div>';
   }
 }
 
-function renderContactTimeline(email) {
-  const el = document.getElementById('ctTimeline');
+function renderTimeline(email) {
+  const el = document.getElementById('dpTimeline');
+  if (!el) return;
   let items = contactTimelineCache[email] || [];
 
-  // Filter by tab
   if (currentContactTab === 'sent') items = items.filter(i => i.type === 'sent');
   else if (currentContactTab === 'received') items = items.filter(i => i.type === 'received');
   else if (currentContactTab === 'meetings') items = items.filter(i => i.type === 'meeting');
 
   if (items.length === 0) {
-    const msgs = { all: 'No activity found with this contact.', sent: 'No sent emails found.', received: 'No received emails found.', meetings: 'No meetings found.' };
+    const msgs = { all: 'No activity found.', sent: 'No sent emails.', received: 'No received emails.', meetings: 'No meetings found.' };
     el.innerHTML = '<div class="tl-empty">' + (msgs[currentContactTab] || msgs.all) + '</div>';
     return;
   }
 
-  // Group by date
   const groups = {};
-  for (const item of items) {
-    const key = formatDateGroup(item.date);
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(item);
-  }
+  for (const item of items) { const key = formatDateGroup(item.date); if (!groups[key]) groups[key] = []; groups[key].push(item); }
+
+  const svgSent = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  const svgRecv = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
+  const svgMeet = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
 
   let html = '<div class="tl-list">';
   for (const [dateLabel, groupItems] of Object.entries(groups)) {
-    html += '<div class="tl-date-group">';
-    html += '<div class="tl-date-label">' + esc(dateLabel) + '</div>';
+    html += '<div class="tl-date-group"><div class="tl-date-label">' + esc(dateLabel) + '</div>';
     for (const item of groupItems) {
-      const iconClass = item.type;
-      const iconSvg = item.type === 'meeting'
-        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
-        : item.type === 'sent'
-          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
-          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
-      const timeStr = item.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const typeLabel = item.type === 'meeting' ? 'Meeting' : item.type === 'sent' ? 'Sent' : 'Received';
-
-      html += '<div class="tl-item">';
-      html += '<div class="tl-icon ' + iconClass + '">' + iconSvg + '</div>';
-      html += '<div class="tl-content">';
-      html += '<div class="tl-subject">' + esc(item.subject) + '</div>';
-      html += '<div class="tl-meta"><span>' + typeLabel + '</span></div>';
-      if (item.preview) html += '<div class="tl-preview">' + esc(item.preview.substring(0, 120)) + '</div>';
-      html += '</div>';
-      html += '<div class="tl-time">' + timeStr + '</div>';
-      html += '</div>';
+      const icon = item.type === 'meeting' ? svgMeet : item.type === 'sent' ? svgSent : svgRecv;
+      const time = item.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const replyBtn = item.type !== 'meeting'
+        ? ' <button class="tl-reply-btn" onclick="event.stopPropagation();openReply(\'' + item.id.replace(/'/g, "\\'") + '\',\'' + (currentContactOverlay ? currentContactOverlay.email.replace(/'/g, "\\'") : '') + '\',\'' + esc(item.subject).replace(/'/g, "\\'") + '\')">Reply</button>'
+        : '';
+      html += '<div class="tl-item">' +
+        '<div class="tl-icon ' + item.type + '">' + icon + '</div>' +
+        '<div class="tl-content"><div class="tl-subject">' + esc(item.subject) + '</div>' +
+        (item.preview ? '<div class="tl-preview">' + esc(item.preview.substring(0, 100)) + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><div class="tl-time">' + time + '</div>' + replyBtn + '</div>' +
+      '</div>';
     }
     html += '</div>';
   }
@@ -2021,6 +1908,91 @@ function formatDateGroup(date) {
   if (diff === 1) return 'Yesterday';
   if (diff < 7) return date.toLocaleDateString([], { weekday: 'long' });
   return date.toLocaleDateString([], { month: 'long', day: 'numeric', year: now.getFullYear() !== date.getFullYear() ? 'numeric' : undefined });
+}
+
+// ──────────────────────────────────────────────
+// EMAIL COMPOSE & REPLY (via Graph API sendMail)
+// ──────────────────────────────────────────────
+let composeReplyToId = null;
+
+function openCompose(toEmail, toName, subject, replyId) {
+  composeReplyToId = replyId || null;
+  document.getElementById('composeTo').value = toName ? toName + ' <' + toEmail + '>' : toEmail;
+  document.getElementById('composeTo').dataset.email = toEmail;
+  document.getElementById('composeSubject').value = subject || '';
+  document.getElementById('composeBody').value = '';
+  document.getElementById('composeSendStatus').textContent = '';
+  document.getElementById('composeSendBtn').disabled = false;
+  document.getElementById('composeTitle').textContent = replyId ? 'Reply' : 'New Email';
+  document.getElementById('composeOverlay').classList.add('active');
+  // Focus body for reply, subject for new
+  setTimeout(() => { document.getElementById(subject ? 'composeBody' : 'composeSubject').focus(); }, 100);
+}
+
+function openReply(messageId, toEmail, subject) {
+  const reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
+  const ctName = currentContactOverlay ? currentContactOverlay.contact.name : '';
+  openCompose(toEmail, ctName, reSubject, messageId);
+}
+
+function closeCompose() {
+  document.getElementById('composeOverlay').classList.remove('active');
+  composeReplyToId = null;
+}
+
+async function sendComposedEmail() {
+  const toEmail = document.getElementById('composeTo').dataset.email;
+  const subject = document.getElementById('composeSubject').value.trim();
+  const body = document.getElementById('composeBody').value.trim();
+  if (!toEmail || !subject || !body) { alert('Please fill in subject and message.'); return; }
+
+  const btn = document.getElementById('composeSendBtn');
+  const status = document.getElementById('composeSendStatus');
+  btn.disabled = true;
+  status.textContent = 'Sending...';
+
+  try {
+    const token = await getAccessToken();
+    const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+    const message = {
+      subject: subject,
+      body: { contentType: 'Text', content: body },
+      toRecipients: [{ emailAddress: { address: toEmail } }]
+    };
+
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ message: message, saveToSentItems: true })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error('Send failed: ' + resp.status + ' — ' + err);
+    }
+
+    status.textContent = 'Sent!';
+    status.style.color = 'var(--green)';
+
+    // Clear cache so timeline refreshes
+    delete contactTimelineCache[toEmail.toLowerCase()];
+
+    setTimeout(() => {
+      closeCompose();
+      status.style.color = '';
+      // Refresh timeline if contact panel is open
+      if (panelState && panelState.view === 'contact') {
+        fetchContactTimeline(panelState.email, panelState.domain);
+      }
+    }, 1000);
+
+  } catch(e) {
+    console.error('Send error:', e);
+    status.textContent = 'Failed: ' + e.message;
+    status.style.color = 'var(--red)';
+    btn.disabled = false;
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -2102,7 +2074,7 @@ function blockDomainFromDetail(domain) {
   renderTable();
   updateStats();
   updateBlockedCount();
-  closeDetail();
+  closePanel();
 }
 
 function renderBlockedDomainsList() {
