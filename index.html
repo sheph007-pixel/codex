@@ -146,7 +146,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .score-ring .fill{stroke-linecap:round;transition:.5s}
 
 /* ── DETAIL PANEL (right side, inline) ── */
-.detail-panel{position:fixed;right:0;top:56px;width:0;height:calc(100vh - 56px);background:var(--surface);border-left:1px solid var(--border);z-index:90;transition:width .25s ease;overflow:hidden;display:flex;flex-direction:column}
+.detail-panel{position:fixed;right:0;top:56px;width:0;height:calc(100vh - 56px);background:var(--surface);border-left:1px solid var(--border);z-index:90;transition:width .15s ease;overflow:hidden;display:flex;flex-direction:column}
 .detail-panel.open{width:440px}
 .dp-scroll{flex:1;overflow-y:auto;padding:20px}
 .dp-header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
@@ -241,9 +241,6 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .compose-footer .btn-send:hover{background:#7c6df0}
 .compose-footer .btn-send:disabled{opacity:.5;cursor:not-allowed}
 
-/* Shift main when panel is open */
-.main.panel-open{margin-right:440px}
-
 /* ── SETTINGS MODAL ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
 .modal-overlay.active{display:grid}
@@ -293,7 +290,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
   .sidebar{display:none}
   .stats{grid-template-columns:repeat(2,1fr)}
   .detail-panel.open{width:100%;position:fixed}
-  .main.panel-open{margin-right:0}
+
 }
 @media(max-width:600px){
   .stats{grid-template-columns:1fr}
@@ -1685,7 +1682,7 @@ function showCompanyPanel(id) {
 
   document.getElementById('dpScroll').innerHTML = html;
   document.getElementById('detailPanel').classList.add('open');
-  document.querySelector('.main').classList.add('panel-open');
+
 }
 
 function showContactPanel(email, domain, companyId) {
@@ -1745,14 +1742,13 @@ function showContactPanel(email, domain, companyId) {
 
   document.getElementById('dpScroll').innerHTML = html;
   document.getElementById('detailPanel').classList.add('open');
-  document.querySelector('.main').classList.add('panel-open');
+
 
   fetchContactTimeline(email.toLowerCase(), domain);
 }
 
 function closePanel() {
   document.getElementById('detailPanel').classList.remove('open');
-  document.querySelector('.main').classList.remove('panel-open');
   panelState = null;
   currentCompanyOverlay = null;
   currentContactOverlay = null;
@@ -1808,40 +1804,60 @@ async function fetchContactTimeline(email, domain) {
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
     const items = [];
     const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,conversationId';
-    const orderBy = '$orderby=receivedDateTime desc';
-    const top = '$top=50';
+    const top = '$top=75';
 
-    // Received from this contact
-    const url1 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
-    const resp1 = await fetch(url1, { headers });
-    if (resp1.ok) {
-      const d1 = await resp1.json();
-      if (d1.value) for (const m of d1.value) items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
-    }
-
-    // Sent to this contact
-    const url2 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent("toRecipients/any(r:r/emailAddress/address eq '" + email + "')");
-    const resp2 = await fetch(url2, { headers });
-    if (resp2.ok) {
-      const d2 = await resp2.json();
-      if (d2.value) for (const m of d2.value) {
-        if (m.from?.emailAddress?.address?.toLowerCase() === userEmail.toLowerCase()) {
-          items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+    // Use $search with "participants:" — this reliably finds ALL emails
+    // involving this contact (both sent to and received from).
+    // Note: $search cannot be combined with $orderby, so we sort client-side.
+    const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select +
+      '&$search=' + encodeURIComponent('"participants:' + email + '"');
+    const searchResp = await fetch(searchUrl, { headers });
+    if (searchResp.ok) {
+      const searchData = await searchResp.json();
+      if (searchData.value) {
+        const myLower = userEmail.toLowerCase();
+        for (const m of searchData.value) {
+          const fromAddr = (m.from?.emailAddress?.address || '').toLowerCase();
+          const isSent = fromAddr === myLower;
+          const isFromContact = fromAddr === email.toLowerCase();
+          // Classify: sent by me, received from contact, or skip
+          if (isSent) {
+            items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+          } else if (isFromContact) {
+            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+          }
+        }
+      }
+    } else {
+      // Fallback: try simple $filter on from address only (always works)
+      console.warn('$search failed (' + searchResp.status + '), falling back to $filter');
+      const filterUrl = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select +
+        '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
+      const filterResp = await fetch(filterUrl, { headers });
+      if (filterResp.ok) {
+        const filterData = await filterResp.json();
+        if (filterData.value) {
+          for (const m of filterData.value) {
+            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+          }
         }
       }
     }
 
-    // Calendar events
+    // Calendar events — wrapped in try/catch since Calendars.Read may not be granted
     try {
-      const calUrl = "https://graph.microsoft.com/v1.0/me/events?$top=20&$select=subject,start,end,attendees,isOnlineMeeting&$orderby=start/dateTime desc&$filter=" + encodeURIComponent("attendees/any(a:a/emailAddress/address eq '" + email + "')");
+      const calUrl = 'https://graph.microsoft.com/v1.0/me/events?$top=20&$select=subject,start,end,attendees,isOnlineMeeting' +
+        '&$search=' + encodeURIComponent('"' + email + '"');
       const calResp = await fetch(calUrl, { headers });
       if (calResp.ok) {
         const calData = await calResp.json();
-        if (calData.value) for (const ev of calData.value) items.push({ type: 'meeting', subject: ev.subject || 'Meeting', date: new Date(ev.start?.dateTime), preview: (ev.isOnlineMeeting ? 'Online' : 'In-person') + ' · ' + (ev.attendees?.length || 0) + ' attendees', id: ev.id });
+        if (calData.value) for (const ev of calData.value) {
+          items.push({ type: 'meeting', subject: ev.subject || 'Meeting', date: new Date(ev.start?.dateTime), preview: (ev.isOnlineMeeting ? 'Online' : 'In-person') + ' · ' + (ev.attendees?.length || 0) + ' attendees', id: ev.id });
+        }
       }
     } catch(e) {}
 
-    // Dedupe and sort
+    // Dedupe and sort by date descending
     const seen = new Set();
     const unique = [];
     for (const item of items) { if (!seen.has(item.id)) { seen.add(item.id); unique.push(item); } }
