@@ -595,37 +595,42 @@ async function getAccessToken() {
 // MICROSOFT GRAPH — FETCH EMAILS
 // ──────────────────────────────────────────────
 async function fetchAllEmails(token) {
-  const allMessages = [];
-  // Fetch sent + received in parallel pages
-  // We'll fetch up to 2000 messages (sent + inbox)
   const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
 
-  // Fetch inbox (received) and sentitems (sent) in parallel
-  const [inbox, sent] = await Promise.all([
-    fetchMailFolder(headers, 'inbox', 1000),
-    fetchMailFolder(headers, 'sentitems', 1000),
-  ]);
+  // Use /me/messages to fetch from ALL folders (inbox, sent, archive, custom folders, etc.)
+  // Determine which are "sent by me" vs "received" using the from address
+  const allMessages = [];
+  let url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&$select=subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime&$orderby=receivedDateTime desc';
+  let page = 0;
 
-  return { inbox, sent };
-}
-
-async function fetchMailFolder(headers, folder, maxItems) {
-  const messages = [];
-  let url = `https://graph.microsoft.com/v1.0/me/mailFolders/${folder}/messages?$top=100&$select=subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime&$orderby=receivedDateTime desc`;
-
-  while (url && messages.length < maxItems) {
-    updateScanBanner(`Scanning ${folder}... (${messages.length} emails)`);
+  while (url) {
+    page++;
+    updateScanBanner(`Scanning all mail... (${allMessages.length.toLocaleString()} emails, page ${page})`);
     const resp = await fetch(url, { headers });
     if (!resp.ok) {
       const err = await resp.text();
-      throw new Error(`Graph API error (${folder}): ${resp.status} — ${err}`);
+      throw new Error(`Graph API error: ${resp.status} — ${err}`);
     }
     const data = await resp.json();
-    if (data.value) messages.push(...data.value);
+    if (data.value) allMessages.push(...data.value);
     url = data['@odata.nextLink'] || null;
-    if (messages.length >= maxItems) break;
   }
-  return messages;
+
+  // Split into sent vs received based on whether the user is the sender
+  const myEmailLower = userEmail ? userEmail.toLowerCase() : '';
+  const inbox = [];
+  const sent = [];
+
+  for (const msg of allMessages) {
+    const fromEmail = msg.from?.emailAddress?.address?.toLowerCase() || '';
+    if (fromEmail === myEmailLower) {
+      sent.push(msg);
+    } else {
+      inbox.push(msg);
+    }
+  }
+
+  return { inbox, sent };
 }
 
 // ──────────────────────────────────────────────
@@ -772,9 +777,9 @@ async function scanOutlookEmails() {
   try {
     showScanBanner('Connecting to Microsoft Graph...');
     const token = await getAccessToken();
-    showScanBanner('Fetching emails from Outlook...');
+    showScanBanner('Fetching all emails from Outlook (all folders, all time)...');
     const { inbox, sent } = await fetchAllEmails(token);
-    updateScanBanner(`Processing ${inbox.length + sent.length} emails...`);
+    updateScanBanner(`Processing ${(inbox.length + sent.length).toLocaleString()} emails (${sent.length.toLocaleString()} sent, ${inbox.length.toLocaleString()} received)...`);
     processEmails(inbox, sent);
     hideScanBanner();
     renderTable();
