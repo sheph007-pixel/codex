@@ -2898,6 +2898,7 @@ function showCompanyPanel(id) {
   headHtml += '<div class="dp-mini-stats">' +
     '<div class="dp-mini-stat"><span class="label">Sent</span><div class="value" style="color:var(--accent2)">' + c.sent + '</div></div>' +
     '<div class="dp-mini-stat"><span class="label">Received</span><div class="value" style="color:var(--green)">' + c.received + '</div></div>' +
+    '<div class="dp-mini-stat"><span class="label">Total</span><div class="value">' + (c.sent + c.received) + '</div></div>' +
   '</div>';
 
   headHtml += '<div class="ai-insight" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><div><div class="label">AI Insight</div><p style="margin:0">' + esc(insight) + '</p></div></div>';
@@ -2933,7 +2934,7 @@ function showCompanyPanel(id) {
         '<div class="dp-ct-name">' + esc(ct.name) + (isPrimary ? ' <span class="dp-primary-badge">Primary</span>' : '') + '</div>' +
         '<div class="dp-ct-email">' + esc(ct.email) + (ctTitle ? ' · ' + esc(ctTitle) : '') + '</div>' +
       '</div>' +
-      '<div class="dp-ct-count">' + total + '</div>' +
+      '<div class="dp-ct-count"><span style="color:var(--accent2)">' + ct.sent + '</span><span style="color:var(--text3);margin:0 1px">/</span><span style="color:var(--green)">' + ct.received + '</span></div>' +
       '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="event.stopPropagation();toggleStar(\'' + dSafe + '\',\'' + eSafe + '\')" title="' + (isPrimary ? 'Primary' : 'Set primary') + '">&#9733;</button>' +
     '</div>';
   }
