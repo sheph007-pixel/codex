@@ -403,25 +403,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .ai-insight p{font-size:12px;line-height:1.4;color:var(--text)}
 .ai-insight .label{font-size:10px;font-weight:600;color:var(--accent2);margin-bottom:2px}
 
-/* AI Company Research Card */
-.ai-research-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-top:10px;overflow:hidden}
-.ai-research-header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(156,39,176,.05),rgba(103,58,183,.05))}
-.ai-research-header svg{width:16px;height:16px;color:#7c3aed;flex-shrink:0}
-.ai-research-header .title{font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.4px;flex:1}
-.ai-research-header .refresh-btn{background:none;border:none;cursor:pointer;color:var(--text2);padding:2px;border-radius:4px;display:grid;place-items:center;transition:.15s}
-.ai-research-header .refresh-btn:hover{color:#7c3aed;background:rgba(124,58,237,.1)}
-.ai-research-header .refresh-btn svg{width:14px;height:14px}
-.ai-research-body{padding:12px}
-.ai-research-desc{font-size:12px;line-height:1.5;color:var(--text);margin-bottom:10px}
-.ai-research-desc.loading{color:var(--text2);font-style:italic}
-.ai-research-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.ai-research-item{display:flex;flex-direction:column;gap:1px;padding:6px 8px;background:var(--bg);border-radius:6px}
-.ai-research-item .r-label{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text2)}
-.ai-research-item .r-value{font-size:11px;font-weight:600;color:var(--text)}
-.ai-research-item.full-width{grid-column:1/-1}
-.ai-research-source{font-size:10px;color:var(--text2);margin-top:8px;text-align:right}
-.ai-research-source a{color:var(--accent);text-decoration:none}
-.ai-research-source a:hover{text-decoration:underline}
 
 /* ── RESPONSIVE ── */
 @media(max-width:900px){
@@ -1127,233 +1108,6 @@ function setContactLinkedIn(email, url) {
   saveContactEnrichment();
 }
 
-// ──────────────────────────────────────────────
-// AI COMPANY RESEARCH AGENT
-// ──────────────────────────────────────────────
-let companyResearch = {}; // { domain: { description, employees, state, fetchedAt } }
-
-function loadCompanyResearch() {
-  try {
-    const raw = localStorage.getItem('kennion_company_research');
-    if (raw) companyResearch = JSON.parse(raw);
-  } catch(e) {}
-}
-
-function saveCompanyResearch() {
-  localStorage.setItem('kennion_company_research', JSON.stringify(companyResearch));
-}
-
-// Extract meta description + title from raw HTML
-function parseMetaFromHTML(html) {
-  const result = { title: '', description: '' };
-  // Meta description
-  const metaDesc = html.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']{5,})["']/i)
-    || html.match(/<meta[^>]*content\s*=\s*["']([^"']{5,})["'][^>]*name\s*=\s*["']description["']/i);
-  if (metaDesc) result.description = metaDesc[1].trim();
-  // OG description fallback
-  if (!result.description) {
-    const ogDesc = html.match(/<meta[^>]*property\s*=\s*["']og:description["'][^>]*content\s*=\s*["']([^"']{5,})["']/i)
-      || html.match(/<meta[^>]*content\s*=\s*["']([^"']{5,})["'][^>]*property\s*=\s*["']og:description["']/i);
-    if (ogDesc) result.description = ogDesc[1].trim();
-  }
-  // Title
-  const titleMatch = html.match(/<title[^>]*>([^<]{2,})<\/title>/i);
-  if (titleMatch) result.title = titleMatch[1].trim();
-  return result;
-}
-
-// Generate a clean 1-2 sentence AI summary from raw research data
-function generateCompanySummary(name, domain, rawDesc, rawTitle, enrichData) {
-  const state = enrichData.state || '';
-  const employees = enrichData.employees || '';
-  const industry = enrichData.industry || '';
-
-  // Clean up the raw description — strip marketing fluff, CTAs, trailing fragments
-  let cleaned = (rawDesc || '').trim();
-  cleaned = cleaned.replace(/\s*[|–—·•]\s*Official Site.*$/i, '');
-  cleaned = cleaned.replace(/\s*Learn more.*$/i, '');
-  cleaned = cleaned.replace(/\s*Click here.*$/i, '');
-  cleaned = cleaned.replace(/\s*Sign up.*$/i, '');
-  cleaned = cleaned.replace(/\s*Get started.*$/i, '');
-  cleaned = cleaned.replace(/\s*Visit us.*$/i, '');
-  cleaned = cleaned.replace(/\s*Contact us.*$/i, '');
-  cleaned = cleaned.replace(/\u2026\s*$/, '.');
-  cleaned = cleaned.replace(/\.{2,}$/, '.');
-  if (cleaned && !cleaned.match(/[.!?]$/)) cleaned += '.';
-
-  // Extract what the company does from the raw description
-  let whatTheyDo = '';
-  if (cleaned.length > 20) {
-    // Take first 1-2 sentences from the cleaned description
-    const sentences = cleaned.match(/[^.!?]*[.!?]/g) || [];
-    if (sentences.length >= 1) {
-      whatTheyDo = sentences.slice(0, 2).join(' ').trim();
-      // If it's too long, just take the first sentence
-      if (whatTheyDo.length > 200 && sentences[0]) whatTheyDo = sentences[0].trim();
-    } else {
-      whatTheyDo = cleaned;
-    }
-  }
-
-  // Build the summary: aim for simple, 8th-grade reading level
-  let summary = '';
-
-  if (whatTheyDo) {
-    // Check if the description already starts with the company name
-    const startsWithName = whatTheyDo.toLowerCase().startsWith(name.toLowerCase());
-    if (startsWithName) {
-      summary = whatTheyDo;
-    } else {
-      summary = name + ' ' + lowerFirst(whatTheyDo);
-      // If it reads awkwardly (starts with "the", "a", etc.), use "is a company that" bridge
-      if (/^[A-Z]/.test(whatTheyDo) && !whatTheyDo.toLowerCase().startsWith('is ') && !whatTheyDo.toLowerCase().startsWith('provides ') && !whatTheyDo.toLowerCase().startsWith('offers ')) {
-        summary = name + ' — ' + whatTheyDo;
-      }
-    }
-  } else if (rawTitle && rawTitle.length > 3 && rawTitle.length < 120) {
-    // Use page title as last resort
-    // Strip "CompanyName |" prefix or "| Home" suffix patterns from page titles
-    const nameEsc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const titleClean = rawTitle
-      .replace(/\s*[|–—:]\s*Home.*$/i, '').replace(/\s*[|–—:]\s*Official.*$/i, '')
-      .replace(new RegExp('^' + nameEsc + '\\s*[|–—:]\\s*', 'i'), '')
-      .replace(new RegExp('\\s*[|–—:]\\s*' + nameEsc + '\\s*$', 'i'), '')
-      .trim();
-    if (titleClean.length > 3) {
-      summary = name + ' — ' + titleClean + '.';
-    }
-  }
-
-  // If we have enrichment data but no web description, build from what we know
-  if (!summary) {
-    summary = name + ' is a' + (industry ? ' ' + industry.toLowerCase() : '') + ' company';
-    if (state) summary += ' based in ' + state;
-    summary += '.';
-  }
-
-  // Add location + size as a second sentence if not already mentioned
-  const hasState = state && summary.toLowerCase().includes(state.toLowerCase());
-  let extra = '';
-  if (state && !hasState && employees) {
-    extra = 'They are based in ' + state + ' with an estimated ' + employees + ' employees.';
-  } else if (state && !hasState) {
-    extra = 'They are based in ' + state + '.';
-  } else if (employees && !summary.includes(employees)) {
-    extra = 'The company has an estimated ' + employees + ' employees.';
-  }
-
-  if (extra) summary = summary + ' ' + extra;
-
-  return summary.trim();
-}
-
-function lowerFirst(s) {
-  if (!s) return s;
-  // Don't lowercase acronyms or proper nouns that start sentences
-  if (s.length > 1 && s[1] === s[1].toUpperCase()) return s; // e.g. "AI", "IBM"
-  return s[0].toLowerCase() + s.slice(1);
-}
-
-// Research a company using its actual domain + name
-async function researchCompany(domain, forceRefresh) {
-  if (!forceRefresh && companyResearch[domain] && companyResearch[domain].summary) {
-    return companyResearch[domain];
-  }
-
-  const company = companies.find(c => c.domain === domain);
-  const companyName = company ? company.name : domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
-  const enrichData = enrichmentCache[domain] || {};
-
-  const research = {
-    name: companyName,
-    domain: domain,
-    summary: '',
-    rawDesc: '',
-    rawTitle: '',
-    employees: enrichData.employees || '',
-    state: enrichData.state || '',
-    sourceUrl: 'https://' + domain,
-    fetchedAt: new Date().toISOString()
-  };
-
-  // Step 1: Fetch the company's actual website to get meta description
-  try {
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://' + domain);
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-    if (resp.ok) {
-      const reader = resp.body.getReader();
-      let html = '';
-      while (html.length < 50000) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        html += new TextDecoder().decode(value);
-      }
-      try { reader.cancel(); } catch(e) {}
-      const meta = parseMetaFromHTML(html);
-      if (meta.description) {
-        research.rawDesc = meta.description.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ');
-      }
-      if (meta.title) {
-        research.rawTitle = meta.title.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
-      }
-    }
-  } catch(e) {}
-
-  // Step 2: Clearbit autocomplete to verify / refine company name
-  try {
-    const cbResp = await fetch('https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(domain.split('.')[0]));
-    if (cbResp.ok) {
-      const cbResults = await cbResp.json();
-      const match = cbResults.find(r => r.domain === domain) || cbResults.find(r => r.domain && r.domain.split('.')[0] === domain.split('.')[0]);
-      if (match && match.name) research.name = match.name;
-    }
-  } catch(e) {}
-
-  // Step 3: Generate the AI summary from all gathered data
-  research.summary = generateCompanySummary(research.name, domain, research.rawDesc, research.rawTitle, enrichData);
-
-  companyResearch[domain] = research;
-  saveCompanyResearch();
-  return research;
-}
-
-// Build the AI research card HTML
-function buildResearchCardHTML(research, domain, loading) {
-  const refreshIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>';
-  const brainIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 017 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 01-2 2h-4a2 2 0 01-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 017-7z"/><path d="M9 22h6"/><path d="M10 2v1"/><path d="M14 2v1"/></svg>';
-
-  let html = '<div class="ai-research-card">';
-  html += '<div class="ai-research-header">' + brainIcon + '<span class="title">AI Company Research</span>';
-  html += '<button class="refresh-btn" onclick="refreshCompanyResearch(\'' + domain.replace(/'/g, "\\'") + '\')" title="Re-research">' + refreshIcon + '</button>';
-  html += '</div>';
-  html += '<div class="ai-research-body">';
-
-  if (loading) {
-    html += '<div class="ai-research-desc loading">Researching ' + esc(research ? research.name : domain) + '...</div>';
-  } else if (research) {
-    html += '<div class="ai-research-desc">' + esc(research.summary || '') + '</div>';
-    html += '<div class="ai-research-grid">';
-    if (research.employees) html += '<div class="ai-research-item"><span class="r-label">Employees (est.)</span><span class="r-value">' + esc(research.employees) + '</span></div>';
-    if (research.state) html += '<div class="ai-research-item"><span class="r-label">State</span><span class="r-value">' + esc(research.state) + '</span></div>';
-    html += '<div class="ai-research-item"><span class="r-label">Website</span><span class="r-value"><a href="https://' + esc(research.domain) + '" target="_blank" style="color:var(--accent);text-decoration:none">' + esc(research.domain) + '</a></span></div>';
-    html += '</div>';
-    html += '<div class="ai-research-source">Source: <a href="https://' + esc(domain) + '" target="_blank">' + esc(domain) + '</a></div>';
-  }
-
-  html += '</div></div>';
-  return html;
-}
-
-async function refreshCompanyResearch(domain) {
-  const el = document.querySelector('.ai-research-card');
-  if (el) {
-    const company = companies.find(c => c.domain === domain);
-    el.outerHTML = buildResearchCardHTML({ name: company ? company.name : domain }, domain, true);
-  }
-  const research = await researchCompany(domain, true);
-  const el2 = document.querySelector('.ai-research-card');
-  if (el2) el2.outerHTML = buildResearchCardHTML(research, domain, false);
-}
 
 // ──────────────────────────────────────────────
 // COLUMN MANAGEMENT UI
@@ -2903,18 +2657,10 @@ function showCompanyPanel(id) {
 
   headHtml += '<div class="ai-insight" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><div><div class="label">AI Insight</div><p style="margin:0">' + esc(insight) + '</p></div></div>';
 
-  // AI Company Research card — show cached immediately, then fetch if needed
-  const cachedResearch = companyResearch[c.domain];
-  if (cachedResearch && cachedResearch.summary) {
-    headHtml += buildResearchCardHTML(cachedResearch, c.domain, false);
-  } else {
-    headHtml += buildResearchCardHTML({ name: c.name }, c.domain, true);
-    // Kick off research asynchronously
-    researchCompany(c.domain).then(function(result) {
-      const el = document.querySelector('.ai-research-card');
-      if (el) el.outerHTML = buildResearchCardHTML(result, c.domain, false);
-    });
-  }
+  // Company website link
+  headHtml += '<div style="margin-top:10px"><a href="https://' + esc(c.domain) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;gap:6px">' +
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
+    esc(c.domain) + '</a></div>';
 
   document.getElementById('dpLeftHead').innerHTML = headHtml;
 
@@ -3670,7 +3416,6 @@ function esc(text) {
   loadCustomColumnData();
   loadEnrichmentCache();
   loadContactEnrichment();
-  loadCompanyResearch();
   loadLogoFailedCache();
   renderTableHeader();
   if (getClientId()) {
