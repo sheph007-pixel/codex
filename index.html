@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RelateFlow — AI-Driven CRM</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<!-- MSAL loaded dynamically in initMSAL() with CDN fallbacks -->
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -466,6 +466,35 @@ let userEmail = '';
 // ──────────────────────────────────────────────
 // MSAL SETUP
 // ──────────────────────────────────────────────
+const MSAL_CDN_URLS = [
+  'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js',
+  'https://unpkg.com/@azure/msal-browser@2.38.3/lib/msal-browser.min.js',
+  'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
+];
+
+function loadScript(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Failed to load: ' + url));
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureMSALLoaded() {
+  if (typeof msal !== 'undefined') return true;
+  for (const url of MSAL_CDN_URLS) {
+    try {
+      await loadScript(url);
+      if (typeof msal !== 'undefined') return true;
+    } catch(e) {
+      console.warn(e.message);
+    }
+  }
+  return false;
+}
+
 function getClientId() {
   return localStorage.getItem('relateflow_client_id') || '';
 }
@@ -473,6 +502,13 @@ function getClientId() {
 async function initMSAL() {
   const clientId = getClientId();
   if (!clientId) return null;
+
+  const loaded = await ensureMSALLoaded();
+  if (!loaded) {
+    alert('Could not load the Microsoft authentication library. Please check your internet connection or try disabling ad-blockers, then refresh the page.');
+    return null;
+  }
+
   const config = {
     auth: {
       clientId: clientId,
@@ -486,11 +522,9 @@ async function initMSAL() {
   };
   try {
     msalInstance = new msal.PublicClientApplication(config);
-    // v3+ requires initialize(); v2 does not have it
     if (typeof msalInstance.initialize === 'function') {
       await msalInstance.initialize();
     }
-    // Handle redirect promise (works in both v2 and v3)
     try { await msalInstance.handleRedirectPromise(); } catch(e) { console.warn('Redirect handle:', e); }
     return msalInstance;
   } catch(e) {
