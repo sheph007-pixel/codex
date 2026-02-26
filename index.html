@@ -552,6 +552,146 @@ function isBlockedDomain(domain) {
 }
 
 // ──────────────────────────────────────────────
+// SMART NAME FORMATTING
+// ──────────────────────────────────────────────
+const NAME_SMALL_WORDS = new Set(['a','an','the','and','but','or','for','nor','at','by','in','of','on','to','up','as','is','it']);
+
+function titleCase(str) {
+  if (!str) return '';
+  return str.replace(/\w\S*/g, (word, index) => {
+    if (index > 0 && NAME_SMALL_WORDS.has(word.toLowerCase())) return word.toLowerCase();
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+}
+
+function formatContactName(rawName, email) {
+  if (!rawName || rawName === email || rawName === email?.toLowerCase()) {
+    // No real name — try to extract from email prefix
+    if (!email) return 'Unknown';
+    const prefix = email.split('@')[0];
+    // Handle john.doe, john_doe, john-doe patterns
+    const parts = prefix.split(/[._\-+]+/).filter(Boolean);
+    if (parts.length >= 2 && parts.every(p => /^[a-z]+$/i.test(p))) {
+      return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
+    }
+    return titleCase(prefix);
+  }
+
+  let name = rawName.trim();
+  // Strip surrounding quotes
+  name = name.replace(/^["']|["']$/g, '').trim();
+  // Handle "Last, First" format
+  if (/^[^,]+,\s*[^,]+$/.test(name)) {
+    const [last, first] = name.split(',').map(s => s.trim());
+    name = first + ' ' + last;
+  }
+  // If all uppercase or all lowercase, apply title case
+  if (name === name.toUpperCase() || name === name.toLowerCase()) {
+    name = titleCase(name);
+  }
+  // Handle mixed: only fix if first letter of each word is lowercase
+  const words = name.split(/\s+/);
+  name = words.map(w => {
+    if (w.length <= 1) return w.toUpperCase();
+    // Preserve intentional casing like "McDonald", "O'Brien", "MacLeod"
+    if (/^(Mc|Mac|O')[A-Z]/.test(w)) return w;
+    // If word is all-caps (initials like "CEO", "Jr", "III"), keep it
+    if (w === w.toUpperCase() && w.length <= 4) return w;
+    // If first char is lowercase, fix it
+    if (w[0] === w[0].toLowerCase() && w[0] !== w[0].toUpperCase()) {
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    }
+    return w;
+  }).join(' ');
+
+  return name;
+}
+
+// ──────────────────────────────────────────────
+// COMPANY NAME LOOKUP (Clearbit Autocomplete API)
+// ──────────────────────────────────────────────
+const companyNameCache = {};
+let companyNameCacheDirty = false;
+
+function loadCompanyNameCache() {
+  try {
+    const raw = localStorage.getItem('relateflow_company_names');
+    if (raw) Object.assign(companyNameCache, JSON.parse(raw));
+  } catch(e) {}
+}
+
+function saveCompanyNameCache() {
+  if (!companyNameCacheDirty) return;
+  try {
+    localStorage.setItem('relateflow_company_names', JSON.stringify(companyNameCache));
+    companyNameCacheDirty = false;
+  } catch(e) {}
+}
+
+// Known brand corrections for common domains
+const KNOWN_BRANDS = {
+  'github.com':'GitHub','linkedin.com':'LinkedIn','youtube.com':'YouTube',
+  'stackoverflow.com':'Stack Overflow','wordpress.com':'WordPress','javascript.com':'JavaScript',
+  'salesforce.com':'Salesforce','hubspot.com':'HubSpot','mailchimp.com':'Mailchimp',
+  'shopify.com':'Shopify','atlassian.com':'Atlassian','bitbucket.org':'Bitbucket',
+  'microsoft.com':'Microsoft','apple.com':'Apple','amazon.com':'Amazon',
+  'google.com':'Google','facebook.com':'Meta','twitter.com':'X (Twitter)',
+  'netflix.com':'Netflix','uber.com':'Uber','airbnb.com':'Airbnb',
+  'stripe.com':'Stripe','twilio.com':'Twilio','figma.com':'Figma',
+  'notion.so':'Notion','slack.com':'Slack','zoom.us':'Zoom',
+  'dropbox.com':'Dropbox','asana.com':'Asana','trello.com':'Trello',
+  'intercom.io':'Intercom','zendesk.com':'Zendesk','freshdesk.com':'Freshdesk',
+  'squarespace.com':'Squarespace','wix.com':'Wix','godaddy.com':'GoDaddy',
+  'cloudflare.com':'Cloudflare','digitalocean.com':'DigitalOcean',
+  'mongodb.com':'MongoDB','postgresql.org':'PostgreSQL','oracle.com':'Oracle',
+  'ibm.com':'IBM','dell.com':'Dell','hp.com':'HP','intel.com':'Intel',
+  'nvidia.com':'NVIDIA','amd.com':'AMD','cisco.com':'Cisco',
+  'vmware.com':'VMware','redhat.com':'Red Hat','canonical.com':'Canonical',
+  'paypal.com':'PayPal','jpmorgan.com':'JPMorgan','goldmansachs.com':'Goldman Sachs',
+  'deloitte.com':'Deloitte','mckinsey.com':'McKinsey','bcg.com':'BCG',
+  'pwc.com':'PwC','ey.com':'Ernst & Young','kpmg.com':'KPMG',
+};
+
+async function lookupCompanyName(domain) {
+  // 1. Check cache
+  if (companyNameCache[domain]) return companyNameCache[domain];
+  // 2. Check known brands
+  if (KNOWN_BRANDS[domain]) {
+    companyNameCache[domain] = KNOWN_BRANDS[domain];
+    companyNameCacheDirty = true;
+    return KNOWN_BRANDS[domain];
+  }
+  // 3. Try Clearbit autocomplete API (free, no auth)
+  try {
+    const query = domain.split('.')[0];
+    const resp = await fetch('https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(query));
+    if (resp.ok) {
+      const results = await resp.json();
+      // Find exact domain match
+      const match = results.find(r => r.domain === domain);
+      if (match && match.name) {
+        companyNameCache[domain] = match.name;
+        companyNameCacheDirty = true;
+        return match.name;
+      }
+      // Fuzzy: if domain prefix matches closely
+      const fuzzy = results.find(r => r.domain && r.domain.split('.')[0] === domain.split('.')[0]);
+      if (fuzzy && fuzzy.name) {
+        companyNameCache[domain] = fuzzy.name;
+        companyNameCacheDirty = true;
+        return fuzzy.name;
+      }
+    }
+  } catch(e) { /* API unavailable — fall through to smart formatting */ }
+  // 4. Fallback: smart title case from domain prefix
+  const prefix = domain.split('.')[0];
+  const formatted = titleCase(prefix.replace(/[-_]/g, ' '));
+  companyNameCache[domain] = formatted;
+  companyNameCacheDirty = true;
+  return formatted;
+}
+
+// ──────────────────────────────────────────────
 // INDEXEDDB PERSISTENCE
 // ──────────────────────────────────────────────
 const DB_NAME = 'relateflow';
@@ -773,10 +913,15 @@ function ensureDomain(domain) {
 function ensureContact(domain, email, name) {
   ensureDomain(domain);
   const le = email.toLowerCase();
+  const formatted = formatContactName(name, le);
   if (!domainMap[domain].contacts[le]) {
-    domainMap[domain].contacts[le] = { name: name || email, email: le, sent: 0, received: 0, lastDate: null };
-  } else if (name && name !== email && domainMap[domain].contacts[le].name === le) {
-    domainMap[domain].contacts[le].name = name;
+    domainMap[domain].contacts[le] = { name: formatted, email: le, sent: 0, received: 0, lastDate: null };
+  } else {
+    const existing = domainMap[domain].contacts[le].name;
+    // Upgrade name if current one is just the email or worse quality
+    if (existing === le || existing === email || (name && name !== email && existing === formatContactName(null, le))) {
+      domainMap[domain].contacts[le].name = formatted;
+    }
   }
 }
 
@@ -865,7 +1010,10 @@ function buildCompaniesFromDomainMap() {
     else if (score >= 50) status = 'Warm';
     else if (score >= 30) status = 'New';
 
-    const companyName = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
+    // Use cached company name or smart fallback (async lookup happens separately)
+    const companyName = companyNameCache[domain]
+      || KNOWN_BRANDS[domain]
+      || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
 
     companies.push({
       id: id++,
@@ -885,6 +1033,38 @@ function buildCompaniesFromDomainMap() {
 
   companies.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
   companies.forEach((c, i) => c.id = i + 1);
+}
+
+// Async: look up real company names for any domains not yet in cache
+let nameLookupsRunning = false;
+async function resolveCompanyNames() {
+  if (nameLookupsRunning) return;
+  nameLookupsRunning = true;
+  try {
+    const uncached = companies.filter(c => !companyNameCache[c.domain]).map(c => c.domain);
+    if (uncached.length === 0) return;
+
+    // Batch lookups, 5 at a time to avoid rate limits
+    for (let i = 0; i < uncached.length; i += 5) {
+      const batch = uncached.slice(i, i + 5);
+      await Promise.all(batch.map(d => lookupCompanyName(d)));
+
+      // Update company names in-place and re-render
+      let changed = false;
+      for (const c of companies) {
+        if (companyNameCache[c.domain] && c.name !== companyNameCache[c.domain]) {
+          c.name = companyNameCache[c.domain];
+          changed = true;
+        }
+      }
+      if (changed) renderTable();
+    }
+    saveCompanyNameCache();
+  } catch(e) {
+    console.warn('Company name lookup error:', e);
+  } finally {
+    nameLookupsRunning = false;
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -987,6 +1167,9 @@ async function scanOutlookEmails(forceFullScan) {
     await persistData();
     updateLastSyncDisplay();
 
+    // Resolve real company names in background
+    resolveCompanyNames();
+
     // Keep banner visible briefly so user sees the summary
     setTimeout(() => { hideScanBanner(); }, 2500);
 
@@ -1055,6 +1238,7 @@ async function onSignedIn() {
     renderTable();
     updateStats();
     updateLastSyncDisplay();
+    resolveCompanyNames(); // Look up real names in background
   }
   updateBlockedCount();
 
@@ -1500,6 +1684,7 @@ function esc(text) {
 // ──────────────────────────────────────────────
 (async function init() {
   loadBlockedDomains();
+  loadCompanyNameCache();
   if (getClientId()) {
     await initMSAL();
     if (msalInstance) {
