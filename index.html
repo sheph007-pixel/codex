@@ -993,7 +993,7 @@ function setContactLinkedIn(email, url) {
 // ──────────────────────────────────────────────
 // AI COMPANY RESEARCH AGENT
 // ──────────────────────────────────────────────
-let companyResearch = {}; // { domain: { description, hq, founded, website, wikiUrl, fetchedAt } }
+let companyResearch = {}; // { domain: { description, employees, state, fetchedAt } }
 
 function loadCompanyResearch() {
   try {
@@ -1006,7 +1006,26 @@ function saveCompanyResearch() {
   localStorage.setItem('kennion_company_research', JSON.stringify(companyResearch));
 }
 
-// Research a company: Wikipedia + enrichment data + Clearbit = full summary
+// Extract meta description + title from raw HTML
+function parseMetaFromHTML(html) {
+  const result = { title: '', description: '' };
+  // Meta description
+  const metaDesc = html.match(/<meta[^>]*name\s*=\s*["']description["'][^>]*content\s*=\s*["']([^"']{5,})["']/i)
+    || html.match(/<meta[^>]*content\s*=\s*["']([^"']{5,})["'][^>]*name\s*=\s*["']description["']/i);
+  if (metaDesc) result.description = metaDesc[1].trim();
+  // OG description fallback
+  if (!result.description) {
+    const ogDesc = html.match(/<meta[^>]*property\s*=\s*["']og:description["'][^>]*content\s*=\s*["']([^"']{5,})["']/i)
+      || html.match(/<meta[^>]*content\s*=\s*["']([^"']{5,})["'][^>]*property\s*=\s*["']og:description["']/i);
+    if (ogDesc) result.description = ogDesc[1].trim();
+  }
+  // Title
+  const titleMatch = html.match(/<title[^>]*>([^<]{2,})<\/title>/i);
+  if (titleMatch) result.title = titleMatch[1].trim();
+  return result;
+}
+
+// Research a company using its actual domain + name
 async function researchCompany(domain, forceRefresh) {
   if (!forceRefresh && companyResearch[domain] && companyResearch[domain].description) {
     return companyResearch[domain];
@@ -1020,77 +1039,60 @@ async function researchCompany(domain, forceRefresh) {
     name: companyName,
     domain: domain,
     description: '',
-    hq: '',
-    founded: '',
-    website: domain,
-    wikiUrl: '',
-    industry: enrichData.industry || '',
     employees: enrichData.employees || '',
-    country: enrichData.country || '',
     state: enrichData.state || '',
-    city: enrichData.city || '',
-    type: enrichData.type || '',
+    sourceUrl: 'https://' + domain,
     fetchedAt: new Date().toISOString()
   };
 
-  // Step 1: Search Wikipedia for the company
+  // Step 1: Fetch the company's actual website to get meta description
   try {
-    const wikiSearchResp = await fetch('https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent(companyName + ' company') + '&srlimit=3&format=json&origin=*');
-    if (wikiSearchResp.ok) {
-      const wikiSearch = await wikiSearchResp.json();
-      if (wikiSearch.query && wikiSearch.query.search && wikiSearch.query.search.length > 0) {
-        // Find the best matching result
-        const bestMatch = wikiSearch.query.search[0];
-        const pageTitle = bestMatch.title;
-        research.wikiUrl = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(pageTitle.replace(/ /g, '_'));
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://' + domain);
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (resp.ok) {
+      // Only read first 50KB to find meta tags (avoid downloading huge pages)
+      const reader = resp.body.getReader();
+      let html = '';
+      while (html.length < 50000) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        html += new TextDecoder().decode(value);
+      }
+      try { reader.cancel(); } catch(e) {}
+      const meta = parseMetaFromHTML(html);
+      if (meta.description) {
+        // Decode HTML entities
+        const txt = meta.description.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ');
+        research.description = txt;
+      }
+      if (meta.title && !research.description) {
+        research.description = meta.title;
+      }
+    }
+  } catch(e) {}
 
-        // Step 2: Get the extract (summary) from Wikipedia
-        const extractResp = await fetch('https://en.wikipedia.org/w/api.php?action=query&titles=' + encodeURIComponent(pageTitle) + '&prop=extracts&exintro=1&explaintext=1&exsentences=4&format=json&origin=*');
-        if (extractResp.ok) {
-          const extractData = await extractResp.json();
-          const pages = extractData.query && extractData.query.pages;
-          if (pages) {
-            const pageId = Object.keys(pages)[0];
-            if (pageId !== '-1' && pages[pageId].extract) {
-              research.description = pages[pageId].extract.trim();
-            }
-          }
+  // Step 2: Try Clearbit autocomplete for extra context (uses name + domain match)
+  try {
+    const cbResp = await fetch('https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(domain.split('.')[0]));
+    if (cbResp.ok) {
+      const cbResults = await cbResp.json();
+      const match = cbResults.find(r => r.domain === domain) || cbResults.find(r => r.domain && r.domain.split('.')[0] === domain.split('.')[0]);
+      if (match && match.name) {
+        research.name = match.name;
+        // If we still don't have a description, use the Clearbit name
+        if (!research.description && match.name !== companyName) {
+          research.description = match.name + ' (' + domain + ')';
         }
       }
     }
   } catch(e) {}
 
-  // Step 3: If no Wikipedia result, try the DuckDuckGo Instant Answer API
+  // Step 3: Fallback description from what we know
   if (!research.description) {
-    try {
-      const ddgResp = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(companyName) + '&format=json&no_html=1&skip_disambig=1');
-      if (ddgResp.ok) {
-        const ddgData = await ddgResp.json();
-        if (ddgData.Abstract) {
-          research.description = ddgData.Abstract;
-          if (ddgData.AbstractURL) research.wikiUrl = ddgData.AbstractURL;
-        } else if (ddgData.RelatedTopics && ddgData.RelatedTopics.length > 0) {
-          research.description = ddgData.RelatedTopics[0].Text || '';
-        }
-      }
-    } catch(e) {}
-  }
-
-  // Step 4: Build HQ from geo data
-  if (research.city || research.state || research.country) {
-    const parts = [research.city, research.state, research.country].filter(Boolean);
-    research.hq = parts.join(', ');
-  }
-
-  // Step 5: If still no description, generate a heuristic summary
-  if (!research.description) {
-    let desc = companyName;
-    if (research.industry) desc += ' is a ' + research.industry.toLowerCase() + ' company';
-    else desc += ' is a company';
-    if (research.hq) desc += ' based in ' + research.hq;
-    desc += ' (' + domain + ').';
-    if (research.employees) desc += ' Estimated ' + research.employees + ' employees.';
-    if (research.type && research.type !== 'Company') desc += ' Organization type: ' + research.type + '.';
+    let desc = companyName + ' (' + domain + ')';
+    if (enrichData.industry) desc += ' — ' + enrichData.industry;
+    if (research.state) desc += ', based in ' + research.state;
+    desc += '.';
     research.description = desc;
   }
 
@@ -1115,17 +1117,11 @@ function buildResearchCardHTML(research, domain, loading) {
   } else if (research) {
     html += '<div class="ai-research-desc">' + esc(research.description) + '</div>';
     html += '<div class="ai-research-grid">';
-    if (research.hq) html += '<div class="ai-research-item"><span class="r-label">Headquarters</span><span class="r-value">' + esc(research.hq) + '</span></div>';
-    if (research.industry) html += '<div class="ai-research-item"><span class="r-label">Industry</span><span class="r-value">' + esc(research.industry) + '</span></div>';
     if (research.employees) html += '<div class="ai-research-item"><span class="r-label">Employees (est.)</span><span class="r-value">' + esc(research.employees) + '</span></div>';
-    if (research.type) html += '<div class="ai-research-item"><span class="r-label">Type</span><span class="r-value">' + esc(research.type) + '</span></div>';
-    if (research.country) html += '<div class="ai-research-item"><span class="r-label">Country</span><span class="r-value">' + esc(research.country) + '</span></div>';
-    if (research.state) html += '<div class="ai-research-item"><span class="r-label">State / Region</span><span class="r-value">' + esc(research.state) + '</span></div>';
+    if (research.state) html += '<div class="ai-research-item"><span class="r-label">State</span><span class="r-value">' + esc(research.state) + '</span></div>';
     html += '<div class="ai-research-item"><span class="r-label">Website</span><span class="r-value"><a href="https://' + esc(research.domain) + '" target="_blank" style="color:var(--accent);text-decoration:none">' + esc(research.domain) + '</a></span></div>';
     html += '</div>';
-    if (research.wikiUrl) {
-      html += '<div class="ai-research-source">Source: <a href="' + esc(research.wikiUrl) + '" target="_blank">Wikipedia</a></div>';
-    }
+    html += '<div class="ai-research-source">Source: <a href="https://' + esc(domain) + '" target="_blank">' + esc(domain) + '</a></div>';
   }
 
   html += '</div></div>';
