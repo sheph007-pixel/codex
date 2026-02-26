@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RelateFlow — AI-Driven CRM</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#181a20;--surface2:#1e2028;--border:#2a2d37;
+  --text:#e4e5e9;--text2:#9ca0ab;--accent:#6c5ce7;--accent2:#a29bfe;
+  --green:#00cec9;--green-bg:rgba(0,206,201,.12);
+  --red:#ff7675;--red-bg:rgba(255,118,117,.12);
+  --orange:#fdcb6e;--orange-bg:rgba(253,203,110,.12);
+  --blue:#74b9ff;--blue-bg:rgba(116,185,255,.12);
+}
+html{font-family:'Inter',system-ui,sans-serif;font-size:14px;background:var(--bg);color:var(--text)}
+body{min-height:100vh;overflow-x:hidden}
+
+/* ── TOP NAV ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.topbar .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:-.3px}
+.topbar .logo svg{width:28px;height:28px}
+.topbar-actions{display:flex;align-items:center;gap:12px}
+.btn{padding:7px 16px;border-radius:8px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:.15s;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:#7c6df0}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text)}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-icon{width:34px;height:34px;padding:0;display:grid;place-items:center;border-radius:8px;background:transparent;border:1px solid var(--border);color:var(--text2);cursor:pointer;transition:.15s}
+.btn-icon:hover{background:var(--surface2);color:var(--text)}
+
+/* ── LAYOUT ── */
+.layout{display:flex;height:calc(100vh - 56px)}
+.sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);padding:16px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.sidebar-section{margin-top:16px;margin-bottom:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text2);padding:0 12px}
+.sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:var(--text2);cursor:pointer;transition:.15s;font-size:13px;font-weight:500}
+.sidebar-item:hover,.sidebar-item.active{background:var(--surface2);color:var(--text)}
+.sidebar-item.active{color:var(--accent2)}
+.sidebar-item svg{width:18px;height:18px;flex-shrink:0}
+.sidebar-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
+.main{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+
+/* ── STATS ROW ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px}
+.stat-card .stat-label{font-size:12px;color:var(--text2);font-weight:500}
+.stat-card .stat-value{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.stat-card .stat-change{font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px}
+.stat-up{color:var(--green)}.stat-down{color:var(--red)}
+
+/* ── TOOLBAR ── */
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.toolbar-left{display:flex;align-items:center;gap:10px}
+.toolbar-right{display:flex;align-items:center;gap:10px}
+.search-box{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 14px;width:260px;transition:.15s}
+.search-box:focus-within{border-color:var(--accent)}
+.search-box input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%;font-family:inherit}
+.search-box svg{width:16px;height:16px;color:var(--text2);flex-shrink:0}
+.view-toggle{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.view-toggle button{padding:6px 14px;background:none;border:none;color:var(--text2);cursor:pointer;font-size:12px;font-weight:500;transition:.15s;font-family:inherit}
+.view-toggle button.active{background:var(--accent);color:#fff}
+
+/* ── TABLE ── */
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;flex:1}
+table{width:100%;border-collapse:collapse}
+thead{position:sticky;top:0;z-index:2}
+th{background:var(--surface2);text-align:left;padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none;transition:.15s}
+th:hover{color:var(--text)}
+th .sort-icon{display:inline-block;margin-left:4px;opacity:.4;font-size:10px}
+th.sorted .sort-icon{opacity:1;color:var(--accent2)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(108,92,231,.04)}
+tr.selected td{background:rgba(108,92,231,.08)}
+
+.company-cell{display:flex;align-items:center;gap:10px}
+.company-logo{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.company-info{display:flex;flex-direction:column}
+.company-name{font-weight:600;color:var(--text)}
+.company-domain{font-size:11px;color:var(--text2)}
+
+.contact-cell{display:flex;align-items:center;gap:8px}
+.avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0}
+.contact-name{font-weight:500}
+
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge-hot{background:var(--red-bg);color:var(--red)}
+.badge-warm{background:var(--orange-bg);color:var(--orange)}
+.badge-new{background:var(--green-bg);color:var(--green)}
+.badge-cold{background:var(--blue-bg);color:var(--blue)}
+
+.email-bar{display:flex;align-items:center;gap:6px;font-size:12px}
+.email-bar .sent{color:var(--accent2)}
+.email-bar .recv{color:var(--green)}
+.bar-track{width:80px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;display:flex}
+.bar-sent{background:var(--accent);height:100%;border-radius:3px 0 0 3px}
+.bar-recv{background:var(--green);height:100%;border-radius:0 3px 3px 0}
+
+.trend-spark{display:flex;align-items:end;gap:2px;height:24px}
+.trend-spark .bar{width:4px;border-radius:2px;background:var(--accent);opacity:.6;transition:.15s}
+.trend-spark .bar:last-child{opacity:1}
+
+.ai-score{display:flex;align-items:center;gap:6px}
+.score-ring{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:11px;position:relative}
+.score-ring svg{position:absolute;inset:0;transform:rotate(-90deg)}
+.score-ring circle{fill:none;stroke-width:3}
+.score-ring .track{stroke:var(--surface2)}
+.score-ring .fill{stroke-linecap:round;transition:.5s}
+
+/* ── DETAIL PANEL ── */
+.detail-panel{position:fixed;right:-420px;top:56px;width:420px;height:calc(100vh - 56px);background:var(--surface);border-left:1px solid var(--border);z-index:90;transition:right .3s ease;overflow-y:auto;padding:24px}
+.detail-panel.open{right:0}
+.detail-header{display:flex;align-items:start;justify-content:space-between;margin-bottom:20px}
+.detail-company{display:flex;align-items:center;gap:12px}
+.detail-company .company-logo{width:44px;height:44px;font-size:17px;border-radius:10px}
+.detail-title{font-size:18px;font-weight:700}
+.detail-domain{font-size:13px;color:var(--text2)}
+.detail-section{margin-top:20px}
+.detail-section h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:10px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.detail-stat{background:var(--surface2);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:4px}
+.detail-stat .label{font-size:11px;color:var(--text2)}
+.detail-stat .value{font-size:18px;font-weight:700}
+
+.ai-insight{background:linear-gradient(135deg,rgba(108,92,231,.1),rgba(162,155,254,.08));border:1px solid rgba(108,92,231,.2);border-radius:10px;padding:14px;margin-top:10px;display:flex;gap:10px}
+.ai-insight svg{width:20px;height:20px;color:var(--accent2);flex-shrink:0;margin-top:2px}
+.ai-insight p{font-size:13px;line-height:1.5;color:var(--text)}
+.ai-insight .label{font-size:11px;font-weight:600;color:var(--accent2);margin-bottom:4px}
+
+.timeline{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+.timeline-item{display:flex;gap:10px;font-size:12px}
+.timeline-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:4px;flex-shrink:0}
+.timeline-content{display:flex;flex-direction:column;gap:2px}
+.timeline-content .time{color:var(--text2);font-size:11px}
+
+/* ── SCAN MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
+.modal-overlay.active{display:grid}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:480px;max-width:90vw;text-align:center}
+.modal h2{font-size:20px;font-weight:700;margin-bottom:8px}
+.modal p{color:var(--text2);font-size:13px;margin-bottom:24px;line-height:1.5}
+.scan-progress{display:flex;flex-direction:column;align-items:center;gap:16px;margin:20px 0}
+.scan-ring{width:80px;height:80px;border-radius:50%;border:4px solid var(--border);border-top-color:var(--accent);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.scan-status{font-size:13px;color:var(--text2)}
+.scan-results{text-align:left;background:var(--surface2);border-radius:10px;padding:16px;margin-top:16px;display:none;flex-direction:column;gap:8px}
+.scan-results.show{display:flex}
+.scan-result-item{display:flex;align-items:center;gap:8px;font-size:13px}
+.scan-result-item svg{color:var(--green);width:16px;height:16px}
+
+/* ── AI CHAT MINI ── */
+.ai-chat-fab{position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a29bfe);border:none;cursor:pointer;display:grid;place-items:center;z-index:80;box-shadow:0 4px 20px rgba(108,92,231,.4);transition:.2s}
+.ai-chat-fab:hover{transform:scale(1.08)}
+.ai-chat-fab svg{width:24px;height:24px;color:#fff}
+.ai-chat{position:fixed;bottom:90px;right:24px;width:360px;background:var(--surface);border:1px solid var(--border);border-radius:16px;z-index:80;display:none;flex-direction:column;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.4)}
+.ai-chat.open{display:flex}
+.ai-chat-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px}
+.ai-chat-header .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+.ai-chat-messages{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;max-height:300px;overflow-y:auto}
+.ai-msg{max-width:85%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5}
+.ai-msg.bot{background:var(--surface2);align-self:flex-start;border-bottom-left-radius:4px}
+.ai-msg.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.ai-chat-input{display:flex;border-top:1px solid var(--border);padding:10px}
+.ai-chat-input input{flex:1;background:var(--surface2);border:none;border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.ai-chat-input button{background:none;border:none;cursor:pointer;padding:0 10px;color:var(--accent2)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .sidebar{display:none}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .detail-panel{width:100%}
+}
+@media(max-width:600px){
+  .stats{grid-template-columns:1fr}
+  .search-box{width:100%}
+  .toolbar{flex-direction:column;align-items:stretch}
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header class="topbar">
+  <div class="logo">
+    <svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="7" fill="#6c5ce7"/><path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    RelateFlow
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-ghost btn-sm" onclick="openScanModal()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+      Scan Outlook
+    </button>
+    <button class="btn btn-primary btn-sm" onclick="addCompany()">+ Add Company</button>
+    <button class="btn-icon" title="Settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.32 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Pipeline
+      <span class="sidebar-badge" id="companyCount">12</span>
+    </div>
+    <div class="sidebar-item" onclick="filterByStatus('all')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      All Companies
+    </div>
+    <div class="sidebar-section">Segments</div>
+    <div class="sidebar-item" onclick="filterByStatus('Hot')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Hot Leads
+    </div>
+    <div class="sidebar-item" onclick="filterByStatus('Warm')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      Warm Leads
+    </div>
+    <div class="sidebar-item" onclick="filterByStatus('New')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New
+    </div>
+    <div class="sidebar-item" onclick="filterByStatus('Cold')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>
+      Cold
+    </div>
+    <div class="sidebar-section">AI Actions</div>
+    <div class="sidebar-item" onclick="runAIEnrich()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      AI Enrich All
+    </div>
+    <div class="sidebar-item" onclick="openScanModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Sync Emails
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main">
+    <!-- STATS -->
+    <div class="stats">
+      <div class="stat-card">
+        <span class="stat-label">Total Companies</span>
+        <span class="stat-value" id="statCompanies">12</span>
+        <span class="stat-change stat-up">&#9650; 3 this week</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Emails Sent</span>
+        <span class="stat-value" id="statSent">847</span>
+        <span class="stat-change stat-up">&#9650; 12%</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Emails Received</span>
+        <span class="stat-value" id="statRecv">1,204</span>
+        <span class="stat-change stat-up">&#9650; 8%</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">AI Confidence Avg</span>
+        <span class="stat-value" id="statAI">82%</span>
+        <span class="stat-change stat-up">&#9650; 5pts</span>
+      </div>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="searchInput" placeholder="Search companies, contacts..." oninput="filterTable()">
+        </div>
+        <div class="view-toggle">
+          <button class="active" onclick="setView(this,'table')">Table</button>
+          <button onclick="setView(this,'board')">Board</button>
+        </div>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn btn-ghost btn-sm" onclick="sortTable('lastActivity')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          Sort: Recent
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="exportCSV()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export
+        </button>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortTable('company')">Company <span class="sort-icon">&#9650;</span></th>
+            <th onclick="sortTable('contact')">Primary Contact <span class="sort-icon">&#9650;</span></th>
+            <th onclick="sortTable('sent')">Sent <span class="sort-icon">&#9650;</span></th>
+            <th onclick="sortTable('received')">Received <span class="sort-icon">&#9650;</span></th>
+            <th>Email Ratio</th>
+            <th onclick="sortTable('status')">Status <span class="sort-icon">&#9650;</span></th>
+            <th>7d Trend</th>
+            <th onclick="sortTable('score')">AI Score <span class="sort-icon">&#9650;</span></th>
+            <th onclick="sortTable('lastActivity')">Last Activity <span class="sort-icon">&#9650;</span></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- DETAIL PANEL -->
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <div class="detail-company">
+      <div class="company-logo" id="detailLogo">A</div>
+      <div>
+        <div class="detail-title" id="detailTitle">Acme Corp</div>
+        <div class="detail-domain" id="detailDomain">acme.com</div>
+      </div>
+    </div>
+    <button class="btn-icon" onclick="closeDetail()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
+  <div class="detail-section">
+    <h3>Email Activity</h3>
+    <div class="detail-grid">
+      <div class="detail-stat"><span class="label">Emails Sent</span><span class="value" id="detailSent">42</span></div>
+      <div class="detail-stat"><span class="label">Emails Received</span><span class="value" id="detailRecv">67</span></div>
+      <div class="detail-stat"><span class="label">Response Rate</span><span class="value" id="detailRate">78%</span></div>
+      <div class="detail-stat"><span class="label">Avg Response</span><span class="value" id="detailAvg">2.4h</span></div>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <h3>AI Insight</h3>
+    <div class="ai-insight">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      <div>
+        <div class="label">AI Analysis</div>
+        <p id="detailInsight">High engagement pattern detected. Email frequency increased 40% this month. Recommend scheduling a call this week.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <h3>Recent Activity</h3>
+    <div class="timeline" id="detailTimeline"></div>
+  </div>
+</div>
+
+<!-- SCAN MODAL -->
+<div class="modal-overlay" id="scanModal">
+  <div class="modal">
+    <h2>Scan Outlook Emails</h2>
+    <p>Connect to your Outlook inbox to automatically discover companies and contacts from your email history.</p>
+    <div class="scan-progress" id="scanProgress" style="display:none">
+      <div class="scan-ring"></div>
+      <div class="scan-status" id="scanStatus">Connecting to Outlook...</div>
+    </div>
+    <div class="scan-results" id="scanResults">
+      <div class="scan-result-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span id="scanEmails">2,847 emails scanned</span></div>
+      <div class="scan-result-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span id="scanCompanies">5 new companies discovered</span></div>
+      <div class="scan-result-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span id="scanContacts">8 new contacts identified</span></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeScanModal()">Cancel</button>
+      <button class="btn btn-primary" id="scanBtn" onclick="startScan()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Start Scan
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- AI CHAT FAB -->
+<button class="ai-chat-fab" onclick="toggleAIChat()">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+</button>
+<div class="ai-chat" id="aiChat">
+  <div class="ai-chat-header"><span class="dot"></span> RelateFlow AI</div>
+  <div class="ai-chat-messages" id="aiMessages">
+    <div class="ai-msg bot">Hi! I'm your CRM assistant. Ask me anything about your pipeline — "Who should I follow up with?" or "Show me cold leads."</div>
+  </div>
+  <div class="ai-chat-input">
+    <input type="text" id="aiInput" placeholder="Ask AI..." onkeydown="if(event.key==='Enter')sendAI()">
+    <button onclick="sendAI()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+  </div>
+</div>
+
+<script>
+// ── DATA ──
+const COLORS = ['#6c5ce7','#00cec9','#e17055','#0984e3','#fdcb6e','#e84393','#00b894','#d63031','#6c5ce7','#fd79a8','#74b9ff','#a29bfe'];
+const STATUSES = ['Hot','Warm','New','Cold'];
+const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',New:'badge-new',Cold:'badge-cold'};
+
+const INSIGHTS = [
+  "High engagement pattern. Email volume up 40% this month. Recommend scheduling a call.",
+  "Response time improving — down to 1.2h avg. Strong buying signals detected.",
+  "Communication slowing. Last email 5 days ago. Consider a check-in.",
+  "New contact discovered. Multiple decision-makers now engaged. Opportunity expanding.",
+  "Consistent weekly cadence. Relationship is stable. Good time for an upsell.",
+  "Re-engaged after 2 weeks of silence. Follow up within 24h for best results.",
+  "Email sentiment trending positive. 3 recent replies mention budget approval.",
+  "Low engagement risk. Only 2 emails in 30 days. AI suggests a personalized outreach.",
+  "Champion identified — this contact forwards your emails to leadership.",
+  "Deal velocity accelerating. 3x more emails than last month.",
+  "Multiple threads active. Consider consolidating into a single conversation.",
+  "This contact has the fastest response time in your pipeline (avg 18 min)."
+];
+
+let companies = [
+  {id:1,name:"Stripe",domain:"stripe.com",contact:"Patrick Collison",contactEmail:"patrick@stripe.com",sent:142,received:198,status:"Hot",score:94,lastActivity:"2h ago",trend:[3,5,4,7,6,8,9]},
+  {id:2,name:"Notion",domain:"notion.so",contact:"Ivan Zhao",contactEmail:"ivan@notion.so",sent:89,received:134,status:"Hot",score:88,lastActivity:"4h ago",trend:[4,3,5,4,6,5,7]},
+  {id:3,name:"Figma",domain:"figma.com",contact:"Dylan Field",contactEmail:"dylan@figma.com",sent:76,received:95,status:"Warm",score:79,lastActivity:"1d ago",trend:[2,4,3,5,4,3,5]},
+  {id:4,name:"Linear",domain:"linear.app",contact:"Karri Saarinen",contactEmail:"karri@linear.app",sent:64,received:87,status:"Warm",score:75,lastActivity:"1d ago",trend:[3,2,4,3,5,4,4]},
+  {id:5,name:"Vercel",domain:"vercel.com",contact:"Guillermo Rauch",contactEmail:"guillermo@vercel.com",sent:53,received:72,status:"Warm",score:71,lastActivity:"2d ago",trend:[2,3,2,4,3,3,4]},
+  {id:6,name:"Airtable",domain:"airtable.com",contact:"Howie Liu",contactEmail:"howie@airtable.com",sent:45,received:61,status:"New",score:65,lastActivity:"3d ago",trend:[1,2,3,2,3,4,3]},
+  {id:7,name:"Retool",domain:"retool.com",contact:"David Hsu",contactEmail:"david@retool.com",sent:38,received:52,status:"New",score:60,lastActivity:"3d ago",trend:[2,1,2,3,2,3,3]},
+  {id:8,name:"Plaid",domain:"plaid.com",contact:"Zach Perret",contactEmail:"zach@plaid.com",sent:31,received:44,status:"New",score:55,lastActivity:"5d ago",trend:[1,2,1,2,3,2,2]},
+  {id:9,name:"Loom",domain:"loom.com",contact:"Joe Thomas",contactEmail:"joe@loom.com",sent:24,received:38,status:"Cold",score:42,lastActivity:"1w ago",trend:[2,1,1,2,1,1,2]},
+  {id:10,name:"Miro",domain:"miro.com",contact:"Andrey Khusid",contactEmail:"andrey@miro.com",sent:18,received:27,status:"Cold",score:35,lastActivity:"1w ago",trend:[1,1,2,1,1,2,1]},
+  {id:11,name:"Webflow",domain:"webflow.com",contact:"Vlad Magdalin",contactEmail:"vlad@webflow.com",sent:12,received:19,status:"Cold",score:28,lastActivity:"2w ago",trend:[1,0,1,1,0,1,1]},
+  {id:12,name:"Supabase",domain:"supabase.com",contact:"Paul Copplestone",contactEmail:"paul@supabase.com",sent:8,received:11,status:"Cold",score:22,lastActivity:"2w ago",trend:[0,1,0,1,0,1,0]},
+];
+
+let currentSort = {key:'score',asc:false};
+let currentFilter = 'all';
+let nextId = 13;
+
+// ── RENDER ──
+function renderTable() {
+  let data = [...companies];
+  if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  if (q) data = data.filter(c => c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q));
+
+  const {key, asc} = currentSort;
+  data.sort((a,b) => {
+    let va = a[key], vb = b[key];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return asc ? -1 : 1;
+    if (va > vb) return asc ? 1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = data.map(c => {
+    const color = COLORS[c.id % COLORS.length];
+    const total = c.sent + c.received;
+    const sentPct = total ? (c.sent / total * 100) : 50;
+    const recvPct = 100 - sentPct;
+    const maxTrend = Math.max(...c.trend, 1);
+    const trendBars = c.trend.map(v => `<div class="bar" style="height:${Math.max((v/maxTrend)*24,2)}px;background:${c.score>70?'var(--green)':'var(--accent)'}"></div>`).join('');
+    const circumference = 2 * Math.PI * 12;
+    const offset = circumference - (c.score / 100) * circumference;
+    const scoreColor = c.score >= 80 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
+
+    return `<tr onclick="openDetail(${c.id})" style="cursor:pointer">
+      <td><div class="company-cell"><div class="company-logo" style="background:${color}">${c.name[0]}</div><div class="company-info"><span class="company-name">${c.name}</span><span class="company-domain">${c.domain}</span></div></div></td>
+      <td><div class="contact-cell"><div class="avatar" style="background:${color}">${c.contact.split(' ').map(n=>n[0]).join('')}</div><span class="contact-name">${c.contact}</span></div></td>
+      <td><span class="sent" style="color:var(--accent2)">${c.sent}</span></td>
+      <td><span class="recv" style="color:var(--green)">${c.received}</span></td>
+      <td><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:${sentPct}%"></div><div class="bar-recv" style="width:${recvPct}%"></div></div></div></td>
+      <td><span class="badge ${STATUS_CLASS[c.status]}">${c.status}</span></td>
+      <td><div class="trend-spark">${trendBars}</div></td>
+      <td><div class="ai-score"><div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div></div></td>
+      <td style="color:var(--text2)">${c.lastActivity}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('companyCount').textContent = companies.length;
+  document.getElementById('statCompanies').textContent = companies.length;
+  const totalSent = companies.reduce((s,c) => s + c.sent, 0);
+  const totalRecv = companies.reduce((s,c) => s + c.received, 0);
+  document.getElementById('statSent').textContent = totalSent.toLocaleString();
+  document.getElementById('statRecv').textContent = totalRecv.toLocaleString();
+  const avgScore = Math.round(companies.reduce((s,c) => s + c.score, 0) / companies.length);
+  document.getElementById('statAI').textContent = avgScore + '%';
+}
+
+function sortTable(key) {
+  if (currentSort.key === key) currentSort.asc = !currentSort.asc;
+  else { currentSort.key = key; currentSort.asc = key === 'company' || key === 'contact'; }
+  renderTable();
+}
+
+function filterTable() { renderTable(); }
+
+function filterByStatus(status) {
+  currentFilter = status;
+  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  renderTable();
+}
+
+function setView(btn, view) {
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ── DETAIL PANEL ──
+function openDetail(id) {
+  const c = companies.find(x => x.id === id);
+  if (!c) return;
+  const color = COLORS[c.id % COLORS.length];
+  document.getElementById('detailLogo').style.background = color;
+  document.getElementById('detailLogo').textContent = c.name[0];
+  document.getElementById('detailTitle').textContent = c.name;
+  document.getElementById('detailDomain').textContent = c.domain;
+  document.getElementById('detailSent').textContent = c.sent;
+  document.getElementById('detailRecv').textContent = c.received;
+  const rate = c.received ? Math.round(c.sent / c.received * 100) : 0;
+  document.getElementById('detailRate').textContent = rate + '%';
+  document.getElementById('detailAvg').textContent = (Math.random() * 4 + 0.5).toFixed(1) + 'h';
+  document.getElementById('detailInsight').textContent = INSIGHTS[c.id % INSIGHTS.length];
+
+  const activities = [
+    {text: `Email sent to ${c.contact}`, time: c.lastActivity},
+    {text: `Reply received from ${c.contact}`, time: '1d ago'},
+    {text: `AI enriched ${c.name} profile`, time: '2d ago'},
+    {text: `New thread started: "Q1 Planning"`, time: '3d ago'},
+    {text: `${c.contact} opened proposal`, time: '5d ago'},
+  ];
+  document.getElementById('detailTimeline').innerHTML = activities.map(a =>
+    `<div class="timeline-item"><div class="timeline-dot"></div><div class="timeline-content"><span>${a.text}</span><span class="time">${a.time}</span></div></div>`
+  ).join('');
+
+  document.getElementById('detailPanel').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detailPanel').classList.remove('open');
+}
+
+// ── SCAN MODAL ──
+function openScanModal() {
+  document.getElementById('scanModal').classList.add('active');
+  document.getElementById('scanProgress').style.display = 'none';
+  document.getElementById('scanResults').classList.remove('show');
+  document.getElementById('scanBtn').style.display = '';
+}
+
+function closeScanModal() {
+  document.getElementById('scanModal').classList.remove('active');
+}
+
+function startScan() {
+  document.getElementById('scanBtn').style.display = 'none';
+  document.getElementById('scanProgress').style.display = 'flex';
+  const statuses = ['Connecting to Outlook...', 'Authenticating...', 'Scanning inbox...', 'Analyzing 2,847 emails...', 'Extracting contacts...', 'Building company profiles...', 'Running AI enrichment...'];
+  let i = 0;
+  const iv = setInterval(() => {
+    i++;
+    if (i < statuses.length) {
+      document.getElementById('scanStatus').textContent = statuses[i];
+    } else {
+      clearInterval(iv);
+      document.getElementById('scanProgress').style.display = 'none';
+      document.getElementById('scanResults').classList.add('show');
+      // Add new companies from scan
+      const newOnes = [
+        {name:"Datadog",domain:"datadoghq.com",contact:"Olivier Pomel",contactEmail:"olivier@datadoghq.com",sent:15,received:22,status:"New",score:58},
+        {name:"Amplitude",domain:"amplitude.com",contact:"Spenser Skates",contactEmail:"spenser@amplitude.com",sent:9,received:14,status:"New",score:45},
+      ];
+      newOnes.forEach(n => {
+        if (!companies.find(c => c.domain === n.domain)) {
+          n.id = nextId++;
+          n.lastActivity = 'just now';
+          n.trend = [0,0,1,0,1,1,2];
+          companies.push(n);
+        }
+      });
+      document.getElementById('scanEmails').textContent = '2,847 emails scanned';
+      document.getElementById('scanCompanies').textContent = newOnes.length + ' new companies discovered';
+      document.getElementById('scanContacts').textContent = (newOnes.length + 3) + ' new contacts identified';
+      renderTable();
+    }
+  }, 600);
+}
+
+// ── ADD COMPANY ──
+function addCompany() {
+  const name = prompt('Company name:');
+  if (!name) return;
+  const domain = prompt('Domain (e.g. company.com):') || name.toLowerCase().replace(/\s/g,'') + '.com';
+  const contact = prompt('Primary contact name:') || 'Unknown';
+  companies.push({
+    id: nextId++,
+    name,
+    domain,
+    contact,
+    contactEmail: contact.split(' ')[0].toLowerCase() + '@' + domain,
+    sent: 0,
+    received: 0,
+    status: 'New',
+    score: Math.floor(Math.random() * 30 + 20),
+    lastActivity: 'just now',
+    trend: [0,0,0,0,0,0,1]
+  });
+  renderTable();
+}
+
+// ── AI ENRICH ──
+function runAIEnrich() {
+  companies.forEach(c => {
+    c.score = Math.min(99, c.score + Math.floor(Math.random() * 8 + 1));
+    if (c.score >= 80) c.status = 'Hot';
+    else if (c.score >= 60) c.status = 'Warm';
+  });
+  renderTable();
+  alert('AI enrichment complete! Scores updated across all companies.');
+}
+
+// ── EXPORT CSV ──
+function exportCSV() {
+  const header = 'Company,Domain,Contact,Email,Sent,Received,Status,AI Score,Last Activity\n';
+  const rows = companies.map(c => `"${c.name}","${c.domain}","${c.contact}","${c.contactEmail}",${c.sent},${c.received},"${c.status}",${c.score},"${c.lastActivity}"`).join('\n');
+  const blob = new Blob([header + rows], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'relateflow-export.csv';
+  a.click();
+}
+
+// ── AI CHAT ──
+function toggleAIChat() {
+  document.getElementById('aiChat').classList.toggle('open');
+}
+
+function sendAI() {
+  const input = document.getElementById('aiInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  const msgs = document.getElementById('aiMessages');
+  msgs.innerHTML += `<div class="ai-msg user">${escapeHtml(msg)}</div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+  setTimeout(() => {
+    const reply = generateAIReply(msg);
+    msgs.innerHTML += `<div class="ai-msg bot">${reply}</div>`;
+    msgs.scrollTop = msgs.scrollHeight;
+  }, 600);
+}
+
+function generateAIReply(msg) {
+  const lower = msg.toLowerCase();
+  if (lower.includes('follow up') || lower.includes('followup')) {
+    const cold = companies.filter(c => c.status === 'Cold' || c.status === 'Warm').slice(0,3);
+    return `I'd recommend following up with:<br>${cold.map(c => `<b>${c.contact}</b> at ${c.name} (last: ${c.lastActivity})`).join('<br>')}`;
+  }
+  if (lower.includes('hot') || lower.includes('best')) {
+    const hot = companies.filter(c => c.status === 'Hot');
+    return `Your hottest leads right now:<br>${hot.map(c => `<b>${c.name}</b> — AI Score: ${c.score}, ${c.sent+c.received} emails exchanged`).join('<br>')}`;
+  }
+  if (lower.includes('cold') || lower.includes('risk')) {
+    const cold = companies.filter(c => c.status === 'Cold');
+    return `${cold.length} companies at risk of going cold:<br>${cold.map(c => `<b>${c.name}</b> — last activity ${c.lastActivity}, score ${c.score}`).join('<br>')}`;
+  }
+  if (lower.includes('stat') || lower.includes('summary') || lower.includes('overview')) {
+    const ts = companies.reduce((s,c) => s+c.sent, 0);
+    const tr = companies.reduce((s,c) => s+c.received, 0);
+    return `Pipeline summary:<br><b>${companies.length}</b> companies tracked<br><b>${ts}</b> emails sent / <b>${tr}</b> received<br><b>${companies.filter(c=>c.status==='Hot').length}</b> hot leads<br>Avg AI Score: <b>${Math.round(companies.reduce((s,c)=>s+c.score,0)/companies.length)}</b>`;
+  }
+  if (lower.includes('sent') || lower.includes('email')) {
+    const top = [...companies].sort((a,b) => b.sent - a.sent).slice(0,3);
+    return `Top by emails sent:<br>${top.map(c => `<b>${c.name}</b> — ${c.sent} sent, ${c.received} received`).join('<br>')}`;
+  }
+  return `Based on your pipeline, I see ${companies.length} active companies with ${companies.filter(c=>c.status==='Hot').length} hot leads. Try asking:<br>• "Who should I follow up with?"<br>• "Show me hot leads"<br>• "Give me a summary"`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ── INIT ──
+renderTable();
+</script>
+</body>
+</html>
