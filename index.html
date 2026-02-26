@@ -750,8 +750,9 @@ function getVisibleColumns() {
 // AI ENRICHMENT (Clearbit + heuristics)
 // ──────────────────────────────────────────────
 async function enrichDomain(domain) {
-  if (enrichmentCache[domain]) return enrichmentCache[domain];
-  const result = {};
+  // Re-enrich if state is missing (old cache before geo enrichment)
+  if (enrichmentCache[domain] && enrichmentCache[domain].state) return enrichmentCache[domain];
+  const result = enrichmentCache[domain] || {};
   try {
     // Use Clearbit Company API (free autocomplete endpoint)
     const query = domain.split('.')[0];
@@ -804,8 +805,27 @@ async function enrichDomain(domain) {
   else if (tld === 'org') result.type = 'Non-Profit';
   else result.type = 'Company';
 
-  // State (US) — best effort from well-known domains
-  // For most, we set to blank and let user override
+  // State & City — resolve domain IP then geolocate (free APIs, no keys)
+  try {
+    // Step 1: DNS resolve via Google DNS-over-HTTPS
+    const dnsResp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(domain) + '&type=A');
+    if (dnsResp.ok) {
+      const dnsData = await dnsResp.json();
+      const aRecord = dnsData.Answer && dnsData.Answer.find(a => a.type === 1);
+      if (aRecord && aRecord.data) {
+        // Step 2: Geolocate the IP via ipwho.is (free, HTTPS, no key)
+        const geoResp = await fetch('https://ipwho.is/' + aRecord.data);
+        if (geoResp.ok) {
+          const geo = await geoResp.json();
+          if (geo.success !== false) {
+            if (geo.region) result.state = geo.region;
+            if (geo.city) result.city = geo.city;
+            if (geo.country && !result.country) result.country = geo.country;
+          }
+        }
+      }
+    }
+  } catch(e3) {}
 
   enrichmentCache[domain] = result;
   return result;
@@ -817,7 +837,7 @@ async function runEnrichment() {
   const aiCols = columnConfig.filter(c => c.type === 'ai' && c.visible);
   if (aiCols.length === 0) { enrichmentRunning = false; return; }
 
-  const domains = companies.map(c => c.domain).filter(d => !enrichmentCache[d]);
+  const domains = companies.map(c => c.domain).filter(d => !enrichmentCache[d] || !enrichmentCache[d].state);
   if (domains.length === 0) { enrichmentRunning = false; return; }
 
   // Process in batches of 5
