@@ -99,6 +99,19 @@ th:hover{color:var(--text)}
 td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(108,92,231,.04)}
+tr.row-selected td{background:rgba(108,92,231,.08)}
+
+/* ── CHECKBOX ── */
+th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14px}
+.row-checkbox{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+
+/* ── BULK ACTIONS BAR ── */
+.bulk-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 20px;display:none;align-items:center;gap:16px;z-index:95;box-shadow:0 8px 32px rgba(0,0,0,.4);backdrop-filter:blur(8px)}
+.bulk-bar.active{display:flex}
+.bulk-bar .bulk-count{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap}
+.bulk-bar .bulk-sep{width:1px;height:24px;background:var(--border)}
+.bulk-bar .btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,118,117,.2)}
+.bulk-bar .btn-danger:hover{background:rgba(255,118,117,.2)}
 
 .company-cell{display:flex;align-items:center;gap:10px}
 .company-logo{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
@@ -269,6 +282,12 @@ tr:hover td{background:rgba(108,92,231,.04)}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Sync Emails
     </div>
+    <div class="sidebar-section">Manage</div>
+    <div class="sidebar-item" id="blockedViewItem" onclick="showBlockedView()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      Blocked
+      <span class="sidebar-badge" id="blockedCount" style="background:var(--red)">0</span>
+    </div>
   </aside>
 
   <!-- MAIN CONTENT -->
@@ -360,6 +379,7 @@ tr:hover td{background:rgba(108,92,231,.04)}
         <table>
           <thead>
             <tr>
+              <th class="col-check"><input type="checkbox" class="row-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th>
               <th onclick="sortTable('company')">Company</th>
               <th onclick="sortTable('contact')">Primary Contact</th>
               <th onclick="sortTable('sent')">Sent</th>
@@ -375,6 +395,17 @@ tr:hover td{background:rgba(108,92,231,.04)}
       </div>
     </div>
   </main>
+</div>
+
+<!-- BULK ACTIONS BAR -->
+<div class="bulk-bar" id="bulkBar">
+  <span class="bulk-count" id="bulkCount">0 selected</span>
+  <div class="bulk-sep"></div>
+  <button class="btn btn-sm btn-danger" onclick="bulkBlockSelected()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+    Block from System
+  </button>
+  <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Cancel</button>
 </div>
 
 <!-- DETAIL PANEL -->
@@ -500,6 +531,7 @@ let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
 let blockedDomains = new Set();
+let selectedIds = new Set();
 
 // ──────────────────────────────────────────────
 // BLOCKED DOMAINS PERSISTENCE (localStorage)
@@ -1015,6 +1047,7 @@ async function onSignedIn() {
     updateStats();
     updateLastSyncDisplay();
   }
+  updateBlockedCount();
 
   // Background sync: incremental if we have cached data, full if first time
   scanOutlookEmails();
@@ -1052,7 +1085,8 @@ function renderTable() {
 
   const tbody = document.getElementById('tableBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
+    updateBulkBar();
     return;
   }
 
@@ -1065,19 +1099,33 @@ function renderTable() {
     const offset = circumference - (c.score / 100) * circumference;
     const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
     const initials = c.contact.split(' ').map(n => n[0]).join('').substring(0,2);
+    const checked = selectedIds.has(c.id) ? 'checked' : '';
+    const rowClass = selectedIds.has(c.id) ? ' row-selected' : '';
 
-    return `<tr onclick="openDetail(${c.id})" style="cursor:pointer">
-      <td><div class="company-cell"><div class="company-logo" style="background:${color}">${c.name[0].toUpperCase()}</div><div class="company-info"><span class="company-name">${esc(c.name)}</span><span class="company-domain">${esc(c.domain)}</span></div></div></td>
-      <td><div class="contact-cell"><div class="avatar" style="background:${color}">${esc(initials)}</div><span class="contact-name">${esc(c.contact)}</span></div></td>
-      <td><span style="color:var(--accent2);font-weight:600">${c.sent}</span></td>
-      <td><span style="color:var(--green);font-weight:600">${c.received}</span></td>
-      <td><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:${sentPct}%"></div><div class="bar-recv" style="width:${recvPct}%"></div></div></div></td>
-      <td><span class="badge ${STATUS_CLASS[c.status]}">${c.status}</span></td>
-      <td><div class="ai-score"><div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div></div></td>
-      <td style="color:var(--text2)">${esc(c.lastActivity)}</td>
+    return `<tr class="${rowClass}" style="cursor:pointer">
+      <td class="col-check" onclick="event.stopPropagation()"><input type="checkbox" class="row-checkbox" ${checked} onchange="toggleRowSelect(${c.id}, this.checked)"></td>
+      <td onclick="openDetail(${c.id})"><div class="company-cell"><div class="company-logo" style="background:${color}">${c.name[0].toUpperCase()}</div><div class="company-info"><span class="company-name">${esc(c.name)}</span><span class="company-domain">${esc(c.domain)}</span></div></div></td>
+      <td onclick="openDetail(${c.id})"><div class="contact-cell"><div class="avatar" style="background:${color}">${esc(initials)}</div><span class="contact-name">${esc(c.contact)}</span></div></td>
+      <td onclick="openDetail(${c.id})"><span style="color:var(--accent2);font-weight:600">${c.sent}</span></td>
+      <td onclick="openDetail(${c.id})"><span style="color:var(--green);font-weight:600">${c.received}</span></td>
+      <td onclick="openDetail(${c.id})"><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:${sentPct}%"></div><div class="bar-recv" style="width:${recvPct}%"></div></div></div></td>
+      <td onclick="openDetail(${c.id})"><span class="badge ${STATUS_CLASS[c.status]}">${c.status}</span></td>
+      <td onclick="openDetail(${c.id})"><div class="ai-score"><div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div></div></td>
+      <td onclick="openDetail(${c.id})" style="color:var(--text2)">${esc(c.lastActivity)}</td>
     </tr>`;
   }).join('');
 
+  // Sync select-all checkbox
+  const selectAll = document.getElementById('selectAllCheckbox');
+  if (selectAll) {
+    const visibleIds = data.map(c => c.id);
+    const allChecked = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+    const someChecked = visibleIds.some(id => selectedIds.has(id));
+    selectAll.checked = allChecked;
+    selectAll.indeterminate = someChecked && !allChecked;
+  }
+
+  updateBulkBar();
   document.getElementById('companyCount').textContent = companies.length;
 }
 
@@ -1098,7 +1146,124 @@ function filterByStatus(status, el) {
   currentFilter = status;
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
+  clearSelection();
   renderTable();
+}
+
+// ──────────────────────────────────────────────
+// SELECTION & BULK ACTIONS
+// ──────────────────────────────────────────────
+function toggleRowSelect(id, checked) {
+  if (checked) selectedIds.add(id);
+  else selectedIds.delete(id);
+  renderTable();
+}
+
+function toggleSelectAll(checked) {
+  // Get currently visible/filtered companies
+  let data = [...companies];
+  if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
+  const q = (document.getElementById('searchInput').value || '').toLowerCase();
+  if (q) data = data.filter(c => c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q));
+
+  if (checked) {
+    data.forEach(c => selectedIds.add(c.id));
+  } else {
+    data.forEach(c => selectedIds.delete(c.id));
+  }
+  renderTable();
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  const selectAll = document.getElementById('selectAllCheckbox');
+  if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  if (selectedIds.size > 0) {
+    bar.classList.add('active');
+    document.getElementById('bulkCount').textContent = selectedIds.size + ' selected';
+  } else {
+    bar.classList.remove('active');
+  }
+}
+
+function bulkBlockSelected() {
+  const domains = [];
+  for (const id of selectedIds) {
+    const c = companies.find(x => x.id === id);
+    if (c) domains.push(c.domain);
+  }
+  if (domains.length === 0) return;
+  const msg = domains.length === 1
+    ? 'Block "' + domains[0] + '" from your system?'
+    : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.join(', ');
+  if (!confirm(msg)) return;
+
+  for (const d of domains) {
+    blockedDomains.add(d.toLowerCase());
+  }
+  saveBlockedDomains();
+  selectedIds.clear();
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  updateBlockedCount();
+}
+
+// ──────────────────────────────────────────────
+// BLOCKED DOMAINS VIEW
+// ──────────────────────────────────────────────
+function updateBlockedCount() {
+  const badge = document.getElementById('blockedCount');
+  if (badge) badge.textContent = blockedDomains.size;
+}
+
+function showBlockedView() {
+  // Switch sidebar active
+  document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
+  document.getElementById('blockedViewItem').classList.add('active');
+
+  // Render blocked domains as a table in the main table body
+  const tbody = document.getElementById('tableBody');
+  const sorted = [...blockedDomains].sort();
+
+  if (sorted.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No blocked domains. Domains you block will appear here.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(domain => {
+    // Check if domain still has data in domainMap
+    const data = domainMap[domain];
+    const totalSent = data ? data.totalSent : 0;
+    const totalRecv = data ? data.totalReceived : 0;
+    const contactCount = data ? Object.keys(data.contacts).length : 0;
+
+    return `<tr>
+      <td class="col-check"></td>
+      <td><div class="company-cell"><div class="company-logo" style="background:var(--red);opacity:.6">${domain[0].toUpperCase()}</div><div class="company-info"><span class="company-name" style="text-decoration:line-through;opacity:.6">${esc(domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1))}</span><span class="company-domain">${esc(domain)}</span></div></div></td>
+      <td colspan="5" style="color:var(--text2);font-size:12px">${totalSent} sent, ${totalRecv} received, ${contactCount} contact${contactCount !== 1 ? 's' : ''}</td>
+      <td colspan="2" style="text-align:right">
+        <button class="btn btn-ghost btn-sm" onclick="unblockDomain('${domain}')" style="font-size:11px;color:var(--green);border-color:var(--green)">Unblock</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Clear select-all since blocked view doesn't use checkboxes
+  clearSelection();
+}
+
+function unblockDomain(domain) {
+  blockedDomains.delete(domain);
+  saveBlockedDomains();
+  buildCompaniesFromDomainMap();
+  updateStats();
+  updateBlockedCount();
+  showBlockedView(); // Re-render the blocked view
 }
 
 // ──────────────────────────────────────────────
@@ -1211,6 +1376,7 @@ function addBlockedDomains(raw) {
     buildCompaniesFromDomainMap();
     renderTable();
     updateStats();
+    updateBlockedCount();
     renderBlockedDomainsList();
   }
 }
@@ -1222,6 +1388,7 @@ function removeBlockedDomain(domain) {
   buildCompaniesFromDomainMap();
   renderTable();
   updateStats();
+  updateBlockedCount();
   renderBlockedDomainsList();
 }
 
@@ -1231,6 +1398,7 @@ function blockDomainFromDetail(domain) {
   buildCompaniesFromDomainMap();
   renderTable();
   updateStats();
+  updateBlockedCount();
   closeDetail();
 }
 
