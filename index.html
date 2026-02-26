@@ -2062,20 +2062,26 @@ function buildCompaniesFromDomainMap() {
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
 
-    // Derive counts from Sets — guaranteed accurate, duplicate-proof
-    const domainSent = data.sentIds.size;
-    const domainReceived = data.receivedIds.size;
+    // Per-contact counts from individual Sets
     for (const ct of contactArr) { ct.sent = ct.sentIds.size; ct.received = ct.receivedIds.size; }
 
+    // Unique email counts (Set-based, for scoring — CC'd emails count once)
+    const uniqueSent = data.sentIds.size;
+    const uniqueReceived = data.receivedIds.size;
+
+    // Display counts = sum of contacts (matches what user sees in contact cards)
+    const domainSent = contactArr.reduce(function(s, ct) { return s + ct.sent; }, 0);
+    const domainReceived = contactArr.reduce(function(s, ct) { return s + ct.received; }, 0);
+
     // SELECTIVE: only create company if user has sent at least 1 email to this domain
-    if (domainSent === 0) continue;
+    if (uniqueSent === 0) continue;
 
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
     const primary = getPrimaryContact(domain, contactArr);
-    const totalEmails = domainSent + domainReceived;
+    const totalEmails = uniqueSent + uniqueReceived;
 
     // ── AI SEGMENT SCORING ──
-    // Combines email volume, recency, two-way engagement, and frequency
+    // Uses unique email counts so CC'd emails don't inflate scores
     const now = Date.now();
     const DAY = 86400000;
     const lastAny = data.lastDate ? data.lastDate.getTime() : 0;
@@ -2084,19 +2090,19 @@ function buildCompaniesFromDomainMap() {
     const daysSinceAny = lastAny ? (now - lastAny) / DAY : 9999;
     const daysSinceSent = lastSent ? (now - lastSent) / DAY : 9999;
     const daysSinceRecv = lastRecv ? (now - lastRecv) / DAY : 9999;
-    const hasTwoWay = domainSent > 0 && domainReceived > 0;
+    const hasTwoWay = uniqueSent > 0 && uniqueReceived > 0;
 
     let score = Math.min(99, Math.round(
       // Volume (up to 35 pts)
       Math.min(totalEmails * 1.2, 35) +
       // Two-way engagement (up to 20 pts)
-      (hasTwoWay ? 12 + Math.min(Math.min(domainSent, domainReceived) * 2, 8) : 0) +
+      (hasTwoWay ? 12 + Math.min(Math.min(uniqueSent, uniqueReceived) * 2, 8) : 0) +
       // Recency (up to 25 pts)
       (daysSinceAny < 7 ? 25 : daysSinceAny < 30 ? 18 : daysSinceAny < 90 ? 10 : daysSinceAny < 180 ? 5 : 0) +
       // Contact diversity (up to 10 pts)
       Math.min(contactArr.length * 3, 10) +
       // Reply ratio bonus (up to 9 pts) — strong back-and-forth signals real engagement
-      (hasTwoWay ? Math.min(Math.round(Math.min(domainReceived / domainSent, 1) * 9), 9) : 0)
+      (hasTwoWay ? Math.min(Math.round(Math.min(uniqueReceived / uniqueSent, 1) * 9), 9) : 0)
     ));
 
     // ── AI STATUS DETERMINATION ──
