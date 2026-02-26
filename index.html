@@ -2174,29 +2174,40 @@ async function resolveCompanyNames() {
 // PROGRESSIVE EMAIL FETCH + PROCESS + RENDER
 // (Data populates in the table as emails are scanned)
 // ──────────────────────────────────────────────
+let deltaSupported = true; // assume delta works until proven otherwise
+
 async function fetchEmailsProgressively(token, useDelta) {
   const headers = graphHeaders(token);
-  const DELTA_SELECT = '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime';
+  const MSG_SELECT = '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime';
 
-  // Delta sync: use saved deltaLink for incremental, or start fresh
+  // Decide URL: delta sync or fallback timestamp polling
   let url;
-  if (useDelta && deltaLink) {
-    // Incremental: resume from where we left off — only changes since last sync
+  let isDelta = false;
+
+  if (deltaSupported && useDelta && deltaLink) {
+    // Incremental delta: resume from where we left off
     url = deltaLink;
+    isDelta = true;
+  } else if (deltaSupported && !useDelta) {
+    // Try initial delta scan
+    url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + MSG_SELECT;
+    deltaLink = null;
+    isDelta = true;
   } else {
-    // Initial full delta scan — fetches all messages then gives us a deltaLink
-    url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + DELTA_SELECT;
-    deltaLink = null; // clear stale link
+    // Fallback: timestamp-based polling (delta not supported by this mailbox)
+    url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&' + MSG_SELECT + '&$orderby=receivedDateTime desc';
+    if (useDelta && lastScanTime) {
+      url += '&$filter=receivedDateTime ge ' + lastScanTime.toISOString();
+    }
   }
 
   let page = 0;
   let totalFetched = 0;
   let totalRemoved = 0;
-  const isIncremental = useDelta && !!deltaLink;
 
   while (url) {
     page++;
-    updateScanBanner('Scanning' + (isIncremental ? ' changes' : ' all mail') + '... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
+    updateScanBanner('Scanning' + (useDelta ? ' changes' : ' all mail') + '... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
 
     // Fetch with 30s timeout to prevent hanging forever
     const controller = new AbortController();
@@ -2212,12 +2223,30 @@ async function fetchEmailsProgressively(token, useDelta) {
     clearTimeout(timeout);
 
     if (!resp.ok) {
-      // If delta token expired/invalid (410 Gone or 404), reset and do full sync
-      if ((resp.status === 410 || resp.status === 404) && useDelta) {
+      // Delta token expired/invalid (410 Gone or 404) — reset to full delta scan
+      if (isDelta && (resp.status === 410 || resp.status === 404) && useDelta) {
         console.warn('Delta token expired (' + resp.status + '), resetting to full sync');
         deltaLink = null;
-        url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + DELTA_SELECT;
+        url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + MSG_SELECT;
         continue;
+      }
+      // Delta not supported (400 "Change tracking not supported") — fall back to timestamp polling
+      if (isDelta && resp.status === 400) {
+        const errText = await resp.text();
+        if (errText.includes('Change tracking') || errText.includes('not supported') || errText.includes('delta')) {
+          console.warn('Delta sync not supported by this mailbox, falling back to timestamp polling');
+          deltaSupported = false;
+          deltaLink = null;
+          // Restart with standard messages endpoint
+          url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&' + MSG_SELECT + '&$orderby=receivedDateTime desc';
+          if (useDelta && lastScanTime) {
+            url += '&$filter=receivedDateTime ge ' + lastScanTime.toISOString();
+          }
+          isDelta = false;
+          page = 0;
+          continue;
+        }
+        throw new Error('Graph API error: 400 — ' + errText);
       }
       const err = await resp.text();
       throw new Error('Graph API error: ' + resp.status + ' — ' + err);
@@ -2225,15 +2254,19 @@ async function fetchEmailsProgressively(token, useDelta) {
     const data = await resp.json();
 
     if (data.value && data.value.length > 0) {
-      // Separate removed items from regular messages
+      // Delta responses may include @removed items
       const regular = [];
-      for (const item of data.value) {
-        if (item['@removed']) {
-          processRemovedEmail(item.id);
-          totalRemoved++;
-        } else {
-          regular.push(item);
+      if (isDelta) {
+        for (const item of data.value) {
+          if (item['@removed']) {
+            processRemovedEmail(item.id);
+            totalRemoved++;
+          } else {
+            regular.push(item);
+          }
         }
+      } else {
+        regular.push(...data.value);
       }
 
       if (regular.length > 0) {
@@ -2254,14 +2287,17 @@ async function fetchEmailsProgressively(token, useDelta) {
         lastScanTime = new Date();
         persistData();
       }
+    } else if (!isDelta) {
+      // Non-delta: empty page means we're done (no nextLink expected)
+      break;
     }
 
-    // Delta queries use @odata.nextLink for pagination, @odata.deltaLink on final page
+    // Delta: @odata.nextLink for pagination, @odata.deltaLink on final page
+    // Standard: @odata.nextLink for pagination, null when done
     if (data['@odata.nextLink']) {
       url = data['@odata.nextLink'];
     } else {
-      // Final page — save the deltaLink for next incremental sync
-      if (data['@odata.deltaLink']) {
+      if (isDelta && data['@odata.deltaLink']) {
         deltaLink = data['@odata.deltaLink'];
       }
       url = null;
@@ -2314,8 +2350,8 @@ async function scanOutlookEmails(forceFullScan) {
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
     } else {
-      showScanBanner('Delta sync — checking for changes...');
-      totalFetched = await fetchEmailsProgressively(token, true); // incremental delta
+      showScanBanner('Syncing — checking for new emails...');
+      totalFetched = await fetchEmailsProgressively(token, true); // incremental (delta or timestamp fallback)
       if (totalFetched > 0) {
         updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails — ' + companies.length + ' companies');
       } else {
