@@ -130,9 +130,8 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .contact-name{font-weight:500}
 
 .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
-.badge-hot{background:var(--red-bg);color:var(--red)}
+.badge-hot{background:var(--green-bg);color:var(--green)}
 .badge-warm{background:var(--orange-bg);color:var(--orange)}
-.badge-new{background:var(--green-bg);color:var(--green)}
 .badge-cold{background:var(--blue-bg);color:var(--blue)}
 
 .email-bar{display:flex;align-items:center;gap:6px;font-size:12px}
@@ -389,18 +388,17 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     <div class="sidebar-item" onclick="filterByStatus('Hot',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       Hot Leads
+      <span class="sidebar-badge" id="hotCount" style="background:var(--green)">0</span>
     </div>
     <div class="sidebar-item" onclick="filterByStatus('Warm',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
       Warm Leads
-    </div>
-    <div class="sidebar-item" onclick="filterByStatus('New',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      New
+      <span class="sidebar-badge" id="warmCount" style="background:var(--orange)">0</span>
     </div>
     <div class="sidebar-item" onclick="filterByStatus('Cold',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/></svg>
-      Cold
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 17.58A5 5 0 0018 8h-1.26A8 8 0 104 16.25"/><path d="M8 16h.01M8 20h.01M12 18h.01M12 22h.01M16 16h.01M16 20h.01"/></svg>
+      Cold Leads
+      <span class="sidebar-badge" id="coldCount" style="background:var(--blue)">0</span>
     </div>
     <div class="sidebar-section">Actions</div>
     <div class="sidebar-item" onclick="scanOutlookEmails()">
@@ -644,7 +642,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 // CONFIG & STATE
 // ──────────────────────────────────────────────
 const COLORS = ['#1a73e8','#1e8e3e','#e8710a','#d93025','#9334e6','#e37400','#0d652d','#185abc','#a142f4','#c5221f','#137333','#1967d2'];
-const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',New:'badge-new',Cold:'badge-cold'};
+const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',Cold:'badge-cold'};
 const SKIP_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','aol.com','icloud.com','me.com','mac.com','msn.com','googlemail.com','protonmail.com','proton.me','ymail.com','mail.com']);
 
 let companies = [];
@@ -1177,7 +1175,7 @@ async function persistData() {
     const metaStore = tx.objectStore('meta');
     domainStore.clear();
     for (const [domain, data] of Object.entries(domainMap)) {
-      const rec = { domain, contacts: {}, totalSent: data.totalSent, totalReceived: data.totalReceived, lastDate: data.lastDate ? data.lastDate.toISOString() : null };
+      const rec = { domain, contacts: {}, totalSent: data.totalSent, totalReceived: data.totalReceived, lastDate: data.lastDate ? data.lastDate.toISOString() : null, lastSentDate: data.lastSentDate ? data.lastSentDate.toISOString() : null, lastReceivedDate: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null };
       for (const [email, c] of Object.entries(data.contacts)) {
         rec.contacts[email] = { ...c, lastDate: c.lastDate ? c.lastDate.toISOString() : null };
       }
@@ -1208,7 +1206,7 @@ async function loadPersistedData() {
     for (const d of domains) {
       const key = d.domain.toLowerCase();
       if (!map[key]) {
-        map[key] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null };
+        map[key] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null, lastSentDate: null, lastReceivedDate: null };
       }
       const entry = map[key];
       entry.totalSent += d.totalSent;
@@ -1216,6 +1214,14 @@ async function loadPersistedData() {
       if (d.lastDate) {
         const dt = new Date(d.lastDate);
         if (!entry.lastDate || dt > entry.lastDate) entry.lastDate = dt;
+      }
+      if (d.lastSentDate) {
+        const sd = new Date(d.lastSentDate);
+        if (!entry.lastSentDate || sd > entry.lastSentDate) entry.lastSentDate = sd;
+      }
+      if (d.lastReceivedDate) {
+        const rd = new Date(d.lastReceivedDate);
+        if (!entry.lastReceivedDate || rd > entry.lastReceivedDate) entry.lastReceivedDate = rd;
       }
       for (const [email, c] of Object.entries(d.contacts)) {
         const le = email.toLowerCase();
@@ -1389,7 +1395,7 @@ function getDomain(email) {
 
 function ensureDomain(domain) {
   if (!domainMap[domain]) {
-    domainMap[domain] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null };
+    domainMap[domain] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null, lastSentDate: null, lastReceivedDate: null };
   }
 }
 
@@ -1412,6 +1418,12 @@ function updateDate(obj, dateStr) {
   if (!dateStr) return;
   const d = new Date(dateStr);
   if (!obj.lastDate || d > obj.lastDate) obj.lastDate = d;
+}
+
+function updateDateField(obj, field, dateStr) {
+  if (!dateStr) return;
+  const d = new Date(dateStr);
+  if (!obj[field] || d > obj[field]) obj[field] = d;
 }
 
 // ──────────────────────────────────────────────
@@ -1438,8 +1450,10 @@ function processEmailBatch(messages) {
         const le = toEmail.toLowerCase();
         domainMap[domain].contacts[le].sent++;
         domainMap[domain].totalSent++;
-        updateDate(domainMap[domain], msg.sentDateTime || msg.receivedDateTime);
-        updateDate(domainMap[domain].contacts[le], msg.sentDateTime || msg.receivedDateTime);
+        const sentDt = msg.sentDateTime || msg.receivedDateTime;
+        updateDate(domainMap[domain], sentDt);
+        updateDate(domainMap[domain].contacts[le], sentDt);
+        updateDateField(domainMap[domain], 'lastSentDate', sentDt);
       }
     } else {
       // RECEIVED email — track the sender
@@ -1454,6 +1468,7 @@ function processEmailBatch(messages) {
       domainMap[domain].totalReceived++;
       updateDate(domainMap[domain], msg.receivedDateTime);
       updateDate(domainMap[domain].contacts[le], msg.receivedDateTime);
+      updateDateField(domainMap[domain], 'lastReceivedDate', msg.receivedDateTime);
     }
   }
 }
@@ -1477,6 +1492,8 @@ function buildCompaniesFromDomainMap() {
         domainMap[lk].totalSent += domainMap[k].totalSent;
         domainMap[lk].totalReceived += domainMap[k].totalReceived;
         if (domainMap[k].lastDate && (!domainMap[lk].lastDate || domainMap[k].lastDate > domainMap[lk].lastDate)) domainMap[lk].lastDate = domainMap[k].lastDate;
+        if (domainMap[k].lastSentDate && (!domainMap[lk].lastSentDate || domainMap[k].lastSentDate > domainMap[lk].lastSentDate)) domainMap[lk].lastSentDate = domainMap[k].lastSentDate;
+        if (domainMap[k].lastReceivedDate && (!domainMap[lk].lastReceivedDate || domainMap[k].lastReceivedDate > domainMap[lk].lastReceivedDate)) domainMap[lk].lastReceivedDate = domainMap[k].lastReceivedDate;
         for (const [e, c] of Object.entries(domainMap[k].contacts)) {
           const le = e.toLowerCase();
           if (!domainMap[lk].contacts[le]) domainMap[lk].contacts[le] = c;
@@ -1503,17 +1520,44 @@ function buildCompaniesFromDomainMap() {
     const primary = getPrimaryContact(domain, contactArr);
     const totalEmails = data.totalSent + data.totalReceived;
 
+    // ── AI SEGMENT SCORING ──
+    // Combines email volume, recency, two-way engagement, and frequency
+    const now = Date.now();
+    const DAY = 86400000;
+    const lastAny = data.lastDate ? data.lastDate.getTime() : 0;
+    const lastSent = data.lastSentDate ? data.lastSentDate.getTime() : 0;
+    const lastRecv = data.lastReceivedDate ? data.lastReceivedDate.getTime() : 0;
+    const daysSinceAny = lastAny ? (now - lastAny) / DAY : 9999;
+    const daysSinceSent = lastSent ? (now - lastSent) / DAY : 9999;
+    const daysSinceRecv = lastRecv ? (now - lastRecv) / DAY : 9999;
+    const hasTwoWay = data.totalSent > 0 && data.totalReceived > 0;
+
     let score = Math.min(99, Math.round(
-      Math.min(totalEmails * 1.5, 50) +
-      Math.min(contactArr.length * 5, 20) +
-      (data.totalSent > 0 && data.totalReceived > 0 ? 15 : 0) +
-      (data.lastDate && (Date.now() - data.lastDate.getTime()) < 7 * 86400000 ? 14 : 0)
+      // Volume (up to 35 pts)
+      Math.min(totalEmails * 1.2, 35) +
+      // Two-way engagement (up to 20 pts)
+      (hasTwoWay ? 12 + Math.min(Math.min(data.totalSent, data.totalReceived) * 2, 8) : 0) +
+      // Recency (up to 25 pts)
+      (daysSinceAny < 7 ? 25 : daysSinceAny < 30 ? 18 : daysSinceAny < 90 ? 10 : daysSinceAny < 180 ? 5 : 0) +
+      // Contact diversity (up to 10 pts)
+      Math.min(contactArr.length * 3, 10) +
+      // Reply ratio bonus (up to 9 pts) — strong back-and-forth signals real engagement
+      (hasTwoWay ? Math.min(Math.round(Math.min(data.totalReceived / data.totalSent, 1) * 9), 9) : 0)
     ));
 
+    // ── AI STATUS DETERMINATION ──
+    // Hot: Active two-way conversation, recent activity (last 30 days)
+    // Warm: Two-way activity in last 90-180 days, some engagement
+    // Cold: No inbound in 365+ days, or outbound-only with no replies
     let status = 'Cold';
-    if (score >= 75) status = 'Hot';
-    else if (score >= 50) status = 'Warm';
-    else if (score >= 30) status = 'New';
+    if (hasTwoWay && daysSinceRecv <= 30 && daysSinceAny <= 30) {
+      // Two-way interaction with received email in last 30 days = Hot
+      status = 'Hot';
+    } else if (hasTwoWay && daysSinceRecv <= 180) {
+      // Two-way interaction with received email in last 180 days = Warm
+      status = 'Warm';
+    }
+    // Everything else stays Cold: outbound-only, no replies, or stale > 180 days
 
     // Use cached company name or smart fallback (async lookup happens separately)
     const companyName = companyNameCache[domain]
@@ -1975,6 +2019,13 @@ function updateStats() {
   document.getElementById('statSent').textContent = companies.reduce((s,c) => s + c.sent, 0).toLocaleString();
   document.getElementById('statRecv').textContent = companies.reduce((s,c) => s + c.received, 0).toLocaleString();
   document.getElementById('statContacts').textContent = companies.reduce((s,c) => s + (c.allContacts?.length || 1), 0).toLocaleString();
+  // Update segment counts in sidebar
+  const hot = companies.filter(c => c.status === 'Hot').length;
+  const warm = companies.filter(c => c.status === 'Warm').length;
+  const cold = companies.filter(c => c.status === 'Cold').length;
+  document.getElementById('hotCount').textContent = hot;
+  document.getElementById('warmCount').textContent = warm;
+  document.getElementById('coldCount').textContent = cold;
 }
 
 function sortTable(key) {
@@ -2693,7 +2744,7 @@ function generateAIReply(msg) {
   if (lower.includes('summary') || lower.includes('overview') || lower.includes('stats')) {
     const ts = companies.reduce((s,c) => s+c.sent, 0);
     const tr = companies.reduce((s,c) => s+c.received, 0);
-    return `Pipeline: <b>${companies.length}</b> companies, <b>${ts}</b> sent / <b>${tr}</b> received.<br>Hot: ${companies.filter(c=>c.status==='Hot').length} | Warm: ${companies.filter(c=>c.status==='Warm').length} | New: ${companies.filter(c=>c.status==='New').length} | Cold: ${companies.filter(c=>c.status==='Cold').length}`;
+    return `Pipeline: <b>${companies.length}</b> companies, <b>${ts}</b> sent / <b>${tr}</b> received.<br>Hot: ${companies.filter(c=>c.status==='Hot').length} | Warm: ${companies.filter(c=>c.status==='Warm').length} | Cold: ${companies.filter(c=>c.status==='Cold').length}`;
   }
   // Try to find a company match
   const match = companies.find(c => lower.includes(c.name.toLowerCase()) || lower.includes(c.domain.toLowerCase()));
