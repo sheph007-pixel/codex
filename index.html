@@ -153,6 +153,32 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .show-more-row td{text-align:center;padding:12px;cursor:pointer;color:var(--accent);font-weight:600;font-size:13px}
 .show-more-row:hover td{background:rgba(26,115,232,.04)}
 
+/* ── COLUMN MANAGEMENT ── */
+.col-mgr-wrap{position:relative;display:inline-block}
+.col-mgr-drop{position:absolute;top:100%;right:0;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 4px 24px rgba(60,64,67,.15);width:300px;max-height:460px;overflow-y:auto;z-index:120;display:none;padding:12px 0}
+.col-mgr-drop.open{display:block}
+.col-mgr-section{padding:4px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-top:8px}
+.col-mgr-section:first-child{margin-top:0}
+.col-mgr-item{display:flex;align-items:center;gap:10px;padding:7px 16px;font-size:13px;cursor:pointer;transition:.1s}
+.col-mgr-item:hover{background:var(--surface2)}
+.col-mgr-item input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+.col-mgr-item .col-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-mgr-item .col-remove{color:var(--red);font-size:16px;line-height:1;cursor:pointer;opacity:0;transition:.15s;padding:0 2px}
+.col-mgr-item:hover .col-remove{opacity:1}
+.col-mgr-add{display:flex;align-items:center;gap:6px;padding:8px 16px;font-size:12px;color:var(--accent);font-weight:600;cursor:pointer;transition:.1s;border:none;background:none;width:100%;font-family:inherit}
+.col-mgr-add:hover{background:var(--surface2)}
+.col-mgr-add svg{width:14px;height:14px}
+.col-mgr-presets{padding:4px 16px;display:flex;flex-wrap:wrap;gap:6px}
+.col-preset-chip{padding:4px 10px;border-radius:16px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:.15s}
+.col-preset-chip:hover{border-color:var(--accent);color:var(--accent)}
+.col-rename-input{background:var(--surface2);border:1px solid var(--accent);border-radius:4px;padding:2px 6px;font-size:11px;font-family:inherit;color:var(--text);outline:none;width:100%}
+td.custom-cell{cursor:text;position:relative;min-width:80px}
+td.custom-cell:hover{background:rgba(26,115,232,.04)}
+td.custom-cell .cell-val{display:inline-block;min-height:16px;min-width:40px}
+td.custom-cell .cell-val:empty::after{content:'—';color:var(--text2)}
+td.custom-cell .cell-val.enriching{color:var(--text2);font-style:italic}
+td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--accent);border-radius:4px;padding:2px 6px;font-size:13px;font-family:inherit;color:var(--text);outline:none;width:90%}
+
 /* ── DETAIL PANEL (full-page overlay) ── */
 .detail-panel{position:fixed;inset:0;z-index:150;display:none;background:rgba(0,0,0,.2);backdrop-filter:blur(2px);place-items:center}
 .detail-panel.open{display:grid}
@@ -458,25 +484,20 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
         </div>
         <div class="toolbar-right">
           <button class="btn btn-ghost btn-sm" onclick="sortTable('sent')">Sort: Most Emails</button>
+          <div class="col-mgr-wrap">
+            <button class="btn btn-ghost btn-sm" onclick="toggleColumnManager()" id="colMgrBtn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              Columns
+            </button>
+            <div class="col-mgr-drop" id="colMgrDrop"></div>
+          </div>
         </div>
       </div>
 
       <!-- TABLE -->
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th class="col-check"><input type="checkbox" class="row-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th>
-              <th onclick="sortTable('company')">Company</th>
-              <th onclick="sortTable('contact')">Primary Contact</th>
-              <th onclick="sortTable('sent')">Sent</th>
-              <th onclick="sortTable('received')">Received</th>
-              <th>Email Ratio</th>
-              <th onclick="sortTable('status')">Status</th>
-              <th onclick="sortTable('score')">AI Score</th>
-              <th onclick="sortTable('lastActivity')">Last Email</th>
-            </tr>
-          </thead>
+          <thead id="tableHead"></thead>
           <tbody id="tableBody"></tbody>
         </table>
       </div>
@@ -607,6 +628,307 @@ let currentCompanyOverlay = null;  // company object for open overlay
 let currentContactOverlay = null;  // { contact, company, domain }
 let currentContactTab = 'all';
 let contactTimelineCache = {};  // "email" -> [{type,subject,date,...}]
+
+// ──────────────────────────────────────────────
+// COLUMN CONFIGURATION (Attio-style)
+// ──────────────────────────────────────────────
+const BUILTIN_COLUMNS = [
+  { id:'company', label:'Company', sortKey:'company', removable:false },
+  { id:'contact', label:'Primary Contact', sortKey:'contact', removable:true },
+  { id:'sent', label:'Sent', sortKey:'sent', removable:true },
+  { id:'received', label:'Received', sortKey:'received', removable:true },
+  { id:'emailFlow', label:'Email Ratio', sortKey:null, removable:true },
+  { id:'status', label:'Status', sortKey:'status', removable:true },
+  { id:'score', label:'AI Score', sortKey:'score', removable:true },
+  { id:'lastActivity', label:'Last Email', sortKey:'lastActivity', removable:true },
+];
+
+const AI_COLUMN_PRESETS = [
+  { id:'ai_state', label:'State', enrich:'state' },
+  { id:'ai_employees', label:'Employees', enrich:'employees' },
+  { id:'ai_industry', label:'Industry', enrich:'industry' },
+  { id:'ai_city', label:'City', enrich:'city' },
+  { id:'ai_country', label:'Country', enrich:'country' },
+  { id:'ai_founded', label:'Founded', enrich:'founded' },
+  { id:'ai_type', label:'Type', enrich:'type' },
+];
+
+let columnConfig = [];   // [{ id, label, type:'builtin'|'custom'|'ai', visible, enrich? }]
+let customColumnData = {};  // { domain: { colId: value, ... } }
+let enrichmentCache = {};   // { domain: { state, employees, industry, ... } }
+let enrichmentRunning = false;
+
+function getDefaultColumns() {
+  return BUILTIN_COLUMNS.map(c => ({ id: c.id, label: c.label, type: 'builtin', visible: true }));
+}
+
+function loadColumnConfig() {
+  try {
+    const raw = localStorage.getItem('kennion_columns');
+    if (raw) { columnConfig = JSON.parse(raw); return; }
+  } catch(e) {}
+  columnConfig = getDefaultColumns();
+}
+
+function saveColumnConfig() {
+  localStorage.setItem('kennion_columns', JSON.stringify(columnConfig));
+}
+
+function loadCustomColumnData() {
+  try {
+    const raw = localStorage.getItem('kennion_custom_data');
+    if (raw) customColumnData = JSON.parse(raw);
+  } catch(e) {}
+}
+
+function saveCustomColumnData() {
+  localStorage.setItem('kennion_custom_data', JSON.stringify(customColumnData));
+}
+
+function loadEnrichmentCache() {
+  try {
+    const raw = localStorage.getItem('kennion_enrichment');
+    if (raw) enrichmentCache = JSON.parse(raw);
+  } catch(e) {}
+}
+
+function saveEnrichmentCache() {
+  localStorage.setItem('kennion_enrichment', JSON.stringify(enrichmentCache));
+}
+
+function getVisibleColumns() {
+  return columnConfig.filter(c => c.visible);
+}
+
+// ──────────────────────────────────────────────
+// AI ENRICHMENT (Clearbit + heuristics)
+// ──────────────────────────────────────────────
+async function enrichDomain(domain) {
+  if (enrichmentCache[domain]) return enrichmentCache[domain];
+  const result = {};
+  try {
+    // Use Clearbit Company API (free autocomplete endpoint)
+    const query = domain.split('.')[0];
+    const resp = await fetch('https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(query));
+    if (resp.ok) {
+      const results = await resp.json();
+      const match = results.find(r => r.domain === domain) || results.find(r => r.domain && r.domain.split('.')[0] === domain.split('.')[0]);
+      if (match) {
+        result._clearbit = match;
+      }
+    }
+  } catch(e) {}
+
+  // Heuristic enrichments
+  const tld = domain.split('.').pop().toLowerCase();
+  const sld = domain.split('.').slice(-2).join('.');
+  const contactCount = domainMap[domain] ? Object.keys(domainMap[domain].contacts).length : 0;
+
+  // Country from TLD
+  const TLD_COUNTRY = {uk:'United Kingdom',de:'Germany',fr:'France',jp:'Japan',au:'Australia',ca:'Canada',br:'Brazil',in:'India',nl:'Netherlands',es:'Spain',it:'Italy',ch:'Switzerland',se:'Sweden',no:'Norway',dk:'Denmark',fi:'Finland',ie:'Ireland',nz:'New Zealand',sg:'Singapore',kr:'South Korea',mx:'Mexico',za:'South Africa',at:'Austria',be:'Belgium',pt:'Portugal',pl:'Poland',cz:'Czech Republic',il:'Israel',ae:'UAE',hk:'Hong Kong',tw:'Taiwan'};
+  if (TLD_COUNTRY[tld]) {
+    result.country = TLD_COUNTRY[tld];
+  } else if (['com','org','net','io','co','ai','app','dev'].includes(tld)) {
+    result.country = 'United States';
+  }
+
+  // Employee range from contact count heuristic
+  if (contactCount >= 20) result.employees = '1,000+';
+  else if (contactCount >= 10) result.employees = '200–1,000';
+  else if (contactCount >= 5) result.employees = '50–200';
+  else if (contactCount >= 2) result.employees = '10–50';
+  else result.employees = '1–10';
+
+  // Industry from domain keywords
+  const name = domain.split('.')[0].toLowerCase();
+  const IND_KEYWORDS = {tech:'Technology',soft:'Technology',dev:'Technology',code:'Technology',data:'Technology',cloud:'Technology',ai:'Technology',cyber:'Technology',health:'Healthcare',med:'Healthcare',pharma:'Healthcare',bio:'Healthcare',care:'Healthcare',bank:'Finance',capital:'Finance',invest:'Finance',financ:'Finance',insur:'Insurance',pay:'Finance',law:'Legal',legal:'Legal',consult:'Consulting',market:'Marketing',media:'Media',design:'Design',edu:'Education',learn:'Education',school:'Education',build:'Construction',real:'Real Estate',estate:'Real Estate',energy:'Energy',oil:'Energy',food:'Food & Beverage',travel:'Travel',hotel:'Hospitality',retail:'Retail',shop:'Retail',auto:'Automotive',logistic:'Logistics',ship:'Logistics',freight:'Logistics'};
+  for (const [kw, ind] of Object.entries(IND_KEYWORDS)) {
+    if (name.includes(kw)) { result.industry = ind; break; }
+  }
+  if (!result.industry) {
+    if (tld === 'edu') result.industry = 'Education';
+    else if (tld === 'gov') result.industry = 'Government';
+    else if (tld === 'org') result.industry = 'Non-Profit';
+    else if (['io','dev','app','ai'].includes(tld)) result.industry = 'Technology';
+  }
+
+  // Type
+  if (tld === 'edu') result.type = 'Education';
+  else if (tld === 'gov') result.type = 'Government';
+  else if (tld === 'org') result.type = 'Non-Profit';
+  else result.type = 'Company';
+
+  // State (US) — best effort from well-known domains
+  // For most, we set to blank and let user override
+
+  enrichmentCache[domain] = result;
+  return result;
+}
+
+async function runEnrichment() {
+  if (enrichmentRunning) return;
+  enrichmentRunning = true;
+  const aiCols = columnConfig.filter(c => c.type === 'ai' && c.visible);
+  if (aiCols.length === 0) { enrichmentRunning = false; return; }
+
+  const domains = companies.map(c => c.domain).filter(d => !enrichmentCache[d]);
+  if (domains.length === 0) { enrichmentRunning = false; return; }
+
+  // Process in batches of 5
+  let changed = false;
+  for (let i = 0; i < domains.length; i += 5) {
+    const batch = domains.slice(i, i + 5);
+    await Promise.all(batch.map(d => enrichDomain(d)));
+    changed = true;
+    if (i % 15 === 0 && changed) { renderTable(); }
+  }
+  saveEnrichmentCache();
+  if (changed) renderTable();
+  enrichmentRunning = false;
+}
+
+function getEnrichedValue(domain, enrichKey) {
+  const data = enrichmentCache[domain];
+  if (!data) return '';
+  return data[enrichKey] || '';
+}
+
+function getCellValue(company, col) {
+  if (col.type === 'builtin') return null; // handled specially in renderTable
+  if (col.type === 'ai') {
+    // Check manual override first
+    if (customColumnData[company.domain] && customColumnData[company.domain][col.id] !== undefined) {
+      return customColumnData[company.domain][col.id];
+    }
+    const preset = AI_COLUMN_PRESETS.find(p => p.id === col.id);
+    return preset ? getEnrichedValue(company.domain, preset.enrich) : '';
+  }
+  if (col.type === 'custom') {
+    return (customColumnData[company.domain] && customColumnData[company.domain][col.id]) || '';
+  }
+  return '';
+}
+
+// ──────────────────────────────────────────────
+// COLUMN MANAGEMENT UI
+// ──────────────────────────────────────────────
+function toggleColumnManager() {
+  const drop = document.getElementById('colMgrDrop');
+  const isOpen = drop.classList.contains('open');
+  drop.classList.toggle('open');
+  if (!isOpen) renderColumnManager();
+}
+
+function renderColumnManager() {
+  const drop = document.getElementById('colMgrDrop');
+  let html = '<div class="col-mgr-section">Built-in Columns</div>';
+  for (const col of columnConfig) {
+    if (col.type === 'builtin') {
+      const meta = BUILTIN_COLUMNS.find(b => b.id === col.id);
+      const disabled = meta && !meta.removable ? ' disabled' : '';
+      html += '<div class="col-mgr-item">' +
+        '<input type="checkbox"' + (col.visible ? ' checked' : '') + disabled + ' onchange="toggleColumn(\'' + col.id + '\',this.checked)">' +
+        '<span class="col-label" ondblclick="startRenameColumn(\'' + col.id + '\',this)">' + esc(col.label) + '</span>' +
+      '</div>';
+    }
+  }
+
+  const customCols = columnConfig.filter(c => c.type === 'ai' || c.type === 'custom');
+  if (customCols.length > 0) {
+    html += '<div class="col-mgr-section">Custom Columns</div>';
+    for (const col of customCols) {
+      html += '<div class="col-mgr-item">' +
+        '<input type="checkbox"' + (col.visible ? ' checked' : '') + ' onchange="toggleColumn(\'' + col.id + '\',this.checked)">' +
+        '<span class="col-label" ondblclick="startRenameColumn(\'' + col.id + '\',this)">' + esc(col.label) + '</span>' +
+        '<span class="col-remove" onclick="removeColumn(\'' + col.id + '\')" title="Remove">&times;</span>' +
+      '</div>';
+    }
+  }
+
+  // AI preset chips
+  const usedIds = new Set(columnConfig.map(c => c.id));
+  const available = AI_COLUMN_PRESETS.filter(p => !usedIds.has(p.id));
+  if (available.length > 0) {
+    html += '<div class="col-mgr-section">Add AI Column</div>';
+    html += '<div class="col-mgr-presets">';
+    for (const p of available) {
+      html += '<span class="col-preset-chip" onclick="addAIColumn(\'' + p.id + '\')">' + esc(p.label) + '</span>';
+    }
+    html += '</div>';
+  }
+
+  // Add blank custom column
+  html += '<button class="col-mgr-add" onclick="addCustomColumn()">' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
+    'Add custom column</button>';
+
+  drop.innerHTML = html;
+}
+
+function toggleColumn(id, visible) {
+  const col = columnConfig.find(c => c.id === id);
+  if (col) { col.visible = visible; saveColumnConfig(); renderTableHeader(); renderTable(); }
+}
+
+function removeColumn(id) {
+  columnConfig = columnConfig.filter(c => c.id !== id);
+  // Clean up custom data for this column
+  for (const domain of Object.keys(customColumnData)) {
+    delete customColumnData[domain][id];
+  }
+  saveColumnConfig(); saveCustomColumnData();
+  renderColumnManager(); renderTableHeader(); renderTable();
+}
+
+function addAIColumn(presetId) {
+  const preset = AI_COLUMN_PRESETS.find(p => p.id === presetId);
+  if (!preset) return;
+  columnConfig.push({ id: preset.id, label: preset.label, type: 'ai', visible: true, enrich: preset.enrich });
+  saveColumnConfig(); renderColumnManager(); renderTableHeader(); renderTable();
+  // Start enrichment for this column
+  runEnrichment();
+}
+
+function addCustomColumn() {
+  const name = prompt('Column name:');
+  if (!name || !name.trim()) return;
+  const id = 'custom_' + Date.now();
+  columnConfig.push({ id: id, label: name.trim(), type: 'custom', visible: true });
+  saveColumnConfig(); renderColumnManager(); renderTableHeader(); renderTable();
+}
+
+function startRenameColumn(id, el) {
+  const col = columnConfig.find(c => c.id === id);
+  if (!col) return;
+  const oldLabel = col.label;
+  el.innerHTML = '<input class="col-rename-input" value="' + esc(oldLabel) + '">';
+  const input = el.querySelector('input');
+  input.focus();
+  input.select();
+  input.onblur = function() { finishRename(id, input.value, el); };
+  input.onkeydown = function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { el.textContent = oldLabel; }
+  };
+}
+
+function finishRename(id, newLabel, el) {
+  const col = columnConfig.find(c => c.id === id);
+  if (col && newLabel.trim()) {
+    col.label = newLabel.trim();
+    saveColumnConfig();
+    renderTableHeader();
+  }
+  el.textContent = col ? col.label : newLabel;
+}
+
+// Close column manager on outside click
+document.addEventListener('click', function(e) {
+  const drop = document.getElementById('colMgrDrop');
+  if (drop && drop.classList.contains('open') && !e.target.closest('.col-mgr-wrap')) {
+    drop.classList.remove('open');
+  }
+});
 
 // ──────────────────────────────────────────────
 // STARRED / PRIMARY CONTACTS PERSISTENCE
@@ -1319,8 +1641,9 @@ async function scanOutlookEmails(forceFullScan) {
     await persistData();
     updateLastSyncDisplay();
 
-    // Resolve real company names in background
+    // Resolve real company names and enrich custom columns in background
     resolveCompanyNames();
+    runEnrichment();
 
     // Keep banner visible briefly
     setTimeout(() => { hideScanBanner(); }, needsFullScan ? 4000 : 2000);
@@ -1432,10 +1755,12 @@ async function onSignedIn() {
     lastScanTime = cached.lastScanTime;
     fullScanDone = cached.fullScanDone || false;
     buildCompaniesFromDomainMap();
+    renderTableHeader();
     renderTable();
     updateStats();
     updateLastSyncDisplay();
     resolveCompanyNames();
+    runEnrichment();
   }
   updateBlockedCount();
 
@@ -1459,34 +1784,117 @@ function hideScanBanner() {
 }
 
 // ──────────────────────────────────────────────
-// TABLE RENDERING
+// TABLE RENDERING (dynamic columns)
 // ──────────────────────────────────────────────
 const TABLE_PAGE_SIZE = 100;
 let tableShowAll = false;
+
+function renderTableHeader() {
+  const cols = getVisibleColumns();
+  let html = '<tr><th class="col-check"><input type="checkbox" class="row-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th>';
+  for (const col of cols) {
+    const meta = BUILTIN_COLUMNS.find(b => b.id === col.id);
+    const sortKey = meta ? meta.sortKey : (col.type === 'ai' || col.type === 'custom' ? col.id : null);
+    const sortAttr = sortKey ? ' onclick="sortTable(\'' + sortKey + '\')" style="cursor:pointer"' : '';
+    const arrow = currentSort.key === sortKey ? (currentSort.asc ? ' &#9650;' : ' &#9660;') : '';
+    html += '<th' + sortAttr + ' ondblclick="startRenameColumnHeader(\'' + col.id + '\',this)">' + esc(col.label) + arrow + '</th>';
+  }
+  html += '</tr>';
+  document.getElementById('tableHead').innerHTML = html;
+}
+
+function startRenameColumnHeader(id, th) {
+  const col = columnConfig.find(c => c.id === id);
+  if (!col) return;
+  const oldLabel = col.label;
+  th.innerHTML = '<input class="col-rename-input" value="' + esc(oldLabel) + '" style="width:90%;font-size:11px">';
+  const input = th.querySelector('input');
+  input.focus();
+  input.select();
+  input.onclick = function(e) { e.stopPropagation(); };
+  input.onblur = function() {
+    if (input.value.trim()) { col.label = input.value.trim(); saveColumnConfig(); }
+    renderTableHeader();
+  };
+  input.onkeydown = function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { renderTableHeader(); }
+  };
+}
+
+function buildCellHTML(col, c, color) {
+  if (col.type === 'builtin') {
+    switch (col.id) {
+      case 'company':
+        return '<div class="company-cell"><div class="company-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div>';
+      case 'contact':
+        var initials = c.contact ? c.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2) : '';
+        return '<div class="contact-cell"><div class="avatar" style="background:' + color + '">' + esc(initials) + '</div><span class="contact-name">' + esc(c.contact) + '</span></div>';
+      case 'sent':
+        return '<span style="color:var(--accent2);font-weight:600">' + c.sent + '</span>';
+      case 'received':
+        return '<span style="color:var(--green);font-weight:600">' + c.received + '</span>';
+      case 'emailFlow':
+        var total = c.sent + c.received;
+        var sentPct = total ? (c.sent / total * 100) : 50;
+        return '<div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:' + sentPct + '%"></div><div class="bar-recv" style="width:' + (100 - sentPct) + '%"></div></div></div>';
+      case 'status':
+        return '<span class="badge ' + STATUS_CLASS[c.status] + '">' + c.status + '</span>';
+      case 'score':
+        var scoreColor = c.score >= 75 ? '#1e8e3e' : c.score >= 50 ? '#e8710a' : '#d93025';
+        return '<div class="ai-score"><div class="score-num" style="color:' + scoreColor + ';border-color:' + scoreColor + '">' + c.score + '</div></div>';
+      case 'lastActivity':
+        return '<span style="color:var(--text2)">' + esc(c.lastActivity) + '</span>';
+      default: return '';
+    }
+  }
+  // AI or custom column
+  var val = getCellValue(c, col);
+  return '<span class="cell-val">' + esc(val) + '</span>';
+}
 
 function renderTable() {
   let data = [...companies];
   if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
   const q = (document.getElementById('searchInput').value || '').toLowerCase();
-  if (q) data = data.filter(c => c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q));
+  if (q) data = data.filter(c => {
+    if (c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q)) return true;
+    // Search custom/ai column values too
+    for (const col of getVisibleColumns()) {
+      if (col.type === 'ai' || col.type === 'custom') {
+        var val = getCellValue(c, col);
+        if (val && val.toLowerCase().includes(q)) return true;
+      }
+    }
+    return false;
+  });
 
   const {key, asc} = currentSort;
   data.sort((a,b) => {
-    let va = a[key], vb = b[key];
+    let va, vb;
+    // Check if sorting by a custom/ai column
+    const col = columnConfig.find(c => c.id === key);
+    if (col && (col.type === 'ai' || col.type === 'custom')) {
+      va = getCellValue(a, col) || '';
+      vb = getCellValue(b, col) || '';
+    } else {
+      va = a[key]; vb = b[key];
+    }
     if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
     if (va < vb) return asc ? -1 : 1;
     if (va > vb) return asc ? 1 : -1;
     return 0;
   });
 
+  const cols = getVisibleColumns();
+  const colCount = cols.length + 1; // +1 for checkbox
   const tbody = document.getElementById('tableBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
     updateBulkBar();
     return;
   }
 
-  // Cap visible rows for performance
   const totalCount = data.length;
   const visible = tableShowAll ? data : data.slice(0, TABLE_PAGE_SIZE);
 
@@ -1494,33 +1902,23 @@ function renderTable() {
   for (let i = 0; i < visible.length; i++) {
     const c = visible[i];
     const color = COLORS[c.id % COLORS.length];
-    const total = c.sent + c.received;
-    const sentPct = total ? (c.sent / total * 100) : 50;
-    const scoreColor = c.score >= 75 ? '#1e8e3e' : c.score >= 50 ? '#e8710a' : '#d93025';
-    const initials = c.contact ? c.contact.split(' ').map(n => n[0]).join('').substring(0,2) : '';
     const sel = selectedIds.has(c.id);
-
-    rows.push('<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">' +
-      '<td class="col-check"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>' +
-      '<td><div class="company-cell"><div class="company-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div></td>' +
-      '<td><div class="contact-cell"><div class="avatar" style="background:' + color + '">' + esc(initials) + '</div><span class="contact-name">' + esc(c.contact) + '</span></div></td>' +
-      '<td><span style="color:var(--accent2);font-weight:600">' + c.sent + '</span></td>' +
-      '<td><span style="color:var(--green);font-weight:600">' + c.received + '</span></td>' +
-      '<td><div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:' + sentPct + '%"></div><div class="bar-recv" style="width:' + (100 - sentPct) + '%"></div></div></div></td>' +
-      '<td><span class="badge ' + STATUS_CLASS[c.status] + '">' + c.status + '</span></td>' +
-      '<td><div class="ai-score"><div class="score-num" style="color:' + scoreColor + ';border-color:' + scoreColor + '">' + c.score + '</div></div></td>' +
-      '<td style="color:var(--text2)">' + esc(c.lastActivity) + '</td>' +
-    '</tr>');
+    let row = '<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">';
+    row += '<td class="col-check"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>';
+    for (const col of cols) {
+      const isCustom = col.type === 'ai' || col.type === 'custom';
+      row += '<td' + (isCustom ? ' class="custom-cell" data-col="' + col.id + '" data-domain="' + c.domain + '"' : '') + '>' + buildCellHTML(col, c, color) + '</td>';
+    }
+    row += '</tr>';
+    rows.push(row);
   }
 
-  // "Show more" row if truncated
   if (!tableShowAll && totalCount > TABLE_PAGE_SIZE) {
-    rows.push('<tr class="show-more-row" data-action="showmore"><td colspan="9">Show all ' + totalCount + ' companies (' + (totalCount - TABLE_PAGE_SIZE) + ' more)</td></tr>');
+    rows.push('<tr class="show-more-row" data-action="showmore"><td colspan="' + colCount + '">Show all ' + totalCount + ' companies (' + (totalCount - TABLE_PAGE_SIZE) + ' more)</td></tr>');
   }
 
   tbody.innerHTML = rows.join('');
 
-  // Sync select-all checkbox
   const selectAll = document.getElementById('selectAllCheckbox');
   if (selectAll) {
     const visibleIds = visible.map(c => c.id);
@@ -2272,6 +2670,10 @@ function esc(text) {
   loadBlockedDomains();
   loadCompanyNameCache();
   loadStarredContacts();
+  loadColumnConfig();
+  loadCustomColumnData();
+  loadEnrichmentCache();
+  renderTableHeader();
   if (getClientId()) {
     await initMSAL();
     if (msalInstance) {
@@ -2296,6 +2698,14 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
   // "Show more" row
   const showMore = e.target.closest('[data-action="showmore"]');
   if (showMore) { tableShowAll = true; renderTable(); return; }
+  // Inline editing for custom/AI cells
+  if (e.target.closest('input.cell-edit')) return; // already editing
+  const customCell = e.target.closest('td.custom-cell');
+  if (customCell) {
+    e.stopPropagation();
+    startCellEdit(customCell);
+    return;
+  }
   // Checkbox handling
   const checkbox = e.target.closest('input.row-checkbox');
   if (checkbox) {
@@ -2311,6 +2721,31 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
   const row = e.target.closest('tr[data-id]');
   if (row) openDetail(parseInt(row.dataset.id, 10));
 });
+
+function startCellEdit(td) {
+  const colId = td.dataset.col;
+  const domain = td.dataset.domain;
+  if (!colId || !domain) return;
+  const currentVal = (customColumnData[domain] && customColumnData[domain][colId]) || getCellValue({ domain: domain }, columnConfig.find(c => c.id === colId) || {}) || '';
+  td.innerHTML = '<input class="cell-edit" value="' + esc(currentVal) + '">';
+  const input = td.querySelector('input');
+  input.focus();
+  input.select();
+  input.onblur = function() { finishCellEdit(td, colId, domain, input.value); };
+  input.onkeydown = function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { renderTable(); }
+    e.stopPropagation();
+  };
+}
+
+function finishCellEdit(td, colId, domain, value) {
+  if (!customColumnData[domain]) customColumnData[domain] = {};
+  customColumnData[domain][colId] = value.trim();
+  saveCustomColumnData();
+  // Update just this cell without full re-render
+  td.innerHTML = '<span class="cell-val">' + esc(value.trim()) + '</span>';
+}
 
 // Debounced search input
 let _searchTimer = null;
