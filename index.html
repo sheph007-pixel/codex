@@ -337,7 +337,7 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 
       <!-- LAST SYNC STATUS -->
       <div id="lastSyncBar" style="display:none;padding:6px 16px;font-size:11px;color:var(--text2);background:var(--surface2);border-radius:8px;margin:8px 16px 0;display:none;align-items:center;gap:6px">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="syncStatusDot" style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0"></span>
         <span id="lastSyncText">Never synced</span>
       </div>
 
@@ -530,6 +530,9 @@ let msalInstance = null;
 let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
+let fullScanDone = false;
+let autoSyncTimer = null;
+const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let blockedDomains = new Set();
 let selectedIds = new Set();
 
@@ -726,6 +729,7 @@ async function persistData() {
     }
     metaStore.put({ key: 'lastScanTime', value: lastScanTime ? lastScanTime.toISOString() : null });
     metaStore.put({ key: 'userEmail', value: userEmail });
+    metaStore.put({ key: 'fullScanDone', value: fullScanDone });
     await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
   } catch(e) { console.warn('Persist failed:', e); }
 }
@@ -736,10 +740,11 @@ async function loadPersistedData() {
     const tx = db.transaction(['domainData', 'meta'], 'readonly');
     const ds = tx.objectStore('domainData');
     const ms = tx.objectStore('meta');
-    const [domains, scanRec, emailRec] = await Promise.all([
+    const [domains, scanRec, emailRec, fullScanRec] = await Promise.all([
       new Promise((r, j) => { const q = ds.getAll(); q.onsuccess = () => r(q.result); q.onerror = j; }),
       new Promise((r, j) => { const q = ms.get('lastScanTime'); q.onsuccess = () => r(q.result); q.onerror = j; }),
       new Promise((r, j) => { const q = ms.get('userEmail'); q.onsuccess = () => r(q.result); q.onerror = j; }),
+      new Promise((r, j) => { const q = ms.get('fullScanDone'); q.onsuccess = () => r(q.result); q.onerror = j; }),
     ]);
     if (!domains || domains.length === 0) return null;
     if (emailRec?.value && emailRec.value !== userEmail) return null;
@@ -750,7 +755,7 @@ async function loadPersistedData() {
         map[d.domain].contacts[email] = { ...c, lastDate: c.lastDate ? new Date(c.lastDate) : null };
       }
     }
-    return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null };
+    return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null, fullScanDone: !!fullScanRec?.value };
   } catch(e) { console.warn('Load failed:', e); return null; }
 }
 
@@ -866,6 +871,7 @@ async function signIn() {
 }
 
 function signOut() {
+  stopAutoSync();
   if (msalInstance && currentAccount) {
     msalInstance.logoutPopup({ account: currentAccount });
   }
@@ -874,6 +880,7 @@ function signOut() {
   companies = [];
   domainMap = {};
   lastScanTime = null;
+  fullScanDone = false;
   isScanning = false;
   showWelcome();
 }
@@ -1134,7 +1141,7 @@ function timeAgo(date) {
 }
 
 // ──────────────────────────────────────────────
-// OUTLOOK SCAN — Smart: full first time, incremental after
+// OUTLOOK SCAN — Full first time, auto-sync after
 // ──────────────────────────────────────────────
 async function scanOutlookEmails(forceFullScan) {
   if (isScanning) return;
@@ -1144,23 +1151,27 @@ async function scanOutlookEmails(forceFullScan) {
     showScanBanner('Connecting to Microsoft Graph...');
     const token = await getAccessToken();
 
-    const hasCachedData = Object.keys(domainMap).length > 0;
-    // Incremental if we have cached data (even without lastScanTime — fall back to 7 days)
-    const isIncremental = !forceFullScan && hasCachedData;
+    // Decide: full scan or incremental sync
+    const needsFullScan = forceFullScan || !fullScanDone;
     let totalFetched;
 
-    if (isIncremental) {
-      // Incremental: only fetch emails since last scan (or last 7 days if no timestamp)
-      const sinceDate = lastScanTime || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      showScanBanner('Syncing new emails since ' + timeAgo(sinceDate) + '...');
-      totalFetched = await fetchEmailsProgressively(token, sinceDate);
-      updateScanBanner('Sync complete — ' + totalFetched.toLocaleString() + ' new emails checked');
-    } else {
-      // Full scan: clear and rebuild everything
+    if (needsFullScan) {
+      // FULL SCAN: every email, all folders, all time
       domainMap = {};
-      showScanBanner('Full email scan (all folders, all time)...');
+      showScanBanner('Full scan — reading all emails (first time setup)...');
       totalFetched = await fetchEmailsProgressively(token, null);
-      updateScanBanner('Full scan complete — ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies');
+      fullScanDone = true;
+      updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
+    } else {
+      // INCREMENTAL SYNC: only new emails since last scan
+      const sinceDate = lastScanTime || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      showScanBanner('Quick sync — checking for new emails...');
+      totalFetched = await fetchEmailsProgressively(token, sinceDate);
+      if (totalFetched > 0) {
+        updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails — ' + companies.length + ' companies');
+      } else {
+        updateScanBanner('All caught up — no new emails');
+      }
     }
 
     lastScanTime = new Date();
@@ -1170,13 +1181,14 @@ async function scanOutlookEmails(forceFullScan) {
     // Resolve real company names in background
     resolveCompanyNames();
 
-    // Keep banner visible briefly so user sees the summary
-    setTimeout(() => { hideScanBanner(); }, 2500);
+    // Keep banner visible briefly
+    setTimeout(() => { hideScanBanner(); }, needsFullScan ? 4000 : 2000);
 
   } catch(e) {
     hideScanBanner();
     console.error('Scan error:', e);
-    alert('Email scan failed: ' + e.message);
+    // Don't alert on auto-sync errors, only on manual scans
+    if (!autoSyncTimer) alert('Email scan failed: ' + e.message);
   } finally {
     isScanning = false;
   }
@@ -1186,6 +1198,7 @@ async function scanOutlookEmails(forceFullScan) {
 async function fullRescan() {
   domainMap = {};
   lastScanTime = null;
+  fullScanDone = false;
   companies = [];
   await clearPersistedData();
   renderTable();
@@ -1194,12 +1207,48 @@ async function fullRescan() {
   scanOutlookEmails(true);
 }
 
+// ──────────────────────────────────────────────
+// AUTO-SYNC — runs every 5 minutes while tab is open
+// ──────────────────────────────────────────────
+function startAutoSync() {
+  stopAutoSync();
+  autoSyncTimer = setInterval(() => {
+    if (!isScanning && fullScanDone && currentAccount) {
+      console.log('[RelateFlow] Auto-sync triggered');
+      scanOutlookEmails();
+    }
+  }, AUTO_SYNC_INTERVAL);
+  console.log('[RelateFlow] Auto-sync started (every ' + (AUTO_SYNC_INTERVAL / 60000) + ' min)');
+}
+
+function stopAutoSync() {
+  if (autoSyncTimer) {
+    clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
+  }
+}
+
+// Also sync when tab becomes visible again (user comes back)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && fullScanDone && currentAccount && !isScanning) {
+    // If more than 5 minutes since last sync, trigger immediately
+    if (lastScanTime && (Date.now() - lastScanTime.getTime()) > AUTO_SYNC_INTERVAL) {
+      console.log('[RelateFlow] Tab visible — syncing stale data');
+      scanOutlookEmails();
+    }
+  }
+});
+
 // Last sync display
 function updateLastSyncDisplay() {
   const bar = document.getElementById('lastSyncBar');
   if (!lastScanTime) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  document.getElementById('lastSyncText').textContent = 'Last synced: ' + timeAgo(lastScanTime) + ' — ' + companies.length + ' companies, ' + Object.keys(domainMap).length + ' domains tracked';
+  const syncStatus = fullScanDone ? 'Auto-sync active' : 'Full scan pending';
+  document.getElementById('lastSyncText').textContent =
+    'Last synced: ' + timeAgo(lastScanTime) + ' — ' +
+    companies.length + ' companies, ' + Object.keys(domainMap).length + ' domains tracked' +
+    ' · ' + syncStatus;
 }
 
 // ──────────────────────────────────────────────
@@ -1234,16 +1283,20 @@ async function onSignedIn() {
   if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
     domainMap = cached.domainMap;
     lastScanTime = cached.lastScanTime;
+    fullScanDone = cached.fullScanDone || false;
     buildCompaniesFromDomainMap();
     renderTable();
     updateStats();
     updateLastSyncDisplay();
-    resolveCompanyNames(); // Look up real names in background
+    resolveCompanyNames();
   }
   updateBlockedCount();
 
-  // Background sync: incremental if we have cached data, full if first time
-  scanOutlookEmails();
+  // Scan: full if first time, incremental if full scan already done
+  await scanOutlookEmails();
+
+  // Start auto-sync (every 5 min) after initial scan completes
+  startAutoSync();
 }
 
 function showScanBanner(text) {
