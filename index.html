@@ -6,6 +6,7 @@
 <title>RelateFlow — AI-Driven CRM</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>if(typeof msal==='undefined'){document.write('<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"><\/script>')}</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -485,6 +486,9 @@ async function initMSAL() {
     }
   };
   try {
+    if (typeof msal === 'undefined') {
+      throw new Error('MSAL library failed to load. Please check your internet connection and try refreshing the page.');
+    }
     msalInstance = new msal.PublicClientApplication(config);
     // v3+ requires initialize(); v2 does not have it
     if (typeof msalInstance.initialize === 'function') {
