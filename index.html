@@ -486,8 +486,11 @@ async function initMSAL() {
   };
   try {
     msalInstance = new msal.PublicClientApplication(config);
-    await msalInstance.initialize();
-    // Handle redirect if returning from login
+    // v3+ requires initialize(); v2 does not have it
+    if (typeof msalInstance.initialize === 'function') {
+      await msalInstance.initialize();
+    }
+    // Handle redirect promise (works in both v2 and v3)
     try { await msalInstance.handleRedirectPromise(); } catch(e) { console.warn('Redirect handle:', e); }
     return msalInstance;
   } catch(e) {
