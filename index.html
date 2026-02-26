@@ -705,7 +705,8 @@ let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
 let fullScanDone = false;
-// (auto-sync removed — manual sync only)
+const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+let autoSyncTimer = null;
 let blockedDomains = new Set();
 let selectedIds = new Set();
 let starredContacts = {};  // { "domain": "email@example.com" }
@@ -1759,6 +1760,7 @@ function signOut() {
   lastScanTime = null;
   fullScanDone = false;
   isScanning = false;
+  stopAutoSync();
   document.getElementById('accountBar').style.display = 'none';
   showWelcome();
 }
@@ -2181,7 +2183,20 @@ async function fullRescan() {
 }
 
 // ──────────────────────────────────────────────
-// (Auto-sync removed — user manually clicks Sync)
+// ──────────────────────────────────────────────
+// AUTO-SYNC — quiet background sync every 5 minutes
+// ──────────────────────────────────────────────
+function startAutoSync() {
+  stopAutoSync();
+  autoSyncTimer = setInterval(() => {
+    if (!isScanning && fullScanDone && currentAccount) {
+      scanOutlookEmails();
+    }
+  }, AUTO_SYNC_INTERVAL);
+}
+function stopAutoSync() {
+  if (autoSyncTimer) { clearInterval(autoSyncTimer); autoSyncTimer = null; }
+}
 
 // Last sync display
 function updateLastSyncDisplay() {
@@ -2261,9 +2276,21 @@ async function onSignedIn() {
   }
   updateBlockedCount();
 
-  // Show connected account bar, then scan
   updateLastSyncDisplay();
-  await scanOutlookEmails();
+
+  // If we have cached data, show it instantly — sync in background
+  // If no cached data (first time), run scan in foreground
+  const hasCachedData = companies.length > 0;
+  if (hasCachedData) {
+    // Non-blocking: sync new emails quietly in background
+    scanOutlookEmails();
+  } else {
+    // First time: must scan to have anything to show
+    await scanOutlookEmails();
+  }
+
+  // Keep data fresh automatically
+  startAutoSync();
 }
 
 // Scan progress shown in the account bar
