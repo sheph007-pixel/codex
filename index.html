@@ -913,11 +913,24 @@ function saveContactEnrichment() {
 }
 
 // Company logo: Clearbit Logo API (free, no auth)
+let logoFailedCache = {};
+function loadLogoFailedCache() {
+  try { const r = localStorage.getItem('kennion_logo_failed'); if (r) logoFailedCache = JSON.parse(r); } catch(e) {}
+}
+function saveLogoFailedCache() {
+  localStorage.setItem('kennion_logo_failed', JSON.stringify(logoFailedCache));
+}
+function markLogoFailed(img, domain) {
+  img.style.display = 'none';
+  logoFailedCache[domain] = true;
+  saveLogoFailedCache();
+}
 function companyLogoHTML(domain, color, name, size) {
   const sz = size || 32;
   const initial = name ? name[0].toUpperCase() : domain[0].toUpperCase();
+  if (logoFailedCache[domain]) return initial;
   const imgSrc = 'https://logo.clearbit.com/' + encodeURIComponent(domain);
-  return '<img src="' + imgSrc + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' + initial;
+  return '<img src="' + imgSrc + '" alt="" loading="lazy" onerror="markLogoFailed(this,\'' + domain.replace(/'/g, "\\'") + '\')">' + initial;
 }
 
 // Contact photo: unavatar.io (aggregates Gravatar, Google, GitHub, Twitter)
@@ -3084,6 +3097,7 @@ function esc(text) {
   loadEnrichmentCache();
   loadContactEnrichment();
   loadCompanyResearch();
+  loadLogoFailedCache();
   renderTableHeader();
   if (getClientId()) {
     await initMSAL();
