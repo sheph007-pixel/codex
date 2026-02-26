@@ -1112,8 +1112,8 @@ async function fetchEmailsProgressively(token, sinceDate) {
       updateStats();
       updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails — ' + companies.length + ' companies found');
 
-      // Persist every 5 pages so progress survives tab close
-      if (page % 5 === 0) {
+      // Persist every 3 pages so progress survives tab close/refresh
+      if (page === 1 || page % 3 === 0) {
         lastScanTime = new Date();
         persistData();
       }
@@ -1157,8 +1157,10 @@ async function scanOutlookEmails(forceFullScan) {
 
     if (needsFullScan) {
       // FULL SCAN: every email, all folders, all time
-      domainMap = {};
-      showScanBanner('Full scan — reading all emails (first time setup)...');
+      // NOTE: we do NOT clear domainMap — processEmailBatch merges into
+      // existing data, so a refresh mid-scan keeps all accumulated progress
+      if (forceFullScan) domainMap = {};  // only clear on explicit "Reset & Full Re-scan"
+      showScanBanner('Full scan — reading all emails' + (Object.keys(domainMap).length > 0 ? ' (resuming)' : '') + '...');
       totalFetched = await fetchEmailsProgressively(token, null);
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
