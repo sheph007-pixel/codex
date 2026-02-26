@@ -814,6 +814,7 @@ let companies = [];
 let domainMap = {};
 let seenMsgIds = new Set(); // track processed email IDs to prevent double-counting
 let lastScanTime = null;
+let deltaLink = null; // Microsoft Graph delta sync token — tracks last sync position
 let currentSort = {key:'sent',asc:false};
 let currentFilter = 'all';
 let msalInstance = null;
@@ -1694,6 +1695,7 @@ async function persistData() {
     metaStore.put({ key: 'userEmail', value: userEmail });
     metaStore.put({ key: 'fullScanDone', value: fullScanDone });
     metaStore.put({ key: 'seenMsgIds', value: Array.from(seenMsgIds) });
+    metaStore.put({ key: 'deltaLink', value: deltaLink });
     await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
   } catch(e) { console.warn('Persist failed:', e); }
 }
@@ -1704,12 +1706,13 @@ async function loadPersistedData() {
     const tx = db.transaction(['domainData', 'meta'], 'readonly');
     const ds = tx.objectStore('domainData');
     const ms = tx.objectStore('meta');
-    const [domains, scanRec, emailRec, fullScanRec, seenRec] = await Promise.all([
+    const [domains, scanRec, emailRec, fullScanRec, seenRec, deltaRec] = await Promise.all([
       new Promise((r, j) => { const q = ds.getAll(); q.onsuccess = () => r(q.result); q.onerror = j; }),
       new Promise((r, j) => { const q = ms.get('lastScanTime'); q.onsuccess = () => r(q.result); q.onerror = j; }),
       new Promise((r, j) => { const q = ms.get('userEmail'); q.onsuccess = () => r(q.result); q.onerror = j; }),
       new Promise((r, j) => { const q = ms.get('fullScanDone'); q.onsuccess = () => r(q.result); q.onerror = j; }),
       new Promise((r, j) => { const q = ms.get('seenMsgIds'); q.onsuccess = () => r(q.result); q.onerror = j; }),
+      new Promise((r, j) => { const q = ms.get('deltaLink'); q.onsuccess = () => r(q.result); q.onerror = j; }),
     ]);
     if (!domains || domains.length === 0) return null;
     if (emailRec?.value && emailRec.value !== userEmail) return null;
@@ -1756,7 +1759,8 @@ async function loadPersistedData() {
       }
     }
     const restoredSeenIds = seenRec?.value ? new Set(seenRec.value) : new Set();
-    return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null, fullScanDone: !!fullScanRec?.value, seenMsgIds: restoredSeenIds };
+    const restoredDeltaLink = deltaRec?.value || null;
+    return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null, fullScanDone: !!fullScanRec?.value, seenMsgIds: restoredSeenIds, deltaLink: restoredDeltaLink };
   } catch(e) { console.warn('Load failed:', e); return null; }
 }
 
@@ -1880,6 +1884,7 @@ function signOut() {
   companies = [];
   domainMap = {};
   seenMsgIds = new Set();
+  deltaLink = null;
   lastScanTime = null;
   fullScanDone = false;
   isScanning = false;
@@ -1903,6 +1908,11 @@ async function getAccessToken() {
     currentAccount = resp.account;
     return resp.accessToken;
   }
+}
+
+// Build Graph API headers with Immutable IDs to prevent ID drift on email moves
+function graphHeaders(token) {
+  return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Prefer': 'IdType="ImmutableId"' };
 }
 
 // ──────────────────────────────────────────────
@@ -1994,6 +2004,20 @@ function processEmailBatch(messages) {
       updateDate(domainMap[domain], msg.receivedDateTime);
       updateDate(domainMap[domain].contacts[le], msg.receivedDateTime);
       updateDateField(domainMap[domain], 'lastReceivedDate', msg.receivedDateTime);
+    }
+  }
+}
+
+// Handle @removed items from delta sync — delete email ID from all Sets
+function processRemovedEmail(msgId) {
+  if (!msgId) return;
+  seenMsgIds.delete(msgId);
+  for (const data of Object.values(domainMap)) {
+    data.sentIds.delete(msgId);
+    data.receivedIds.delete(msgId);
+    for (const ct of Object.values(data.contacts)) {
+      ct.sentIds.delete(msgId);
+      ct.receivedIds.delete(msgId);
     }
   }
 }
@@ -2150,21 +2174,29 @@ async function resolveCompanyNames() {
 // PROGRESSIVE EMAIL FETCH + PROCESS + RENDER
 // (Data populates in the table as emails are scanned)
 // ──────────────────────────────────────────────
-async function fetchEmailsProgressively(token, sinceDate) {
-  const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
-  let url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime&$orderby=receivedDateTime desc';
+async function fetchEmailsProgressively(token, useDelta) {
+  const headers = graphHeaders(token);
+  const DELTA_SELECT = '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime';
 
-  if (sinceDate) {
-    url += '&$filter=receivedDateTime ge ' + sinceDate.toISOString();
+  // Delta sync: use saved deltaLink for incremental, or start fresh
+  let url;
+  if (useDelta && deltaLink) {
+    // Incremental: resume from where we left off — only changes since last sync
+    url = deltaLink;
+  } else {
+    // Initial full delta scan — fetches all messages then gives us a deltaLink
+    url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + DELTA_SELECT;
+    deltaLink = null; // clear stale link
   }
 
   let page = 0;
   let totalFetched = 0;
-  let emptyPages = 0;
+  let totalRemoved = 0;
+  const isIncremental = useDelta && !!deltaLink;
 
   while (url) {
     page++;
-    updateScanBanner('Scanning' + (sinceDate ? ' recent' : ' all') + ' mail... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
+    updateScanBanner('Scanning' + (isIncremental ? ' changes' : ' all mail') + '... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
 
     // Fetch with 30s timeout to prevent hanging forever
     const controller = new AbortController();
@@ -2180,40 +2212,63 @@ async function fetchEmailsProgressively(token, sinceDate) {
     clearTimeout(timeout);
 
     if (!resp.ok) {
+      // If delta token expired/invalid (410 Gone or 404), reset and do full sync
+      if ((resp.status === 410 || resp.status === 404) && useDelta) {
+        console.warn('Delta token expired (' + resp.status + '), resetting to full sync');
+        deltaLink = null;
+        url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + DELTA_SELECT;
+        continue;
+      }
       const err = await resp.text();
       throw new Error('Graph API error: ' + resp.status + ' — ' + err);
     }
     const data = await resp.json();
 
     if (data.value && data.value.length > 0) {
-      emptyPages = 0;
-      totalFetched += data.value.length;
-      processEmailBatch(data.value);
+      // Separate removed items from regular messages
+      const regular = [];
+      for (const item of data.value) {
+        if (item['@removed']) {
+          processRemovedEmail(item.id);
+          totalRemoved++;
+        } else {
+          regular.push(item);
+        }
+      }
+
+      if (regular.length > 0) {
+        totalFetched += regular.length;
+        processEmailBatch(regular);
+      }
 
       // Throttle UI: only rebuild table every 5 pages (heavy DOM work)
-      // Always update on page 1 so user sees instant results
       if (page === 1 || page % 5 === 0) {
         buildCompaniesFromDomainMap();
         renderTable();
         updateStats();
       }
-      updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails — ' + companies.length + ' companies found');
+      updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails' + (totalRemoved > 0 ? ', ' + totalRemoved + ' removed' : '') + ' — ' + companies.length + ' companies');
 
       // Persist every 5 pages
       if (page === 1 || page % 5 === 0) {
         lastScanTime = new Date();
         persistData();
       }
-    } else {
-      // Empty page — break if we get 2 in a row (API returning empty results)
-      emptyPages++;
-      if (emptyPages >= 2) break;
     }
 
-    url = data['@odata.nextLink'] || null;
+    // Delta queries use @odata.nextLink for pagination, @odata.deltaLink on final page
+    if (data['@odata.nextLink']) {
+      url = data['@odata.nextLink'];
+    } else {
+      // Final page — save the deltaLink for next incremental sync
+      if (data['@odata.deltaLink']) {
+        deltaLink = data['@odata.deltaLink'];
+      }
+      url = null;
+    }
   }
 
-  // Final UI update (catch pages between the 5-page throttle intervals)
+  // Final UI update
   buildCompaniesFromDomainMap();
   renderTable();
   updateStats();
@@ -2248,20 +2303,19 @@ async function scanOutlookEmails(forceFullScan) {
     showScanBanner('Connecting to Microsoft Graph...');
     const token = await getAccessToken();
 
-    // Decide: full scan or incremental sync
+    // Decide: full scan or delta sync
     const needsFullScan = forceFullScan || !fullScanDone;
     let totalFetched;
 
     if (needsFullScan) {
-      if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); }
+      if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); deltaLink = null; }
       showScanBanner('Full scan — reading all emails' + (Object.keys(domainMap).length > 0 ? ' (resuming)' : '') + '...');
-      totalFetched = await fetchEmailsProgressively(token, null);
+      totalFetched = await fetchEmailsProgressively(token, false); // full delta scan
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
     } else {
-      const sinceDate = lastScanTime || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      showScanBanner('Quick sync — checking for new emails...');
-      totalFetched = await fetchEmailsProgressively(token, sinceDate);
+      showScanBanner('Delta sync — checking for changes...');
+      totalFetched = await fetchEmailsProgressively(token, true); // incremental delta
       if (totalFetched > 0) {
         updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails — ' + companies.length + ' companies');
       } else {
@@ -2293,6 +2347,7 @@ async function scanOutlookEmails(forceFullScan) {
 async function fullRescan() {
   domainMap = {};
   seenMsgIds = new Set();
+  deltaLink = null;
   lastScanTime = null;
   fullScanDone = false;
   companies = [];
@@ -2378,20 +2433,33 @@ async function onSignedIn() {
     domainMap = cached.domainMap;
     lastScanTime = cached.lastScanTime;
     fullScanDone = cached.fullScanDone || false;
+    deltaLink = cached.deltaLink || null;
     if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
       seenMsgIds = cached.seenMsgIds;
     } else {
       // Upgrade from old cache: no dedup tracking.
-      // ID Sets may be empty (old counter format) — force full rescan
-      // to rebuild accurate Set-based counts from scratch.
+      // Force full rescan to rebuild with immutable IDs + delta sync.
       seenMsgIds = new Set();
+      deltaLink = null;
+      fullScanDone = false;
+    }
+    // Migration: if no deltaLink exists, old data used mutable IDs.
+    // Force full rescan to rebuild with immutable IDs + delta sync.
+    if (!deltaLink && fullScanDone) {
+      seenMsgIds = new Set();
+      for (const d of Object.values(domainMap)) {
+        if (d.sentIds instanceof Set) d.sentIds.clear(); else d.sentIds = new Set();
+        if (d.receivedIds instanceof Set) d.receivedIds.clear(); else d.receivedIds = new Set();
+        for (const c of Object.values(d.contacts)) {
+          if (c.sentIds instanceof Set) c.sentIds.clear(); else c.sentIds = new Set();
+          if (c.receivedIds instanceof Set) c.receivedIds.clear(); else c.receivedIds = new Set();
+        }
+      }
       fullScanDone = false;
     }
     // Check if any domain still uses old counter format (no sentIds Set)
-    // If so, force full rescan to rebuild with Sets
-    const needsSetUpgrade = Object.values(domainMap).some(d => !(d.sentIds instanceof Set) || d.sentIds.size === 0);
-    if (needsSetUpgrade && !fullScanDone) {
-      // Clear Sets so full rescan rebuilds them
+    const needsSetUpgrade = Object.values(domainMap).some(d => !(d.sentIds instanceof Set));
+    if (needsSetUpgrade) {
       for (const d of Object.values(domainMap)) {
         if (!(d.sentIds instanceof Set)) d.sentIds = new Set();
         if (!(d.receivedIds instanceof Set)) d.receivedIds = new Set();
@@ -2401,6 +2469,7 @@ async function onSignedIn() {
         }
       }
       fullScanDone = false;
+      deltaLink = null;
     }
     buildCompaniesFromDomainMap();
     renderTableHeader();
@@ -2986,7 +3055,7 @@ async function fetchContactTimeline(email, domain) {
 
   try {
     const token = await getAccessToken();
-    const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const headers = graphHeaders(token);
     const items = [];
     const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,conversationId,webLink';
     const top = '$top=75';
@@ -3135,7 +3204,7 @@ async function openEmailViewer(messageId) {
 
   try {
     const token = await getAccessToken();
-    const headers = { 'Authorization': 'Bearer ' + token };
+    const headers = graphHeaders(token);
     const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '?$select=subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments,webLink', { headers });
     if (!resp.ok) throw new Error('Failed to load email (' + resp.status + ')');
     const msg = await resp.json();
@@ -3190,7 +3259,7 @@ async function openEmailViewer(messageId) {
 
 async function loadAttachments(messageId, token) {
   try {
-    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/attachments?$select=id,name,contentType,size', { headers: { 'Authorization': 'Bearer ' + token } });
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/attachments?$select=id,name,contentType,size', { headers: graphHeaders(token) });
     if (!resp.ok) return;
     const data = await resp.json();
     const atts = data.value || [];
@@ -3212,7 +3281,7 @@ async function loadAttachments(messageId, token) {
 async function downloadAttachment(messageId, attachmentId, fileName) {
   try {
     const token = await getAccessToken();
-    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/attachments/' + attachmentId + '/$value', { headers: { 'Authorization': 'Bearer ' + token } });
+    const resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/attachments/' + attachmentId + '/$value', { headers: graphHeaders(token) });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -3310,7 +3379,7 @@ async function sendInlineReply() {
 
   try {
     const token = await getAccessToken();
-    const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const headers = graphHeaders(token);
 
     const message = {
       subject: subject,
@@ -3364,7 +3433,7 @@ async function sendComposedEmail() {
 
   try {
     const token = await getAccessToken();
-    const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const headers = graphHeaders(token);
     const message = { subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: toEmail } }] };
     const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers, body: JSON.stringify({ message, saveToSentItems: true }) });
     if (!resp.ok) { const err = await resp.text(); throw new Error('Send failed: ' + resp.status + ' — ' + err); }
