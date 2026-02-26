@@ -1655,9 +1655,9 @@ async function persistData() {
     const metaStore = tx.objectStore('meta');
     domainStore.clear();
     for (const [domain, data] of Object.entries(domainMap)) {
-      const rec = { domain, contacts: {}, totalSent: data.totalSent, totalReceived: data.totalReceived, lastDate: data.lastDate ? data.lastDate.toISOString() : null, lastSentDate: data.lastSentDate ? data.lastSentDate.toISOString() : null, lastReceivedDate: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null };
+      const rec = { domain, contacts: {}, sentIds: Array.from(data.sentIds), receivedIds: Array.from(data.receivedIds), lastDate: data.lastDate ? data.lastDate.toISOString() : null, lastSentDate: data.lastSentDate ? data.lastSentDate.toISOString() : null, lastReceivedDate: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null };
       for (const [email, c] of Object.entries(data.contacts)) {
-        rec.contacts[email] = { ...c, lastDate: c.lastDate ? c.lastDate.toISOString() : null };
+        rec.contacts[email] = { name: c.name, email: c.email, sentIds: Array.from(c.sentIds), receivedIds: Array.from(c.receivedIds), lastDate: c.lastDate ? c.lastDate.toISOString() : null };
       }
       domainStore.put(rec);
     }
@@ -1688,11 +1688,14 @@ async function loadPersistedData() {
     for (const d of domains) {
       const key = d.domain.toLowerCase();
       if (!map[key]) {
-        map[key] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null, lastSentDate: null, lastReceivedDate: null };
+        map[key] = { contacts: {}, sentIds: new Set(), receivedIds: new Set(), lastDate: null, lastSentDate: null, lastReceivedDate: null };
       }
       const entry = map[key];
-      entry.totalSent += d.totalSent;
-      entry.totalReceived += d.totalReceived;
+      // Restore Sets from arrays (new format) or rebuild from old counter format
+      const dSentIds = Array.isArray(d.sentIds) ? d.sentIds : [];
+      const dRecvIds = Array.isArray(d.receivedIds) ? d.receivedIds : [];
+      for (const id of dSentIds) entry.sentIds.add(id);
+      for (const id of dRecvIds) entry.receivedIds.add(id);
       if (d.lastDate) {
         const dt = new Date(d.lastDate);
         if (!entry.lastDate || dt > entry.lastDate) entry.lastDate = dt;
@@ -1708,10 +1711,14 @@ async function loadPersistedData() {
       for (const [email, c] of Object.entries(d.contacts)) {
         const le = email.toLowerCase();
         if (!entry.contacts[le]) {
-          entry.contacts[le] = { ...c, email: le, lastDate: c.lastDate ? new Date(c.lastDate) : null };
+          const cSentIds = Array.isArray(c.sentIds) ? c.sentIds : [];
+          const cRecvIds = Array.isArray(c.receivedIds) ? c.receivedIds : [];
+          entry.contacts[le] = { name: c.name, email: le, sentIds: new Set(cSentIds), receivedIds: new Set(cRecvIds), lastDate: c.lastDate ? new Date(c.lastDate) : null };
         } else {
-          entry.contacts[le].sent += c.sent;
-          entry.contacts[le].received += c.received;
+          const cSentIds = Array.isArray(c.sentIds) ? c.sentIds : [];
+          const cRecvIds = Array.isArray(c.receivedIds) ? c.receivedIds : [];
+          for (const id of cSentIds) entry.contacts[le].sentIds.add(id);
+          for (const id of cRecvIds) entry.contacts[le].receivedIds.add(id);
           if (c.lastDate) {
             const cdt = new Date(c.lastDate);
             if (!entry.contacts[le].lastDate || cdt > entry.contacts[le].lastDate) entry.contacts[le].lastDate = cdt;
@@ -1880,7 +1887,7 @@ function getDomain(email) {
 
 function ensureDomain(domain) {
   if (!domainMap[domain]) {
-    domainMap[domain] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null, lastSentDate: null, lastReceivedDate: null };
+    domainMap[domain] = { contacts: {}, sentIds: new Set(), receivedIds: new Set(), lastDate: null, lastSentDate: null, lastReceivedDate: null };
   }
 }
 
@@ -1889,7 +1896,7 @@ function ensureContact(domain, email, name) {
   const le = email.toLowerCase();
   const formatted = formatContactName(name, le);
   if (!domainMap[domain].contacts[le]) {
-    domainMap[domain].contacts[le] = { name: formatted, email: le, sent: 0, received: 0, lastDate: null };
+    domainMap[domain].contacts[le] = { name: formatted, email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null };
   } else {
     const existing = domainMap[domain].contacts[le].name;
     // Upgrade name if current one is just the email or worse quality
@@ -1927,9 +1934,8 @@ function processEmailBatch(messages) {
     const isSent = (fromEmail === myEmailLower);
 
     if (isSent) {
-      // SENT email — count 1 per unique email per domain (not per recipient)
+      // SENT email — add msg.id to Sets (duplicates are impossible)
       const recipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
-      const countedDomains = new Set();
       for (const r of recipients) {
         const toEmail = r.emailAddress?.address;
         const toName = r.emailAddress?.name;
@@ -1938,19 +1944,15 @@ function processEmailBatch(messages) {
         if (!domain || isBlockedDomain(domain) || domain === myDomain) continue;
         ensureContact(domain, toEmail, toName);
         const le = toEmail.toLowerCase();
-        domainMap[domain].contacts[le].sent++;
-        // Only count 1 sent email per domain per message
-        if (!countedDomains.has(domain)) {
-          countedDomains.add(domain);
-          domainMap[domain].totalSent++;
-        }
+        domainMap[domain].contacts[le].sentIds.add(msg.id);
+        domainMap[domain].sentIds.add(msg.id);
         const sentDt = msg.sentDateTime || msg.receivedDateTime;
         updateDate(domainMap[domain], sentDt);
         updateDate(domainMap[domain].contacts[le], sentDt);
         updateDateField(domainMap[domain], 'lastSentDate', sentDt);
       }
     } else {
-      // RECEIVED email — track the sender
+      // RECEIVED email — add msg.id to Sets
       const senderEmail = msg.from?.emailAddress?.address;
       const senderName = msg.from?.emailAddress?.name;
       if (!senderEmail) continue;
@@ -1958,8 +1960,8 @@ function processEmailBatch(messages) {
       if (!domain || isBlockedDomain(domain) || domain === myDomain) continue;
       ensureContact(domain, senderEmail, senderName);
       const le = senderEmail.toLowerCase();
-      domainMap[domain].contacts[le].received++;
-      domainMap[domain].totalReceived++;
+      domainMap[domain].contacts[le].receivedIds.add(msg.id);
+      domainMap[domain].receivedIds.add(msg.id);
       updateDate(domainMap[domain], msg.receivedDateTime);
       updateDate(domainMap[domain].contacts[le], msg.receivedDateTime);
       updateDateField(domainMap[domain], 'lastReceivedDate', msg.receivedDateTime);
@@ -1983,15 +1985,15 @@ function buildCompaniesFromDomainMap() {
       // Merge into lowercase key
       if (!domainMap[lk]) { domainMap[lk] = domainMap[k]; }
       else {
-        domainMap[lk].totalSent += domainMap[k].totalSent;
-        domainMap[lk].totalReceived += domainMap[k].totalReceived;
+        for (const id of domainMap[k].sentIds) domainMap[lk].sentIds.add(id);
+        for (const id of domainMap[k].receivedIds) domainMap[lk].receivedIds.add(id);
         if (domainMap[k].lastDate && (!domainMap[lk].lastDate || domainMap[k].lastDate > domainMap[lk].lastDate)) domainMap[lk].lastDate = domainMap[k].lastDate;
         if (domainMap[k].lastSentDate && (!domainMap[lk].lastSentDate || domainMap[k].lastSentDate > domainMap[lk].lastSentDate)) domainMap[lk].lastSentDate = domainMap[k].lastSentDate;
         if (domainMap[k].lastReceivedDate && (!domainMap[lk].lastReceivedDate || domainMap[k].lastReceivedDate > domainMap[lk].lastReceivedDate)) domainMap[lk].lastReceivedDate = domainMap[k].lastReceivedDate;
         for (const [e, c] of Object.entries(domainMap[k].contacts)) {
           const le = e.toLowerCase();
           if (!domainMap[lk].contacts[le]) domainMap[lk].contacts[le] = c;
-          else { domainMap[lk].contacts[le].sent += c.sent; domainMap[lk].contacts[le].received += c.received; }
+          else { for (const id of c.sentIds) domainMap[lk].contacts[le].sentIds.add(id); for (const id of c.receivedIds) domainMap[lk].contacts[le].receivedIds.add(id); }
         }
       }
       delete domainMap[k];
@@ -2007,15 +2009,17 @@ function buildCompaniesFromDomainMap() {
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
 
-    // Domain-level totalSent/totalReceived count unique emails
-    // (not the sum of per-contact interactions, which inflates multi-recipient emails)
+    // Derive counts from Sets — guaranteed accurate, duplicate-proof
+    const domainSent = data.sentIds.size;
+    const domainReceived = data.receivedIds.size;
+    for (const ct of contactArr) { ct.sent = ct.sentIds.size; ct.received = ct.receivedIds.size; }
 
     // SELECTIVE: only create company if user has sent at least 1 email to this domain
-    if (data.totalSent === 0) continue;
+    if (domainSent === 0) continue;
 
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
     const primary = getPrimaryContact(domain, contactArr);
-    const totalEmails = data.totalSent + data.totalReceived;
+    const totalEmails = domainSent + domainReceived;
 
     // ── AI SEGMENT SCORING ──
     // Combines email volume, recency, two-way engagement, and frequency
@@ -2027,19 +2031,19 @@ function buildCompaniesFromDomainMap() {
     const daysSinceAny = lastAny ? (now - lastAny) / DAY : 9999;
     const daysSinceSent = lastSent ? (now - lastSent) / DAY : 9999;
     const daysSinceRecv = lastRecv ? (now - lastRecv) / DAY : 9999;
-    const hasTwoWay = data.totalSent > 0 && data.totalReceived > 0;
+    const hasTwoWay = domainSent > 0 && domainReceived > 0;
 
     let score = Math.min(99, Math.round(
       // Volume (up to 35 pts)
       Math.min(totalEmails * 1.2, 35) +
       // Two-way engagement (up to 20 pts)
-      (hasTwoWay ? 12 + Math.min(Math.min(data.totalSent, data.totalReceived) * 2, 8) : 0) +
+      (hasTwoWay ? 12 + Math.min(Math.min(domainSent, domainReceived) * 2, 8) : 0) +
       // Recency (up to 25 pts)
       (daysSinceAny < 7 ? 25 : daysSinceAny < 30 ? 18 : daysSinceAny < 90 ? 10 : daysSinceAny < 180 ? 5 : 0) +
       // Contact diversity (up to 10 pts)
       Math.min(contactArr.length * 3, 10) +
       // Reply ratio bonus (up to 9 pts) — strong back-and-forth signals real engagement
-      (hasTwoWay ? Math.min(Math.round(Math.min(data.totalReceived / data.totalSent, 1) * 9), 9) : 0)
+      (hasTwoWay ? Math.min(Math.round(Math.min(domainReceived / domainSent, 1) * 9), 9) : 0)
     ));
 
     // ── AI STATUS DETERMINATION ──
@@ -2067,8 +2071,8 @@ function buildCompaniesFromDomainMap() {
       domain: domain,
       contact: primary.name,
       contactEmail: primary.email,
-      sent: data.totalSent,
-      received: data.totalReceived,
+      sent: domainSent,
+      received: domainReceived,
       status: status,
       score: score,
       lastDate: data.lastDate,
@@ -2348,15 +2352,26 @@ async function onSignedIn() {
     if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
       seenMsgIds = cached.seenMsgIds;
     } else {
-      // Upgrade from old cache: counts are inaccurate (old counting bug).
-      // Keep domain structure / company names / enrichment, but reset
-      // all counts and re-scan from scratch for accurate numbers.
+      // Upgrade from old cache: no dedup tracking.
+      // ID Sets may be empty (old counter format) — force full rescan
+      // to rebuild accurate Set-based counts from scratch.
       seenMsgIds = new Set();
+      fullScanDone = false;
+    }
+    // Check if any domain still uses old counter format (no sentIds Set)
+    // If so, force full rescan to rebuild with Sets
+    const needsSetUpgrade = Object.values(domainMap).some(d => !(d.sentIds instanceof Set) || d.sentIds.size === 0);
+    if (needsSetUpgrade && !fullScanDone) {
+      // Clear Sets so full rescan rebuilds them
       for (const d of Object.values(domainMap)) {
-        d.totalSent = 0; d.totalReceived = 0;
-        for (const c of Object.values(d.contacts)) { c.sent = 0; c.received = 0; }
+        if (!(d.sentIds instanceof Set)) d.sentIds = new Set();
+        if (!(d.receivedIds instanceof Set)) d.receivedIds = new Set();
+        for (const c of Object.values(d.contacts)) {
+          if (!(c.sentIds instanceof Set)) c.sentIds = new Set();
+          if (!(c.receivedIds instanceof Set)) c.receivedIds = new Set();
+        }
       }
-      fullScanDone = false;  // force full rescan for correct counts
+      fullScanDone = false;
     }
     buildCompaniesFromDomainMap();
     renderTableHeader();
@@ -2669,8 +2684,8 @@ function showBlockedView() {
   tbody.innerHTML = sorted.map(domain => {
     // Check if domain still has data in domainMap
     const data = domainMap[domain];
-    const totalSent = data ? data.totalSent : 0;
-    const totalRecv = data ? data.totalReceived : 0;
+    const totalSent = data ? data.sentIds.size : 0;
+    const totalRecv = data ? data.receivedIds.size : 0;
     const contactCount = data ? Object.keys(data.contacts).length : 0;
 
     return `<tr>
