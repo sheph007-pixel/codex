@@ -161,7 +161,7 @@ tr:hover td{background:rgba(108,92,231,.04)}
 /* ── SETTINGS MODAL ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
 .modal-overlay.active{display:grid}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:520px;max-width:90vw}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:520px;max-width:90vw;max-height:90vh;overflow-y:auto}
 .modal h2{font-size:20px;font-weight:700;margin-bottom:8px}
 .modal p{color:var(--text2);font-size:13px;margin-bottom:16px;line-height:1.5}
 .modal label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;margin-top:16px}
@@ -172,6 +172,11 @@ tr:hover td{background:rgba(108,92,231,.04)}
 .modal .steps{text-align:left;background:var(--surface2);border-radius:10px;padding:16px;margin-top:12px}
 .modal .steps ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--text);line-height:1.5}
 .modal .steps code{background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--accent2)}
+
+/* ── BLOCKED DOMAIN TAGS ── */
+.blocked-tag{display:inline-flex;align-items:center;gap:4px;background:var(--red-bg);color:var(--red);border:1px solid rgba(255,118,117,.2);border-radius:6px;padding:3px 8px 3px 10px;font-size:11px;font-weight:500}
+.blocked-tag button{background:none;border:none;color:var(--red);cursor:pointer;padding:0 2px;font-size:14px;line-height:1;opacity:.7;transition:.15s}
+.blocked-tag button:hover{opacity:1}
 
 /* ── AI CHAT MINI ── */
 .ai-chat-fab{position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#a29bfe);border:none;cursor:pointer;display:grid;place-items:center;z-index:80;box-shadow:0 4px 20px rgba(108,92,231,.4);transition:.2s}
@@ -409,6 +414,13 @@ tr:hover td{background:rgba(108,92,231,.04)}
     <h3>All Contacts at Domain</h3>
     <div id="detailContactsList" style="display:flex;flex-direction:column;gap:8px"></div>
   </div>
+  <div class="detail-section" style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+    <button class="btn btn-ghost btn-sm" id="blockDomainBtn" onclick="" style="color:var(--red);border-color:var(--red);font-size:12px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      Block this domain
+    </button>
+    <p class="help-text" style="margin-top:4px;font-size:11px;color:var(--text2)">Removes this domain from your CRM and prevents it from appearing again.</p>
+  </div>
 </div>
 
 <!-- SETTINGS MODAL -->
@@ -431,6 +443,16 @@ tr:hover td{background:rgba(108,92,231,.04)}
     <label>Application (Client) ID</label>
     <input type="text" id="clientIdInput" placeholder="e.g. 12345678-abcd-1234-abcd-123456789abc">
     <p class="help-text">This is stored only in your browser's localStorage. Nothing is sent to any server.</p>
+
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Protected Domains &amp; Emails</label>
+      <p class="help-text" style="margin-top:0;margin-bottom:8px">Domains and emails listed here will never appear in your CRM. Add multiple at once — one per line, or comma/space separated.</p>
+      <div style="display:flex;gap:8px">
+        <textarea id="blockDomainsInput" rows="3" placeholder="e.g. newsletter.com, noreply@company.com, spam.org" style="flex:1;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none;resize:vertical"></textarea>
+        <button class="btn btn-primary" onclick="addBlockedDomainsFromInput()" style="align-self:flex-start;font-size:12px;white-space:nowrap">Block</button>
+      </div>
+      <div id="blockedDomainsList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
+    </div>
 
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Data Management</label>
@@ -477,6 +499,25 @@ let msalInstance = null;
 let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
+let blockedDomains = new Set();
+
+// ──────────────────────────────────────────────
+// BLOCKED DOMAINS PERSISTENCE (localStorage)
+// ──────────────────────────────────────────────
+function loadBlockedDomains() {
+  try {
+    const raw = localStorage.getItem('relateflow_blocked_domains');
+    blockedDomains = raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch(e) { blockedDomains = new Set(); }
+}
+
+function saveBlockedDomains() {
+  localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
+}
+
+function isBlockedDomain(domain) {
+  return SKIP_DOMAINS.has(domain) || blockedDomains.has(domain);
+}
 
 // ──────────────────────────────────────────────
 // INDEXEDDB PERSISTENCE
@@ -732,7 +773,7 @@ function processEmailBatch(messages) {
         const toName = r.emailAddress?.name;
         if (!toEmail) continue;
         const domain = getDomain(toEmail);
-        if (!domain || SKIP_DOMAINS.has(domain) || domain === myDomain) continue;
+        if (!domain || isBlockedDomain(domain) || domain === myDomain) continue;
         ensureContact(domain, toEmail, toName);
         const le = toEmail.toLowerCase();
         domainMap[domain].contacts[le].sent++;
@@ -746,7 +787,7 @@ function processEmailBatch(messages) {
       const senderName = msg.from?.emailAddress?.name;
       if (!senderEmail) continue;
       const domain = getDomain(senderEmail);
-      if (!domain || SKIP_DOMAINS.has(domain) || domain === myDomain) continue;
+      if (!domain || isBlockedDomain(domain) || domain === myDomain) continue;
       ensureContact(domain, senderEmail, senderName);
       const le = senderEmail.toLowerCase();
       domainMap[domain].contacts[le].received++;
@@ -767,6 +808,9 @@ function buildCompaniesFromDomainMap() {
   companies = [];
   let id = 1;
   for (const [domain, data] of Object.entries(domainMap)) {
+    // Skip blocked domains (including ones blocked after initial scan)
+    if (isBlockedDomain(domain)) continue;
+
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
 
@@ -1008,7 +1052,7 @@ function renderTable() {
 
   const tbody = document.getElementById('tableBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Re-scan Emails" to sync your Outlook.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
     return;
   }
 
@@ -1100,6 +1144,10 @@ function openDetail(id) {
     </div>
   `).join('');
 
+  // Wire up block button for this domain
+  const blockBtn = document.getElementById('blockDomainBtn');
+  blockBtn.onclick = function() { if (confirm('Block "' + c.domain + '"? This domain will be removed from your CRM.')) blockDomainFromDetail(c.domain); };
+
   document.getElementById('detailPanel').classList.add('open');
 }
 
@@ -1114,6 +1162,7 @@ function openSettings() {
   document.getElementById('settingsModal').classList.add('active');
   document.getElementById('clientIdInput').value = getClientId();
   document.getElementById('redirectDisplay').textContent = window.location.origin + window.location.pathname;
+  renderBlockedDomainsList();
 }
 
 function closeSettings() {
@@ -1131,6 +1180,71 @@ async function saveSettings() {
   msalInstance = null;
   await initMSAL();
   await signIn();
+}
+
+// ──────────────────────────────────────────────
+// BLOCKED DOMAINS MANAGEMENT
+// ──────────────────────────────────────────────
+function addBlockedDomainsFromInput() {
+  const input = document.getElementById('blockDomainsInput');
+  const raw = input.value.trim();
+  if (!raw) return;
+  addBlockedDomains(raw);
+  input.value = '';
+}
+
+function addBlockedDomains(raw) {
+  // Parse: split on newlines, commas, spaces — extract domains
+  const entries = raw.split(/[\n,;\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+  let added = 0;
+  for (const entry of entries) {
+    // If it's an email address, extract domain
+    const domain = entry.includes('@') ? entry.split('@')[1] : entry;
+    if (domain && !SKIP_DOMAINS.has(domain) && !blockedDomains.has(domain)) {
+      blockedDomains.add(domain);
+      added++;
+    }
+  }
+  if (added > 0) {
+    saveBlockedDomains();
+    // Rebuild companies to remove newly blocked domains
+    buildCompaniesFromDomainMap();
+    renderTable();
+    updateStats();
+    renderBlockedDomainsList();
+  }
+}
+
+function removeBlockedDomain(domain) {
+  blockedDomains.delete(domain);
+  saveBlockedDomains();
+  // Rebuild companies — the unblocked domain may reappear
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  renderBlockedDomainsList();
+}
+
+function blockDomainFromDetail(domain) {
+  blockedDomains.add(domain.toLowerCase());
+  saveBlockedDomains();
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  closeDetail();
+}
+
+function renderBlockedDomainsList() {
+  const container = document.getElementById('blockedDomainsList');
+  if (!container) return;
+  if (blockedDomains.size === 0) {
+    container.innerHTML = '<span style="font-size:11px;color:var(--text2)">No blocked domains yet</span>';
+    return;
+  }
+  const sorted = [...blockedDomains].sort();
+  container.innerHTML = sorted.map(d =>
+    `<span class="blocked-tag">${esc(d)}<button onclick="removeBlockedDomain('${d}')" title="Unblock">&times;</button></span>`
+  ).join('');
 }
 
 // ──────────────────────────────────────────────
@@ -1208,6 +1322,7 @@ function esc(text) {
 // INIT — check for existing session
 // ──────────────────────────────────────────────
 (async function init() {
+  loadBlockedDomains();
   if (getClientId()) {
     await initMSAL();
     if (msalInstance) {
