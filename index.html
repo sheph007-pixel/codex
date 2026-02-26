@@ -210,16 +210,98 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .crm-content{display:none;flex-direction:column;gap:20px;flex:1}
 .crm-content.active{display:flex}
 
+/* ── COMPANY DETAIL OVERLAY ── */
+.company-overlay{position:fixed;inset:0;z-index:150;display:none;background:var(--bg)}
+.company-overlay.open{display:flex;flex-direction:column}
+.co-topbar{display:flex;align-items:center;gap:12px;padding:16px 24px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.co-back{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--text2);cursor:pointer;font:inherit;font-size:13px;padding:6px 10px;border-radius:6px;transition:.15s}
+.co-back:hover{background:var(--surface2);color:var(--text)}
+.co-back svg{width:18px;height:18px}
+.co-breadcrumb{font-size:13px;color:var(--text2)}
+.co-breadcrumb span{color:var(--text);font-weight:600}
+.co-body{flex:1;overflow-y:auto;padding:32px;max-width:960px;margin:0 auto;width:100%}
+.co-header{display:flex;align-items:center;gap:16px;margin-bottom:28px}
+.co-logo{width:56px;height:56px;border-radius:14px;display:grid;place-items:center;font-weight:700;font-size:22px;color:#fff;flex-shrink:0}
+.co-header-info h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:2px}
+.co-header-info .co-domain{font-size:13px;color:var(--text2)}
+.co-header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.co-stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.co-stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.co-stat .label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.co-stat .value{font-size:22px;font-weight:700;margin-top:4px}
+.co-section-title{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.co-section-title .count{font-size:11px;background:var(--surface2);padding:2px 8px;border-radius:10px;font-weight:700;color:var(--text)}
+
+/* ── CONTACT ROW IN COMPANY VIEW ── */
+.contact-row{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;transition:.15s}
+.contact-row:hover{border-color:var(--accent);background:rgba(108,92,231,.04)}
+.contact-row .cr-avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.contact-row .cr-info{flex:1;min-width:0}
+.contact-row .cr-name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px}
+.contact-row .cr-email{font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis}
+.contact-row .cr-stats{display:flex;gap:16px;font-size:12px;flex-shrink:0}
+.contact-row .cr-stats span{display:flex;align-items:center;gap:4px}
+.contact-row .cr-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;flex-shrink:0}
+.cr-badge-primary{background:var(--accent);color:#fff}
+.cr-star{background:none;border:none;cursor:pointer;font-size:18px;color:var(--text2);padding:4px;transition:.15s;flex-shrink:0;line-height:1}
+.cr-star:hover{color:var(--orange);transform:scale(1.2)}
+.cr-star.active{color:var(--orange)}
+
+/* ── CONTACT DETAIL OVERLAY ── */
+.contact-overlay{position:fixed;inset:0;z-index:160;display:none;background:var(--bg)}
+.contact-overlay.open{display:flex;flex-direction:column}
+.ct-body{flex:1;overflow-y:auto;padding:32px;max-width:960px;margin:0 auto;width:100%}
+.ct-header{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.ct-avatar{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:20px;color:#fff;flex-shrink:0}
+.ct-header-info h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin-bottom:2px}
+.ct-header-info .ct-email{font-size:13px;color:var(--text2)}
+.ct-header-info .ct-company{font-size:12px;color:var(--accent2);margin-top:2px;cursor:pointer}
+.ct-header-info .ct-company:hover{text-decoration:underline}
+.ct-stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0 28px}
+.ct-tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:0}
+.ct-tab{padding:8px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
+.ct-tab:hover{color:var(--text)}
+.ct-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+
+/* ── TIMELINE ── */
+.tl-loading{display:flex;align-items:center;gap:10px;padding:20px;color:var(--text2);font-size:13px}
+.tl-loading .scan-spinner{width:16px;height:16px;border-width:2px}
+.tl-empty{text-align:center;padding:40px;color:var(--text2);font-size:13px}
+.tl-list{display:flex;flex-direction:column;gap:2px}
+.tl-date-group{margin-top:16px}
+.tl-date-group:first-child{margin-top:0}
+.tl-date-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);padding:8px 0;position:sticky;top:0;background:var(--bg);z-index:1}
+.tl-item{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:8px;transition:.15s;cursor:default}
+.tl-item:hover{background:var(--surface)}
+.tl-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;flex-shrink:0}
+.tl-icon.sent{background:rgba(108,92,231,.12);color:var(--accent2)}
+.tl-icon.received{background:var(--green-bg);color:var(--green)}
+.tl-icon.meeting{background:var(--orange-bg);color:var(--orange)}
+.tl-icon svg{width:16px;height:16px}
+.tl-content{flex:1;min-width:0}
+.tl-subject{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-meta{font-size:11px;color:var(--text2);margin-top:2px;display:flex;align-items:center;gap:8px}
+.tl-preview{font-size:12px;color:var(--text2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:600px}
+.tl-time{font-size:11px;color:var(--text2);flex-shrink:0;white-space:nowrap}
+
 /* ── RESPONSIVE ── */
 @media(max-width:900px){
   .sidebar{display:none}
   .stats{grid-template-columns:repeat(2,1fr)}
   .detail-panel{width:100%}
+  .co-stats-row{grid-template-columns:repeat(2,1fr)}
+  .ct-stats-row{grid-template-columns:repeat(3,1fr)}
+  .co-body,.ct-body{padding:20px}
+  .contact-row .cr-stats{flex-direction:column;gap:4px;font-size:11px}
 }
 @media(max-width:600px){
   .stats{grid-template-columns:1fr}
   .search-box{width:100%}
   .toolbar{flex-direction:column;align-items:stretch}
+  .co-stats-row{grid-template-columns:1fr 1fr}
+  .ct-stats-row{grid-template-columns:1fr}
+  .contact-row{flex-wrap:wrap}
+  .contact-row .cr-stats{width:100%;justify-content:flex-start;padding-left:52px}
 }
 </style>
 </head>
@@ -454,6 +536,88 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
   </div>
 </div>
 
+<!-- COMPANY DETAIL OVERLAY -->
+<div class="company-overlay" id="companyOverlay">
+  <div class="co-topbar">
+    <button class="co-back" onclick="closeCompanyOverlay()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </button>
+    <div class="co-breadcrumb">Companies &rsaquo; <span id="coBreadcrumbName"></span></div>
+  </div>
+  <div class="co-body">
+    <div class="co-header">
+      <div class="co-logo" id="coLogo">A</div>
+      <div class="co-header-info">
+        <h1 id="coTitle"></h1>
+        <div class="co-domain" id="coDomain"></div>
+      </div>
+      <div class="co-header-right">
+        <span class="badge" id="coStatus"></span>
+        <div class="ai-score" id="coScoreWrap"></div>
+      </div>
+    </div>
+    <div class="co-stats-row">
+      <div class="co-stat"><span class="label">Emails Sent</span><div class="value" id="coSent">0</div></div>
+      <div class="co-stat"><span class="label">Emails Received</span><div class="value" id="coRecv">0</div></div>
+      <div class="co-stat"><span class="label">Contacts</span><div class="value" id="coContactCount">0</div></div>
+      <div class="co-stat"><span class="label">Last Activity</span><div class="value" id="coLastActivity" style="font-size:14px">—</div></div>
+    </div>
+    <div class="detail-section">
+      <h3>AI Insight</h3>
+      <div class="ai-insight">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <div>
+          <div class="label">AI Analysis</div>
+          <p id="coInsight"></p>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:28px">
+      <div class="co-section-title">Relationships <span class="count" id="coRelCount">0</span></div>
+      <div id="coContactsList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTACT DETAIL OVERLAY -->
+<div class="contact-overlay" id="contactOverlay">
+  <div class="co-topbar">
+    <button class="co-back" onclick="closeContactOverlay()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      Back
+    </button>
+    <div class="co-breadcrumb" id="ctBreadcrumb">Companies &rsaquo; <span id="ctBreadcrumbCompany"></span> &rsaquo; <span id="ctBreadcrumbName"></span></div>
+  </div>
+  <div class="ct-body">
+    <div class="ct-header">
+      <div class="ct-avatar" id="ctAvatar">AB</div>
+      <div class="ct-header-info">
+        <h1 id="ctName"></h1>
+        <div class="ct-email" id="ctEmail"></div>
+        <div class="ct-company" id="ctCompany" onclick="backToCompanyFromContact()"></div>
+      </div>
+      <div class="co-header-right">
+        <button class="cr-star active" id="ctStarBtn" onclick="toggleStarFromContact()" title="Toggle primary contact">&#9733;</button>
+      </div>
+    </div>
+    <div class="ct-stats-row">
+      <div class="co-stat"><span class="label">Emails Sent</span><div class="value" id="ctSent">0</div></div>
+      <div class="co-stat"><span class="label">Emails Received</span><div class="value" id="ctRecv">0</div></div>
+      <div class="co-stat"><span class="label">Last Contact</span><div class="value" id="ctLastDate" style="font-size:14px">—</div></div>
+    </div>
+    <div class="ct-tabs">
+      <button class="ct-tab active" onclick="switchContactTab('all',this)">All Activity</button>
+      <button class="ct-tab" onclick="switchContactTab('sent',this)">Sent</button>
+      <button class="ct-tab" onclick="switchContactTab('received',this)">Received</button>
+      <button class="ct-tab" onclick="switchContactTab('meetings',this)">Meetings</button>
+    </div>
+    <div id="ctTimeline">
+      <div class="tl-empty">Click a contact to see their activity timeline.</div>
+    </div>
+  </div>
+</div>
+
 <!-- SETTINGS MODAL -->
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
@@ -535,6 +699,35 @@ let autoSyncTimer = null;
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let blockedDomains = new Set();
 let selectedIds = new Set();
+let starredContacts = {};  // { "domain": "email@example.com" }
+let currentCompanyOverlay = null;  // company object for open overlay
+let currentContactOverlay = null;  // { contact, company, domain }
+let currentContactTab = 'all';
+let contactTimelineCache = {};  // "email" -> [{type,subject,date,...}]
+
+// ──────────────────────────────────────────────
+// STARRED / PRIMARY CONTACTS PERSISTENCE
+// ──────────────────────────────────────────────
+function loadStarredContacts() {
+  try {
+    const raw = localStorage.getItem('relateflow_starred_contacts');
+    starredContacts = raw ? JSON.parse(raw) : {};
+  } catch(e) { starredContacts = {}; }
+}
+
+function saveStarredContacts() {
+  localStorage.setItem('relateflow_starred_contacts', JSON.stringify(starredContacts));
+}
+
+function getPrimaryContact(domain, contacts) {
+  // If user has starred someone, use that
+  if (starredContacts[domain]) {
+    const starred = contacts.find(c => c.email === starredContacts[domain]);
+    if (starred) return starred;
+  }
+  // Default: most interactions (already sorted by buildCompaniesFromDomainMap)
+  return contacts[0];
+}
 
 // ──────────────────────────────────────────────
 // BLOCKED DOMAINS PERSISTENCE (localStorage)
@@ -1002,7 +1195,7 @@ function buildCompaniesFromDomainMap() {
     if (data.totalSent === 0) continue;
 
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
-    const primary = contactArr[0];
+    const primary = getPrimaryContact(domain, contactArr);
     const totalEmails = data.totalSent + data.totalReceived;
 
     let score = Math.min(99, Math.round(
@@ -1515,57 +1708,319 @@ function unblockDomain(domain) {
 }
 
 // ──────────────────────────────────────────────
-// DETAIL PANEL
+// DETAIL PANEL (legacy — redirect to overlay)
 // ──────────────────────────────────────────────
 function openDetail(id) {
-  const c = companies.find(x => x.id === id);
-  if (!c) return;
-  const color = COLORS[c.id % COLORS.length];
-  document.getElementById('detailLogo').style.background = color;
-  document.getElementById('detailLogo').textContent = c.name[0].toUpperCase();
-  document.getElementById('detailTitle').textContent = c.name;
-  document.getElementById('detailDomain').textContent = c.domain;
-  document.getElementById('detailSent').textContent = c.sent;
-  document.getElementById('detailRecv').textContent = c.received;
-  document.getElementById('detailContacts').textContent = c.allContacts ? c.allContacts.length : 1;
-  const rate = (c.sent + c.received) > 0 ? Math.round(c.received / (c.sent + c.received) * 100) : 0;
-  document.getElementById('detailRate').textContent = rate + '%';
-
-  // AI insight based on real data
-  let insight = '';
-  if (c.score >= 75) insight = `High engagement with ${c.name}. ${c.sent + c.received} total emails exchanged. This is one of your most active relationships — consider a direct call or meeting.`;
-  else if (c.score >= 50) insight = `Moderate engagement with ${c.name}. The conversation is active but could use more follow-up. ${c.received > c.sent ? 'They reply more than you send — great responsiveness.' : 'You send more than they reply — try a different approach.'}`;
-  else if (c.score >= 30) insight = `Early-stage relationship with ${c.name}. Only ${c.sent + c.received} emails exchanged so far. Consider increasing outreach to build momentum.`;
-  else insight = `Low activity with ${c.name}. Risk of going cold — last email was ${c.lastActivity}. AI recommends re-engaging with a personalized message.`;
-  document.getElementById('detailInsight').textContent = insight;
-
-  // Contacts list
-  const contacts = c.allContacts || [{ name: c.contact, email: c.contactEmail, sent: c.sent, received: c.received }];
-  document.getElementById('detailContactsList').innerHTML = contacts.map(ct => `
-    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border-radius:8px;padding:10px 14px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <div class="avatar" style="background:${color}">${ct.name.split(' ').map(n=>n[0]).join('').substring(0,2)}</div>
-        <div style="display:flex;flex-direction:column">
-          <span style="font-weight:600;font-size:13px">${esc(ct.name)}</span>
-          <span style="font-size:11px;color:var(--text2)">${esc(ct.email)}</span>
-        </div>
-      </div>
-      <div style="display:flex;gap:12px;font-size:12px">
-        <span style="color:var(--accent2)">${ct.sent} sent</span>
-        <span style="color:var(--green)">${ct.received} recv</span>
-      </div>
-    </div>
-  `).join('');
-
-  // Wire up block button for this domain
-  const blockBtn = document.getElementById('blockDomainBtn');
-  blockBtn.onclick = function() { if (confirm('Block "' + c.domain + '"? This domain will be removed from your CRM.')) blockDomainFromDetail(c.domain); };
-
-  document.getElementById('detailPanel').classList.add('open');
+  openCompanyOverlay(id);
 }
 
 function closeDetail() {
   document.getElementById('detailPanel').classList.remove('open');
+}
+
+// ──────────────────────────────────────────────
+// COMPANY OVERLAY — full-page company detail
+// ──────────────────────────────────────────────
+function openCompanyOverlay(id) {
+  const c = companies.find(x => x.id === id);
+  if (!c) return;
+  currentCompanyOverlay = c;
+  const color = COLORS[c.id % COLORS.length];
+
+  document.getElementById('coBreadcrumbName').textContent = c.name;
+  document.getElementById('coLogo').style.background = color;
+  document.getElementById('coLogo').textContent = c.name[0].toUpperCase();
+  document.getElementById('coTitle').textContent = c.name;
+  document.getElementById('coDomain').textContent = c.domain;
+  document.getElementById('coSent').textContent = c.sent.toLocaleString();
+  document.getElementById('coRecv').textContent = c.received.toLocaleString();
+  const contacts = c.allContacts || [];
+  document.getElementById('coContactCount').textContent = contacts.length;
+  document.getElementById('coLastActivity').textContent = c.lastActivity || '—';
+  document.getElementById('coRelCount').textContent = contacts.length;
+
+  // Status badge
+  const statusEl = document.getElementById('coStatus');
+  statusEl.className = 'badge ' + (STATUS_CLASS[c.status] || '');
+  statusEl.textContent = c.status;
+
+  // Score
+  const circumference = 2 * Math.PI * 12;
+  const offset = circumference - (c.score / 100) * circumference;
+  const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
+  document.getElementById('coScoreWrap').innerHTML = `<div class="score-ring" style="color:${scoreColor}"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="${scoreColor}" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/></svg>${c.score}</div>`;
+
+  // AI insight
+  let insight = '';
+  if (c.score >= 75) insight = 'High engagement with ' + c.name + '. ' + (c.sent + c.received) + ' total emails exchanged. This is one of your most active relationships — consider a direct call or meeting.';
+  else if (c.score >= 50) insight = 'Moderate engagement with ' + c.name + '. The conversation is active but could use more follow-up. ' + (c.received > c.sent ? 'They reply more than you send — great responsiveness.' : 'You send more than they reply — try a different approach.');
+  else if (c.score >= 30) insight = 'Early-stage relationship with ' + c.name + '. Only ' + (c.sent + c.received) + ' emails exchanged so far. Consider increasing outreach to build momentum.';
+  else insight = 'Low activity with ' + c.name + '. Risk of going cold — last email was ' + c.lastActivity + '. AI recommends re-engaging with a personalized message.';
+  document.getElementById('coInsight').textContent = insight;
+
+  // Render contacts sorted by total emails
+  const sorted = [...contacts].sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
+  const primaryEmail = starredContacts[c.domain] || (sorted[0] ? sorted[0].email : '');
+  const container = document.getElementById('coContactsList');
+  container.innerHTML = sorted.map(ct => {
+    const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const total = ct.sent + ct.received;
+    const isPrimary = ct.email === primaryEmail;
+    const starClass = isPrimary ? 'cr-star active' : 'cr-star';
+    return '<div class="contact-row" onclick="openContactOverlay(\'' + ct.email.replace(/'/g, "\\'") + '\',\'' + c.domain.replace(/'/g, "\\'") + '\')">' +
+      '<div class="cr-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
+      '<div class="cr-info">' +
+        '<div class="cr-name">' + esc(ct.name) + (isPrimary ? ' <span class="cr-badge cr-badge-primary">Primary</span>' : '') + '</div>' +
+        '<div class="cr-email">' + esc(ct.email) + '</div>' +
+      '</div>' +
+      '<div class="cr-stats">' +
+        '<span style="color:var(--accent2)">' + ct.sent + ' sent</span>' +
+        '<span style="color:var(--green)">' + ct.received + ' recv</span>' +
+        '<span style="color:var(--text2);font-weight:600">' + total + ' total</span>' +
+      '</div>' +
+      '<button class="' + starClass + '" onclick="event.stopPropagation();toggleStar(\'' + c.domain.replace(/'/g, "\\'") + '\',\'' + ct.email.replace(/'/g, "\\'") + '\')" title="' + (isPrimary ? 'Primary contact' : 'Set as primary') + '">&#9733;</button>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('companyOverlay').classList.add('open');
+}
+
+function closeCompanyOverlay() {
+  document.getElementById('companyOverlay').classList.remove('open');
+  currentCompanyOverlay = null;
+}
+
+function toggleStar(domain, email) {
+  if (starredContacts[domain] === email) {
+    delete starredContacts[domain];
+  } else {
+    starredContacts[domain] = email;
+  }
+  saveStarredContacts();
+  // Rebuild to update primary contact in main table
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  // Re-render the company overlay if open
+  if (currentCompanyOverlay) {
+    const c = companies.find(x => x.domain === domain);
+    if (c) openCompanyOverlay(c.id);
+  }
+}
+
+// ──────────────────────────────────────────────
+// CONTACT OVERLAY — full-page contact timeline
+// ──────────────────────────────────────────────
+function openContactOverlay(email, domain) {
+  const data = domainMap[domain];
+  if (!data) return;
+  const ct = data.contacts[email.toLowerCase()];
+  if (!ct) return;
+  const c = companies.find(x => x.domain === domain);
+  const companyName = c ? c.name : domain;
+  const color = COLORS[(c ? c.id : 0) % COLORS.length];
+  currentContactOverlay = { contact: ct, company: c, domain: domain, email: email.toLowerCase() };
+
+  const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  document.getElementById('ctBreadcrumbCompany').textContent = companyName;
+  document.getElementById('ctBreadcrumbName').textContent = ct.name;
+  document.getElementById('ctAvatar').style.background = color;
+  document.getElementById('ctAvatar').textContent = initials;
+  document.getElementById('ctName').textContent = ct.name;
+  document.getElementById('ctEmail').textContent = ct.email;
+  document.getElementById('ctCompany').textContent = companyName + ' · ' + domain;
+  document.getElementById('ctSent').textContent = ct.sent;
+  document.getElementById('ctRecv').textContent = ct.received;
+  document.getElementById('ctLastDate').textContent = ct.lastDate ? timeAgo(ct.lastDate) : '—';
+
+  // Star button
+  const isPrimary = starredContacts[domain] === email.toLowerCase() ||
+    (!starredContacts[domain] && c && c.contactEmail === email.toLowerCase());
+  const starBtn = document.getElementById('ctStarBtn');
+  starBtn.className = isPrimary ? 'cr-star active' : 'cr-star';
+
+  // Reset tabs
+  currentContactTab = 'all';
+  document.querySelectorAll('.ct-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector('.ct-tab').classList.add('active');
+
+  document.getElementById('contactOverlay').classList.add('open');
+
+  // Fetch timeline from Outlook
+  fetchContactTimeline(email.toLowerCase(), domain);
+}
+
+function closeContactOverlay() {
+  document.getElementById('contactOverlay').classList.remove('open');
+  currentContactOverlay = null;
+}
+
+function backToCompanyFromContact() {
+  if (currentContactOverlay && currentContactOverlay.company) {
+    closeContactOverlay();
+    // Company overlay should still be open underneath
+  }
+}
+
+function toggleStarFromContact() {
+  if (!currentContactOverlay) return;
+  toggleStar(currentContactOverlay.domain, currentContactOverlay.email);
+  // Update the star button state
+  const isPrimary = starredContacts[currentContactOverlay.domain] === currentContactOverlay.email;
+  document.getElementById('ctStarBtn').className = isPrimary ? 'cr-star active' : 'cr-star';
+}
+
+function switchContactTab(tab, el) {
+  currentContactTab = tab;
+  document.querySelectorAll('.ct-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (currentContactOverlay) {
+    renderContactTimeline(currentContactOverlay.email);
+  }
+}
+
+async function fetchContactTimeline(email, domain) {
+  const el = document.getElementById('ctTimeline');
+  el.innerHTML = '<div class="tl-loading"><div class="scan-spinner"></div>Loading activity from Outlook...</div>';
+
+  // Check cache first
+  if (contactTimelineCache[email] && contactTimelineCache[email].length > 0) {
+    renderContactTimeline(email);
+    return;
+  }
+
+  try {
+    const token = await getAccessToken();
+    const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    const items = [];
+
+    // Fetch emails involving this contact (sent to or received from)
+    const filterFrom = "from/emailAddress/address eq '" + email + "'";
+    const filterTo = "toRecipients/any(r:r/emailAddress/address eq '" + email + "')";
+    const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead';
+    const orderBy = '$orderby=receivedDateTime desc';
+    const top = '$top=50';
+
+    // Fetch received from this contact
+    const url1 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent(filterFrom);
+    const resp1 = await fetch(url1, { headers });
+    if (resp1.ok) {
+      const d1 = await resp1.json();
+      if (d1.value) {
+        for (const m of d1.value) {
+          items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id });
+        }
+      }
+    }
+
+    // Fetch sent to this contact
+    const url2 = 'https://graph.microsoft.com/v1.0/me/messages?' + top + '&' + select + '&' + orderBy + '&$filter=' + encodeURIComponent(filterTo);
+    const resp2 = await fetch(url2, { headers });
+    if (resp2.ok) {
+      const d2 = await resp2.json();
+      if (d2.value) {
+        for (const m of d2.value) {
+          const isSent = m.from?.emailAddress?.address?.toLowerCase() === userEmail.toLowerCase();
+          if (isSent) {
+            items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id });
+          }
+        }
+      }
+    }
+
+    // Fetch calendar events with this contact (if Calendars.Read scope available)
+    try {
+      const calUrl = "https://graph.microsoft.com/v1.0/me/events?$top=30&$select=subject,start,end,attendees,organizer,isOnlineMeeting&$orderby=start/dateTime desc&$filter=" + encodeURIComponent("attendees/any(a:a/emailAddress/address eq '" + email + "')");
+      const calResp = await fetch(calUrl, { headers });
+      if (calResp.ok) {
+        const calData = await calResp.json();
+        if (calData.value) {
+          for (const ev of calData.value) {
+            items.push({ type: 'meeting', subject: ev.subject || 'Meeting', date: new Date(ev.start?.dateTime || ev.end?.dateTime), preview: (ev.isOnlineMeeting ? 'Online meeting' : 'In-person') + ' · ' + (ev.attendees?.length || 0) + ' attendees', id: ev.id });
+          }
+        }
+      }
+    } catch(e) { /* Calendar scope may not be available */ }
+
+    // Dedupe by id and sort by date desc
+    const seen = new Set();
+    const unique = [];
+    for (const item of items) {
+      if (!seen.has(item.id)) { seen.add(item.id); unique.push(item); }
+    }
+    unique.sort((a, b) => b.date - a.date);
+
+    contactTimelineCache[email] = unique;
+    renderContactTimeline(email);
+
+  } catch(e) {
+    console.error('Timeline fetch error:', e);
+    el.innerHTML = '<div class="tl-empty">Could not load activity. ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderContactTimeline(email) {
+  const el = document.getElementById('ctTimeline');
+  let items = contactTimelineCache[email] || [];
+
+  // Filter by tab
+  if (currentContactTab === 'sent') items = items.filter(i => i.type === 'sent');
+  else if (currentContactTab === 'received') items = items.filter(i => i.type === 'received');
+  else if (currentContactTab === 'meetings') items = items.filter(i => i.type === 'meeting');
+
+  if (items.length === 0) {
+    const msgs = { all: 'No activity found with this contact.', sent: 'No sent emails found.', received: 'No received emails found.', meetings: 'No meetings found.' };
+    el.innerHTML = '<div class="tl-empty">' + (msgs[currentContactTab] || msgs.all) + '</div>';
+    return;
+  }
+
+  // Group by date
+  const groups = {};
+  for (const item of items) {
+    const key = formatDateGroup(item.date);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  }
+
+  let html = '<div class="tl-list">';
+  for (const [dateLabel, groupItems] of Object.entries(groups)) {
+    html += '<div class="tl-date-group">';
+    html += '<div class="tl-date-label">' + esc(dateLabel) + '</div>';
+    for (const item of groupItems) {
+      const iconClass = item.type;
+      const iconSvg = item.type === 'meeting'
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
+        : item.type === 'sent'
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>';
+      const timeStr = item.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const typeLabel = item.type === 'meeting' ? 'Meeting' : item.type === 'sent' ? 'Sent' : 'Received';
+
+      html += '<div class="tl-item">';
+      html += '<div class="tl-icon ' + iconClass + '">' + iconSvg + '</div>';
+      html += '<div class="tl-content">';
+      html += '<div class="tl-subject">' + esc(item.subject) + '</div>';
+      html += '<div class="tl-meta"><span>' + typeLabel + '</span></div>';
+      if (item.preview) html += '<div class="tl-preview">' + esc(item.preview.substring(0, 120)) + '</div>';
+      html += '</div>';
+      html += '<div class="tl-time">' + timeStr + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function formatDateGroup(date) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = Math.floor((today - d) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7) return date.toLocaleDateString([], { weekday: 'long' });
+  return date.toLocaleDateString([], { month: 'long', day: 'numeric', year: now.getFullYear() !== date.getFullYear() ? 'numeric' : undefined });
 }
 
 // ──────────────────────────────────────────────
@@ -1740,6 +2195,7 @@ function esc(text) {
 (async function init() {
   loadBlockedDomains();
   loadCompanyNameCache();
+  loadStarredContacts();
   if (getClientId()) {
     await initMSAL();
     if (msalInstance) {
