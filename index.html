@@ -51,7 +51,8 @@ body{min-height:100vh;overflow-x:hidden}
 .sidebar-item.active{color:var(--accent2)}
 .sidebar-item svg{width:18px;height:18px;flex-shrink:0}
 .sidebar-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
-.main{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px}
+.main{flex:1;overflow-y:auto;overflow-x:hidden;padding:24px;display:flex;flex-direction:column;gap:20px}
+.main:has(.detail-page.active){padding:0;gap:0;overflow:hidden}
 
 /* ── WELCOME / SIGN-IN SCREEN ── */
 .welcome-screen{display:flex;align-items:center;justify-content:center;flex:1;padding:40px}
@@ -180,64 +181,71 @@ td.custom-cell .cell-val.enriching{color:var(--text2);font-style:italic}
 td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--accent);border-radius:4px;padding:2px 6px;font-size:13px;font-family:inherit;color:var(--text);outline:none;width:90%}
 
 /* ── DETAIL PANEL (full-page overlay) ── */
-.detail-panel{position:fixed;top:0;right:0;bottom:0;z-index:150;width:100%;max-width:680px;background:var(--surface);box-shadow:-4px 0 32px rgba(60,64,67,.12);transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
-.detail-panel.open{transform:translateX(0)}
-.detail-backdrop{position:fixed;inset:0;z-index:149;background:rgba(0,0,0,.15);opacity:0;pointer-events:none;transition:opacity .3s}
-.detail-backdrop.open{opacity:1;pointer-events:auto}
-.dp-scroll{flex:1;overflow-y:auto;padding:28px 32px;-webkit-overflow-scrolling:touch}
-.dp-header{display:flex;align-items:center;gap:10px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:2;padding-top:0}
-.dp-back{background:none;border:none;color:var(--accent);cursor:pointer;padding:4px 8px;border-radius:6px;display:none;transition:.15s;font-size:12px;font-weight:500;font-family:inherit;gap:4px;align-items:center}
-.dp-back:hover{background:var(--surface2)}
-.dp-back svg{width:14px;height:14px}
-.dp-back.visible{display:inline-flex}
-.dp-breadcrumb{font-size:14px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dp-breadcrumb b{color:var(--text);font-weight:600}
-.dp-close{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:36px;height:36px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;transition:.15s}
-.dp-close:hover{background:var(--surface2);color:var(--text)}
-.dp-close svg{width:18px;height:18px}
+/* ── FULL-PAGE COMPANY DETAIL ── */
+.detail-page{display:none;flex-direction:column;height:100%}
+.detail-page.active{display:flex}
+.dp-topbar{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.dp-topbar-back{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;font-weight:500;font-family:inherit;padding:6px 10px;border-radius:6px;transition:.15s}
+.dp-topbar-back:hover{background:var(--surface2)}
+.dp-topbar-back svg{width:16px;height:16px}
+.dp-topbar-title{flex:1;font-size:15px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-topbar-close{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:34px;height:34px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;transition:.15s}
+.dp-topbar-close:hover{background:var(--surface2);color:var(--text)}
+.dp-topbar-close svg{width:16px;height:16px}
 
-/* Panel — Company State */
-.dp-company-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.dp-body{display:flex;flex:1;overflow:hidden}
+
+/* Left: company info + relationships */
+.dp-left{width:340px;min-width:280px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.dp-left-head{padding:20px 20px 0;flex-shrink:0}
+.dp-company-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .dp-co-logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0}
-.dp-co-info h2{font-size:16px;font-weight:700;letter-spacing:-.2px}
-.dp-co-info .dp-domain{font-size:12px;color:var(--text2)}
-.dp-co-meta{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.dp-mini-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
-.dp-mini-stat{background:var(--surface2);border-radius:8px;padding:10px 12px}
+.dp-co-info h2{font-size:15px;font-weight:700;letter-spacing:-.2px}
+.dp-co-info .dp-domain{font-size:11px;color:var(--text2)}
+.dp-co-meta{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.dp-mini-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.dp-mini-stat{background:var(--surface2);border-radius:8px;padding:8px 10px}
 .dp-mini-stat .label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-.dp-mini-stat .value{font-size:18px;font-weight:700;margin-top:2px}
-.dp-section{margin-top:16px}
-.dp-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.dp-mini-stat .value{font-size:16px;font-weight:700;margin-top:2px}
+.dp-left-contacts{flex:1;overflow-y:auto;padding:0 12px 16px}
+.dp-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px;padding:8px 8px 0;display:flex;align-items:center;gap:6px}
 .dp-section-title .cnt{font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:8px;color:var(--text)}
-
-/* Contact rows in panel */
-.dp-contact{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:.15s;margin-bottom:4px}
+.dp-contact{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:.15s;margin-bottom:2px}
 .dp-contact:hover{background:var(--surface2)}
-.dp-contact .dp-ct-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:11px;color:#fff;flex-shrink:0}
+.dp-contact.selected{background:var(--surface2);box-shadow:inset 3px 0 0 var(--accent)}
+.dp-contact .dp-ct-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0}
 .dp-contact .dp-ct-info{flex:1;min-width:0}
-.dp-contact .dp-ct-name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dp-contact .dp-ct-email{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-contact .dp-ct-name{font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-contact .dp-ct-email{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dp-contact .dp-ct-count{font-size:11px;color:var(--text2);flex-shrink:0;font-weight:600}
-.dp-star{background:none;border:none;cursor:pointer;font-size:16px;color:var(--border);padding:2px;transition:.15s;flex-shrink:0;line-height:1}
+.dp-star{background:none;border:none;cursor:pointer;font-size:15px;color:var(--border);padding:2px;transition:.15s;flex-shrink:0;line-height:1}
 .dp-star:hover{color:var(--orange);transform:scale(1.15)}
 .dp-star.active{color:var(--orange)}
-.dp-primary-badge{font-size:9px;padding:1px 6px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;flex-shrink:0}
+.dp-primary-badge{font-size:8px;padding:1px 5px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;flex-shrink:0}
+.dp-left-foot{padding:8px 20px;border-top:1px solid var(--border);flex-shrink:0}
 
-/* Panel — Contact State */
-.dp-ct-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.dp-ct-big-avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0}
-.dp-ct-head-info h2{font-size:16px;font-weight:700}
-.dp-ct-head-info .dp-ct-head-email{font-size:12px;color:var(--text2)}
-.dp-ct-head-info .dp-ct-head-company{font-size:11px;color:var(--accent2);cursor:pointer}
-.dp-ct-head-info .dp-ct-head-company:hover{text-decoration:underline}
-.dp-ct-actions{display:flex;gap:6px;margin-bottom:16px}
+/* Right: selected contact timeline */
+.dp-right{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.dp-right-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text2);gap:8px;padding:40px}
+.dp-right-empty svg{width:40px;height:40px;opacity:.3}
+.dp-right-empty p{font-size:13px}
+.dp-right-head{padding:16px 24px;border-bottom:1px solid var(--border);flex-shrink:0}
+.dp-ct-head{display:flex;align-items:center;gap:12px;margin-bottom:0}
+.dp-ct-big-avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.dp-ct-head-info h2{font-size:15px;font-weight:700}
+.dp-ct-head-info .dp-ct-head-email{font-size:11px;color:var(--text2)}
+.dp-ct-actions{display:flex;gap:6px;margin-top:10px}
 .dp-ct-actions .btn{font-size:11px;padding:5px 10px}
-.dp-tabs{display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)}
-.dp-tab{padding:6px 12px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
+.dp-ct-stats-row{display:flex;gap:16px;margin-top:10px}
+.dp-ct-stats-row .dp-ct-stat{font-size:11px;color:var(--text2)}
+.dp-ct-stats-row .dp-ct-stat b{font-weight:700;font-size:14px;display:block;margin-bottom:1px}
+.dp-right-tabs{padding:0 24px;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;gap:0}
+.dp-tab{padding:8px 14px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
 .dp-tab:hover{color:var(--text)}
 .dp-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+.dp-right-timeline{flex:1;overflow-y:auto;padding:12px 24px 24px;-webkit-overflow-scrolling:touch}
 
-/* Timeline items in panel */
+/* Timeline items */
 .tl-loading{display:flex;align-items:center;gap:8px;padding:16px;color:var(--text2);font-size:12px}
 .tl-loading .scan-spinner{width:14px;height:14px;border-width:2px}
 .tl-empty{text-align:center;padding:32px 16px;color:var(--text2);font-size:12px}
@@ -259,6 +267,12 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .tl-time{font-size:10px;color:var(--text2);flex-shrink:0;white-space:nowrap}
 .tl-reply-btn{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;padding:3px 6px;border-radius:4px;font-size:10px;flex-shrink:0;transition:.15s;font-family:inherit}
 .tl-reply-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--accent)}
+
+@media(max-width:768px){
+  .dp-body{flex-direction:column}
+  .dp-left{width:100%;border-right:none;border-bottom:1px solid var(--border);max-height:40vh}
+  .dp-right{min-height:50vh}
+}
 
 /* Compose email modal */
 .compose-overlay{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:200;display:none;place-items:center;backdrop-filter:blur(4px)}
@@ -325,8 +339,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 @media(max-width:900px){
   .sidebar{display:none}
   .stats{grid-template-columns:repeat(2,1fr)}
-  .detail-panel{max-width:100%}
-  .dp-scroll{padding:20px}
 }
 @media(max-width:600px){
   .stats{grid-template-columns:1fr}
@@ -505,6 +517,34 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         </table>
       </div>
     </div>
+
+    <!-- FULL-PAGE COMPANY DETAIL -->
+    <div class="detail-page" id="detailPage">
+      <div class="dp-topbar">
+        <button class="dp-topbar-back" onclick="closePanel()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          All Companies
+        </button>
+        <div class="dp-topbar-title" id="dpTopbarTitle"></div>
+        <button class="dp-topbar-close" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <div class="dp-body">
+        <div class="dp-left">
+          <div class="dp-left-head" id="dpLeftHead"></div>
+          <div class="dp-left-contacts" id="dpLeftContacts"></div>
+          <div class="dp-left-foot" id="dpLeftFoot"></div>
+        </div>
+        <div class="dp-right" id="dpRight">
+          <div class="dp-right-empty" id="dpRightEmpty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            <p>Select a contact to view their history</p>
+          </div>
+          <div class="dp-right-head" id="dpRightHead" style="display:none"></div>
+          <div class="dp-right-tabs" id="dpRightTabs" style="display:none"></div>
+          <div class="dp-right-timeline" id="dpTimeline" style="display:none"></div>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -517,12 +557,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     Block from System
   </button>
   <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Cancel</button>
-</div>
-
-<!-- INLINE DETAIL PANEL (right side) -->
-<div class="detail-backdrop" id="detailBackdrop" onclick="closePanel()"></div>
-<div class="detail-panel" id="detailPanel">
-  <div class="dp-scroll" id="dpScroll"></div>
 </div>
 
 <!-- COMPOSE EMAIL MODAL -->
@@ -2092,7 +2126,7 @@ function showCompanyPanel(id) {
   const c = companies.find(x => x.id === id);
   if (!c) return;
   currentCompanyOverlay = c;
-  panelState = { view: 'company', companyId: id };
+  panelState = { view: 'company', companyId: id, selectedContact: null };
   const color = COLORS[c.id % COLORS.length];
   const contacts = c.allContacts || [];
   const sorted = [...contacts].sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
@@ -2109,40 +2143,40 @@ function showCompanyPanel(id) {
   const offset = circumference - (c.score / 100) * circumference;
   const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
 
-  let html = '<div class="dp-header">' +
-    '<button class="dp-back" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>' +
-    '<div class="dp-breadcrumb"><b>' + esc(c.name) + '</b></div>' +
-    '<button class="dp-close" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
-  '</div>';
+  // Topbar
+  document.getElementById('dpTopbarTitle').textContent = c.name;
 
-  html += '<div class="dp-company-head">' +
+  // Left head: company info
+  let headHtml = '<div class="dp-company-head">' +
     '<div class="dp-co-logo" style="background:' + color + '">' + c.name[0].toUpperCase() + '</div>' +
     '<div class="dp-co-info"><h2>' + esc(c.name) + '</h2><div class="dp-domain">' + esc(c.domain) + '</div></div>' +
   '</div>';
 
-  html += '<div class="dp-co-meta">' +
+  headHtml += '<div class="dp-co-meta">' +
     '<span class="badge ' + (STATUS_CLASS[c.status] || '') + '">' + c.status + '</span>' +
     '<div class="ai-score"><div class="score-ring" style="color:' + scoreColor + '"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="' + scoreColor + '" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + offset + '"/></svg>' + c.score + '</div></div>' +
     '<span style="font-size:11px;color:var(--text2)">' + esc(c.lastActivity) + '</span>' +
   '</div>';
 
-  html += '<div class="dp-mini-stats">' +
+  headHtml += '<div class="dp-mini-stats">' +
     '<div class="dp-mini-stat"><span class="label">Sent</span><div class="value" style="color:var(--accent2)">' + c.sent + '</div></div>' +
     '<div class="dp-mini-stat"><span class="label">Received</span><div class="value" style="color:var(--green)">' + c.received + '</div></div>' +
   '</div>';
 
-  html += '<div class="ai-insight"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><div><div class="label">AI Insight</div><p>' + esc(insight) + '</p></div></div>';
+  headHtml += '<div class="ai-insight" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><div><div class="label">AI Insight</div><p style="margin:0">' + esc(insight) + '</p></div></div>';
 
-  html += '<div class="dp-section" style="margin-top:16px"><div class="dp-section-title">Relationships <span class="cnt">' + sorted.length + '</span></div>';
+  document.getElementById('dpLeftHead').innerHTML = headHtml;
 
+  // Left contacts list
+  let ctHtml = '<div class="dp-section-title">Relationships <span class="cnt">' + sorted.length + '</span></div>';
   for (const ct of sorted) {
-    const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const initials = ct.name.split(' ').map(function(n){return n[0]}).join('').substring(0, 2).toUpperCase();
     const total = ct.sent + ct.received;
     const isPrimary = ct.email === primaryEmail;
     const eSafe = ct.email.replace(/'/g, "\\'");
     const dSafe = c.domain.replace(/'/g, "\\'");
 
-    html += '<div class="dp-contact" onclick="showContactPanel(\'' + eSafe + '\',\'' + dSafe + '\',' + c.id + ')">' +
+    ctHtml += '<div class="dp-contact" data-email="' + esc(ct.email) + '" onclick="selectContact(\'' + eSafe + '\',\'' + dSafe + '\',' + c.id + ')">' +
       '<div class="dp-ct-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
       '<div class="dp-ct-info">' +
         '<div class="dp-ct-name">' + esc(ct.name) + (isPrimary ? ' <span class="dp-primary-badge">Primary</span>' : '') + '</div>' +
@@ -2152,92 +2186,104 @@ function showCompanyPanel(id) {
       '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="event.stopPropagation();toggleStar(\'' + dSafe + '\',\'' + eSafe + '\')" title="' + (isPrimary ? 'Primary' : 'Set primary') + '">&#9733;</button>' +
     '</div>';
   }
+  document.getElementById('dpLeftContacts').innerHTML = ctHtml;
 
-  html += '</div>';
+  // Left footer
+  document.getElementById('dpLeftFoot').innerHTML =
+    '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + c.domain.replace(/'/g, "\\'") + '\')" style="color:var(--red);border-color:var(--red);font-size:11px;width:100%">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Block domain</button>';
 
-  // Block domain button
-  html += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">' +
-    '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + c.domain.replace(/'/g, "\\'") + '\')" style="color:var(--red);border-color:var(--red);font-size:11px">' +
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Block domain</button></div>';
+  // Reset right side to empty state
+  document.getElementById('dpRightEmpty').style.display = 'flex';
+  document.getElementById('dpRightHead').style.display = 'none';
+  document.getElementById('dpRightTabs').style.display = 'none';
+  document.getElementById('dpTimeline').style.display = 'none';
 
-  document.getElementById('dpScroll').innerHTML = html;
-  document.getElementById('detailPanel').classList.add('open');
-  document.getElementById('detailBackdrop').classList.add('open');
+  // Show detail page, hide CRM table
+  document.getElementById('crmContent').style.display = 'none';
+  document.getElementById('detailPage').classList.add('active');
 
+  // Auto-select first contact if available
+  if (sorted.length > 0) {
+    selectContact(sorted[0].email, c.domain, c.id);
+  }
 }
 
-function showContactPanel(email, domain, companyId) {
+function selectContact(email, domain, companyId) {
   const data = domainMap[domain];
   if (!data) return;
   const ct = data.contacts[email.toLowerCase()];
   if (!ct) return;
   const c = companies.find(x => x.domain === domain);
-  const companyName = c ? c.name : domain;
   const color = COLORS[(c ? c.id : 0) % COLORS.length];
   currentContactOverlay = { contact: ct, company: c, domain: domain, email: email.toLowerCase() };
-  panelState = { view: 'contact', email: email.toLowerCase(), domain: domain, companyId: companyId || (c ? c.id : 0) };
+  if (panelState) panelState.selectedContact = email.toLowerCase();
   currentContactTab = 'all';
 
-  const initials = ct.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-  const isPrimary = starredContacts[domain] === email.toLowerCase() || (!starredContacts[domain] && c && c.contactEmail === email.toLowerCase());
+  // Highlight selected contact in left list
+  document.querySelectorAll('#dpLeftContacts .dp-contact').forEach(function(el) {
+    el.classList.toggle('selected', el.dataset.email === email.toLowerCase());
+  });
 
-  let html = '<div class="dp-header">' +
-    '<button class="dp-back visible" onclick="showCompanyPanel(' + panelState.companyId + ')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>' +
-    '<div class="dp-breadcrumb">' + esc(companyName) + ' &rsaquo; <b>' + esc(ct.name) + '</b></div>' +
-    '<button class="dp-close" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' +
-  '</div>';
+  const initials = ct.name.split(' ').map(function(n){return n[0]}).join('').substring(0, 2).toUpperCase();
+  const isPrimary = starredContacts[domain] === email.toLowerCase();
+  const eSafe = ct.email.replace(/'/g, "\\'");
 
-  html += '<div class="dp-ct-head">' +
+  // Right head
+  let headHtml = '<div class="dp-ct-head">' +
     '<div class="dp-ct-big-avatar" style="background:' + color + '">' + esc(initials) + '</div>' +
     '<div class="dp-ct-head-info">' +
       '<h2>' + esc(ct.name) + '</h2>' +
       '<div class="dp-ct-head-email">' + esc(ct.email) + '</div>' +
-      '<div class="dp-ct-head-company" onclick="showCompanyPanel(' + panelState.companyId + ')">' + esc(companyName) + '</div>' +
     '</div>' +
     '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="toggleStarInPanel(\'' + domain.replace(/'/g, "\\'") + '\',\'' + email.toLowerCase().replace(/'/g, "\\'") + '\')" style="font-size:20px">&#9733;</button>' +
   '</div>';
-
-  // Actions: Email + Reply
-  const eSafe = ct.email.replace(/'/g, "\\'");
-  html += '<div class="dp-ct-actions">' +
+  headHtml += '<div class="dp-ct-actions">' +
     '<button class="btn btn-primary btn-sm" onclick="openCompose(\'' + eSafe + '\',\'' + esc(ct.name) + '\',\'\',\'\')">' +
       '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Email' +
     '</button>' +
   '</div>';
-
-  html += '<div class="dp-mini-stats" style="grid-template-columns:1fr 1fr 1fr">' +
-    '<div class="dp-mini-stat"><span class="label">Sent</span><div class="value" style="font-size:16px;color:var(--accent2)">' + ct.sent + '</div></div>' +
-    '<div class="dp-mini-stat"><span class="label">Received</span><div class="value" style="font-size:16px;color:var(--green)">' + ct.received + '</div></div>' +
-    '<div class="dp-mini-stat"><span class="label">Last</span><div class="value" style="font-size:12px">' + (ct.lastDate ? timeAgo(ct.lastDate) : '—') + '</div></div>' +
+  headHtml += '<div class="dp-ct-stats-row">' +
+    '<div class="dp-ct-stat"><b style="color:var(--accent2)">' + ct.sent + '</b>Sent</div>' +
+    '<div class="dp-ct-stat"><b style="color:var(--green)">' + ct.received + '</b>Received</div>' +
+    '<div class="dp-ct-stat"><b>' + (ct.lastDate ? timeAgo(ct.lastDate) : '—') + '</b>Last</div>' +
   '</div>';
 
-  // Tabs
-  html += '<div class="dp-tabs">' +
+  document.getElementById('dpRightHead').innerHTML = headHtml;
+
+  // Right tabs
+  document.getElementById('dpRightTabs').innerHTML =
     '<button class="dp-tab active" onclick="switchTab(\'all\',this)">All</button>' +
     '<button class="dp-tab" onclick="switchTab(\'sent\',this)">Sent</button>' +
     '<button class="dp-tab" onclick="switchTab(\'received\',this)">Received</button>' +
-    '<button class="dp-tab" onclick="switchTab(\'meetings\',this)">Meetings</button>' +
-  '</div>';
+    '<button class="dp-tab" onclick="switchTab(\'meetings\',this)">Meetings</button>';
 
-  html += '<div id="dpTimeline"><div class="tl-loading"><div class="scan-spinner"></div>Loading...</div></div>';
-
-  document.getElementById('dpScroll').innerHTML = html;
-  document.getElementById('detailPanel').classList.add('open');
-  document.getElementById('detailBackdrop').classList.add('open');
+  // Show right side, hide empty state
+  document.getElementById('dpRightEmpty').style.display = 'none';
+  document.getElementById('dpRightHead').style.display = '';
+  document.getElementById('dpRightTabs').style.display = '';
+  document.getElementById('dpTimeline').style.display = '';
+  document.getElementById('dpTimeline').innerHTML = '<div class="tl-loading"><div class="scan-spinner"></div>Loading...</div>';
 
   fetchContactTimeline(email.toLowerCase(), domain);
 }
 
+// Keep showContactPanel as alias for legacy calls
+function showContactPanel(email, domain, companyId) {
+  selectContact(email, domain, companyId);
+}
+
 function closePanel() {
-  document.getElementById('detailPanel').classList.remove('open');
-  document.getElementById('detailBackdrop').classList.remove('open');
+  document.getElementById('detailPage').classList.remove('active');
+  document.getElementById('crmContent').style.display = '';
   panelState = null;
   currentCompanyOverlay = null;
   currentContactOverlay = null;
 }
+
 // Close with Escape key
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && document.getElementById('detailPanel').classList.contains('open')) closePanel();
+  if (e.key === 'Escape' && document.getElementById('detailPage').classList.contains('active')) closePanel();
 });
 
 function toggleStar(domain, email) {
