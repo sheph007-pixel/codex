@@ -1025,9 +1025,101 @@ function parseMetaFromHTML(html) {
   return result;
 }
 
+// Generate a clean 1-2 sentence AI summary from raw research data
+function generateCompanySummary(name, domain, rawDesc, rawTitle, enrichData) {
+  const state = enrichData.state || '';
+  const employees = enrichData.employees || '';
+  const industry = enrichData.industry || '';
+
+  // Clean up the raw description — strip marketing fluff, CTAs, trailing fragments
+  let cleaned = (rawDesc || '').trim();
+  cleaned = cleaned.replace(/\s*[|–—·•]\s*Official Site.*$/i, '');
+  cleaned = cleaned.replace(/\s*Learn more.*$/i, '');
+  cleaned = cleaned.replace(/\s*Click here.*$/i, '');
+  cleaned = cleaned.replace(/\s*Sign up.*$/i, '');
+  cleaned = cleaned.replace(/\s*Get started.*$/i, '');
+  cleaned = cleaned.replace(/\s*Visit us.*$/i, '');
+  cleaned = cleaned.replace(/\s*Contact us.*$/i, '');
+  cleaned = cleaned.replace(/\u2026\s*$/, '.');
+  cleaned = cleaned.replace(/\.{2,}$/, '.');
+  if (cleaned && !cleaned.match(/[.!?]$/)) cleaned += '.';
+
+  // Extract what the company does from the raw description
+  let whatTheyDo = '';
+  if (cleaned.length > 20) {
+    // Take first 1-2 sentences from the cleaned description
+    const sentences = cleaned.match(/[^.!?]*[.!?]/g) || [];
+    if (sentences.length >= 1) {
+      whatTheyDo = sentences.slice(0, 2).join(' ').trim();
+      // If it's too long, just take the first sentence
+      if (whatTheyDo.length > 200 && sentences[0]) whatTheyDo = sentences[0].trim();
+    } else {
+      whatTheyDo = cleaned;
+    }
+  }
+
+  // Build the summary: aim for simple, 8th-grade reading level
+  let summary = '';
+
+  if (whatTheyDo) {
+    // Check if the description already starts with the company name
+    const startsWithName = whatTheyDo.toLowerCase().startsWith(name.toLowerCase());
+    if (startsWithName) {
+      summary = whatTheyDo;
+    } else {
+      summary = name + ' ' + lowerFirst(whatTheyDo);
+      // If it reads awkwardly (starts with "the", "a", etc.), use "is a company that" bridge
+      if (/^[A-Z]/.test(whatTheyDo) && !whatTheyDo.toLowerCase().startsWith('is ') && !whatTheyDo.toLowerCase().startsWith('provides ') && !whatTheyDo.toLowerCase().startsWith('offers ')) {
+        summary = name + ' — ' + whatTheyDo;
+      }
+    }
+  } else if (rawTitle && rawTitle.length > 3 && rawTitle.length < 120) {
+    // Use page title as last resort
+    // Strip "CompanyName |" prefix or "| Home" suffix patterns from page titles
+    const nameEsc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const titleClean = rawTitle
+      .replace(/\s*[|–—:]\s*Home.*$/i, '').replace(/\s*[|–—:]\s*Official.*$/i, '')
+      .replace(new RegExp('^' + nameEsc + '\\s*[|–—:]\\s*', 'i'), '')
+      .replace(new RegExp('\\s*[|–—:]\\s*' + nameEsc + '\\s*$', 'i'), '')
+      .trim();
+    if (titleClean.length > 3) {
+      summary = name + ' — ' + titleClean + '.';
+    }
+  }
+
+  // If we have enrichment data but no web description, build from what we know
+  if (!summary) {
+    summary = name + ' is a' + (industry ? ' ' + industry.toLowerCase() : '') + ' company';
+    if (state) summary += ' based in ' + state;
+    summary += '.';
+  }
+
+  // Add location + size as a second sentence if not already mentioned
+  const hasState = state && summary.toLowerCase().includes(state.toLowerCase());
+  let extra = '';
+  if (state && !hasState && employees) {
+    extra = 'They are based in ' + state + ' with an estimated ' + employees + ' employees.';
+  } else if (state && !hasState) {
+    extra = 'They are based in ' + state + '.';
+  } else if (employees && !summary.includes(employees)) {
+    extra = 'The company has an estimated ' + employees + ' employees.';
+  }
+
+  if (extra) summary = summary + ' ' + extra;
+
+  return summary.trim();
+}
+
+function lowerFirst(s) {
+  if (!s) return s;
+  // Don't lowercase acronyms or proper nouns that start sentences
+  if (s.length > 1 && s[1] === s[1].toUpperCase()) return s; // e.g. "AI", "IBM"
+  return s[0].toLowerCase() + s.slice(1);
+}
+
 // Research a company using its actual domain + name
 async function researchCompany(domain, forceRefresh) {
-  if (!forceRefresh && companyResearch[domain] && companyResearch[domain].description) {
+  if (!forceRefresh && companyResearch[domain] && companyResearch[domain].summary) {
     return companyResearch[domain];
   }
 
@@ -1038,7 +1130,9 @@ async function researchCompany(domain, forceRefresh) {
   const research = {
     name: companyName,
     domain: domain,
-    description: '',
+    summary: '',
+    rawDesc: '',
+    rawTitle: '',
     employees: enrichData.employees || '',
     state: enrichData.state || '',
     sourceUrl: 'https://' + domain,
@@ -1050,7 +1144,6 @@ async function researchCompany(domain, forceRefresh) {
     const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://' + domain);
     const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
     if (resp.ok) {
-      // Only read first 50KB to find meta tags (avoid downloading huge pages)
       const reader = resp.body.getReader();
       let html = '';
       while (html.length < 50000) {
@@ -1061,40 +1154,26 @@ async function researchCompany(domain, forceRefresh) {
       try { reader.cancel(); } catch(e) {}
       const meta = parseMetaFromHTML(html);
       if (meta.description) {
-        // Decode HTML entities
-        const txt = meta.description.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ');
-        research.description = txt;
+        research.rawDesc = meta.description.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ');
       }
-      if (meta.title && !research.description) {
-        research.description = meta.title;
+      if (meta.title) {
+        research.rawTitle = meta.title.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
       }
     }
   } catch(e) {}
 
-  // Step 2: Try Clearbit autocomplete for extra context (uses name + domain match)
+  // Step 2: Clearbit autocomplete to verify / refine company name
   try {
     const cbResp = await fetch('https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(domain.split('.')[0]));
     if (cbResp.ok) {
       const cbResults = await cbResp.json();
       const match = cbResults.find(r => r.domain === domain) || cbResults.find(r => r.domain && r.domain.split('.')[0] === domain.split('.')[0]);
-      if (match && match.name) {
-        research.name = match.name;
-        // If we still don't have a description, use the Clearbit name
-        if (!research.description && match.name !== companyName) {
-          research.description = match.name + ' (' + domain + ')';
-        }
-      }
+      if (match && match.name) research.name = match.name;
     }
   } catch(e) {}
 
-  // Step 3: Fallback description from what we know
-  if (!research.description) {
-    let desc = companyName + ' (' + domain + ')';
-    if (enrichData.industry) desc += ' — ' + enrichData.industry;
-    if (research.state) desc += ', based in ' + research.state;
-    desc += '.';
-    research.description = desc;
-  }
+  // Step 3: Generate the AI summary from all gathered data
+  research.summary = generateCompanySummary(research.name, domain, research.rawDesc, research.rawTitle, enrichData);
 
   companyResearch[domain] = research;
   saveCompanyResearch();
@@ -1115,7 +1194,7 @@ function buildResearchCardHTML(research, domain, loading) {
   if (loading) {
     html += '<div class="ai-research-desc loading">Researching ' + esc(research ? research.name : domain) + '...</div>';
   } else if (research) {
-    html += '<div class="ai-research-desc">' + esc(research.description) + '</div>';
+    html += '<div class="ai-research-desc">' + esc(research.summary || '') + '</div>';
     html += '<div class="ai-research-grid">';
     if (research.employees) html += '<div class="ai-research-item"><span class="r-label">Employees (est.)</span><span class="r-value">' + esc(research.employees) + '</span></div>';
     if (research.state) html += '<div class="ai-research-item"><span class="r-label">State</span><span class="r-value">' + esc(research.state) + '</span></div>';
@@ -2513,7 +2592,7 @@ function showCompanyPanel(id) {
 
   // AI Company Research card — show cached immediately, then fetch if needed
   const cachedResearch = companyResearch[c.domain];
-  if (cachedResearch && cachedResearch.description) {
+  if (cachedResearch && cachedResearch.summary) {
     headHtml += buildResearchCardHTML(cachedResearch, c.domain, false);
   } else {
     headHtml += buildResearchCardHTML({ name: c.name }, c.domain, true);
