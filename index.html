@@ -2019,12 +2019,25 @@ async function fetchEmailsProgressively(token, sinceDate) {
 
   let page = 0;
   let totalFetched = 0;
+  let emptyPages = 0;
 
   while (url) {
     page++;
     updateScanBanner('Scanning' + (sinceDate ? ' recent' : ' all') + ' mail... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
 
-    const resp = await fetch(url, { headers });
+    // Fetch with 30s timeout to prevent hanging forever
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    let resp;
+    try {
+      resp = await fetch(url, { headers, signal: controller.signal });
+    } catch(e) {
+      clearTimeout(timeout);
+      if (e.name === 'AbortError') throw new Error('Request timed out — please try again');
+      throw e;
+    }
+    clearTimeout(timeout);
+
     if (!resp.ok) {
       const err = await resp.text();
       throw new Error('Graph API error: ' + resp.status + ' — ' + err);
@@ -2032,6 +2045,7 @@ async function fetchEmailsProgressively(token, sinceDate) {
     const data = await resp.json();
 
     if (data.value && data.value.length > 0) {
+      emptyPages = 0;
       totalFetched += data.value.length;
       processEmailBatch(data.value);
 
@@ -2049,10 +2063,19 @@ async function fetchEmailsProgressively(token, sinceDate) {
         lastScanTime = new Date();
         persistData();
       }
+    } else {
+      // Empty page — break if we get 2 in a row (API returning empty results)
+      emptyPages++;
+      if (emptyPages >= 2) break;
     }
 
     url = data['@odata.nextLink'] || null;
   }
+
+  // Final UI update (catch pages between the 5-page throttle intervals)
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
 
   return totalFetched;
 }
@@ -2222,36 +2245,31 @@ async function onSignedIn() {
 
   // Load cached data from IndexedDB — show instantly (no waiting for scan)
   const cached = await loadPersistedData();
-  let needsFreshScan = false;
   if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
+    domainMap = cached.domainMap;
+    lastScanTime = cached.lastScanTime;
+    fullScanDone = cached.fullScanDone || false;
     if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
-      // Valid cache with dedup tracking — safe to use
-      domainMap = cached.domainMap;
-      lastScanTime = cached.lastScanTime;
-      fullScanDone = cached.fullScanDone || false;
       seenMsgIds = cached.seenMsgIds;
-      buildCompaniesFromDomainMap();
-      renderTableHeader();
-      renderTable();
-      updateStats();
-      updateLastSyncDisplay();
-      resolveCompanyNames();
-      runEnrichment();
     } else {
-      // Old cache without dedup — counts are unreliable.
-      // Clear everything and rebuild from scratch.
-      domainMap = {};
+      // Upgrade from old cache: no seenMsgIds yet.
+      // Keep all existing data — just force incremental mode so we
+      // don't re-fetch (and double-count) old emails.
       seenMsgIds = new Set();
-      lastScanTime = null;
-      fullScanDone = false;
-      needsFreshScan = true;
-      await clearPersistedData();
+      fullScanDone = true;   // skip full scan, only fetch new emails
     }
+    buildCompaniesFromDomainMap();
+    renderTableHeader();
+    renderTable();
+    updateStats();
+    updateLastSyncDisplay();
+    resolveCompanyNames();
+    runEnrichment();
   }
   updateBlockedCount();
 
-  // Scan: full fresh scan if cache was invalid, otherwise normal scan logic
-  await scanOutlookEmails(needsFreshScan);
+  // Scan: incremental sync from lastScanTime, or full if truly first time
+  await scanOutlookEmails();
 
   // Start auto-sync (every 5 min) after initial scan completes
   startAutoSync();
