@@ -846,9 +846,29 @@ async function loadPersistedData() {
     if (emailRec?.value && emailRec.value !== userEmail) return null;
     const map = {};
     for (const d of domains) {
-      map[d.domain] = { contacts: {}, totalSent: d.totalSent, totalReceived: d.totalReceived, lastDate: d.lastDate ? new Date(d.lastDate) : null };
+      const key = d.domain.toLowerCase();
+      if (!map[key]) {
+        map[key] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null };
+      }
+      const entry = map[key];
+      entry.totalSent += d.totalSent;
+      entry.totalReceived += d.totalReceived;
+      if (d.lastDate) {
+        const dt = new Date(d.lastDate);
+        if (!entry.lastDate || dt > entry.lastDate) entry.lastDate = dt;
+      }
       for (const [email, c] of Object.entries(d.contacts)) {
-        map[d.domain].contacts[email] = { ...c, lastDate: c.lastDate ? new Date(c.lastDate) : null };
+        const le = email.toLowerCase();
+        if (!entry.contacts[le]) {
+          entry.contacts[le] = { ...c, email: le, lastDate: c.lastDate ? new Date(c.lastDate) : null };
+        } else {
+          entry.contacts[le].sent += c.sent;
+          entry.contacts[le].received += c.received;
+          if (c.lastDate) {
+            const cdt = new Date(c.lastDate);
+            if (!entry.contacts[le].lastDate || cdt > entry.contacts[le].lastDate) entry.contacts[le].lastDate = cdt;
+          }
+        }
       }
     }
     return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null, fullScanDone: !!fullScanRec?.value };
@@ -1085,6 +1105,28 @@ function processEmailBatch(messages) {
 //  Spam, newsletters, and cold inbound are filtered.)
 // ──────────────────────────────────────────────
 function buildCompaniesFromDomainMap() {
+  // Deduplicate domainMap keys by lowercase (merge any case-variant entries)
+  const keys = Object.keys(domainMap);
+  const seen = {};
+  for (const k of keys) {
+    const lk = k.toLowerCase();
+    if (lk !== k) {
+      // Merge into lowercase key
+      if (!domainMap[lk]) { domainMap[lk] = domainMap[k]; }
+      else {
+        domainMap[lk].totalSent += domainMap[k].totalSent;
+        domainMap[lk].totalReceived += domainMap[k].totalReceived;
+        if (domainMap[k].lastDate && (!domainMap[lk].lastDate || domainMap[k].lastDate > domainMap[lk].lastDate)) domainMap[lk].lastDate = domainMap[k].lastDate;
+        for (const [e, c] of Object.entries(domainMap[k].contacts)) {
+          const le = e.toLowerCase();
+          if (!domainMap[lk].contacts[le]) domainMap[lk].contacts[le] = c;
+          else { domainMap[lk].contacts[le].sent += c.sent; domainMap[lk].contacts[le].received += c.received; }
+        }
+      }
+      delete domainMap[k];
+    }
+  }
+
   companies = [];
   let id = 1;
   for (const [domain, data] of Object.entries(domainMap)) {
