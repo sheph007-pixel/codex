@@ -220,7 +220,7 @@ tr:hover td{background:rgba(108,92,231,.04)}
     </button>
     <button class="btn btn-ms btn-sm" id="scanOutlookBtn" onclick="scanOutlookEmails()" style="display:none">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-      Re-scan Emails
+      Sync Emails
     </button>
     <button class="btn btn-ghost btn-sm" id="exportBtn" onclick="exportCSV()" style="display:none">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -309,6 +309,12 @@ tr:hover td{background:rgba(108,92,231,.04)}
         <div class="scan-spinner"></div>
         <span class="scan-text" id="scanText">Scanning your Outlook emails...</span>
         <span class="scan-count" id="scanCount"></span>
+      </div>
+
+      <!-- LAST SYNC STATUS -->
+      <div id="lastSyncBar" style="display:none;padding:6px 16px;font-size:11px;color:var(--text2);background:var(--surface2);border-radius:8px;margin:8px 16px 0;display:none;align-items:center;gap:6px">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span id="lastSyncText">Never synced</span>
       </div>
 
       <!-- STATS -->
@@ -426,6 +432,12 @@ tr:hover td{background:rgba(108,92,231,.04)}
     <input type="text" id="clientIdInput" placeholder="e.g. 12345678-abcd-1234-abcd-123456789abc">
     <p class="help-text">This is stored only in your browser's localStorage. Nothing is sent to any server.</p>
 
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Data Management</label>
+      <button class="btn btn-ghost" onclick="fullRescan()" style="color:var(--red);border-color:var(--red);font-size:12px">Reset &amp; Full Re-scan</button>
+      <p class="help-text" style="margin-top:4px">Clears all cached data and re-scans every email from scratch.</p>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
       <button class="btn btn-primary" onclick="saveSettings()">Save & Connect</button>
@@ -457,11 +469,87 @@ const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',New:'badge-new',Cold:'ba
 const SKIP_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','aol.com','icloud.com','me.com','mac.com','msn.com','googlemail.com','protonmail.com','proton.me','ymail.com','mail.com']);
 
 let companies = [];
+let domainMap = {};
+let lastScanTime = null;
 let currentSort = {key:'sent',asc:false};
 let currentFilter = 'all';
 let msalInstance = null;
 let currentAccount = null;
 let userEmail = '';
+let isScanning = false;
+
+// ──────────────────────────────────────────────
+// INDEXEDDB PERSISTENCE
+// ──────────────────────────────────────────────
+const DB_NAME = 'relateflow';
+const DB_VERSION = 1;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('domainData')) db.createObjectStore('domainData', { keyPath: 'domain' });
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function persistData() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(['domainData', 'meta'], 'readwrite');
+    const domainStore = tx.objectStore('domainData');
+    const metaStore = tx.objectStore('meta');
+    domainStore.clear();
+    for (const [domain, data] of Object.entries(domainMap)) {
+      const rec = { domain, contacts: {}, totalSent: data.totalSent, totalReceived: data.totalReceived, lastDate: data.lastDate ? data.lastDate.toISOString() : null };
+      for (const [email, c] of Object.entries(data.contacts)) {
+        rec.contacts[email] = { ...c, lastDate: c.lastDate ? c.lastDate.toISOString() : null };
+      }
+      domainStore.put(rec);
+    }
+    metaStore.put({ key: 'lastScanTime', value: lastScanTime ? lastScanTime.toISOString() : null });
+    metaStore.put({ key: 'userEmail', value: userEmail });
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  } catch(e) { console.warn('Persist failed:', e); }
+}
+
+async function loadPersistedData() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(['domainData', 'meta'], 'readonly');
+    const ds = tx.objectStore('domainData');
+    const ms = tx.objectStore('meta');
+    const [domains, scanRec, emailRec] = await Promise.all([
+      new Promise((r, j) => { const q = ds.getAll(); q.onsuccess = () => r(q.result); q.onerror = j; }),
+      new Promise((r, j) => { const q = ms.get('lastScanTime'); q.onsuccess = () => r(q.result); q.onerror = j; }),
+      new Promise((r, j) => { const q = ms.get('userEmail'); q.onsuccess = () => r(q.result); q.onerror = j; }),
+    ]);
+    if (!domains || domains.length === 0) return null;
+    if (emailRec?.value && emailRec.value !== userEmail) return null;
+    const map = {};
+    for (const d of domains) {
+      map[d.domain] = { contacts: {}, totalSent: d.totalSent, totalReceived: d.totalReceived, lastDate: d.lastDate ? new Date(d.lastDate) : null };
+      for (const [email, c] of Object.entries(d.contacts)) {
+        map[d.domain].contacts[email] = { ...c, lastDate: c.lastDate ? new Date(c.lastDate) : null };
+      }
+    }
+    return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null };
+  } catch(e) { console.warn('Load failed:', e); return null; }
+}
+
+async function clearPersistedData() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(['domainData', 'meta'], 'readwrite');
+    tx.objectStore('domainData').clear();
+    tx.objectStore('meta').clear();
+    await new Promise(r => { tx.oncomplete = r; });
+  } catch(e) { console.warn('Clear failed:', e); }
+}
 
 // ──────────────────────────────────────────────
 // MSAL SETUP
@@ -571,6 +659,9 @@ function signOut() {
   currentAccount = null;
   userEmail = '';
   companies = [];
+  domainMap = {};
+  lastScanTime = null;
+  isScanning = false;
   showWelcome();
 }
 
@@ -592,131 +683,100 @@ async function getAccessToken() {
 }
 
 // ──────────────────────────────────────────────
-// MICROSOFT GRAPH — FETCH EMAILS
+// DOMAIN MAP HELPERS
 // ──────────────────────────────────────────────
-async function fetchAllEmails(token) {
-  const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+function getDomain(email) {
+  if (!email) return null;
+  const d = email.split('@')[1];
+  return d ? d.toLowerCase() : null;
+}
 
-  // Use /me/messages to fetch from ALL folders (inbox, sent, archive, custom folders, etc.)
-  // Determine which are "sent by me" vs "received" using the from address
-  const allMessages = [];
-  let url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&$select=subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime&$orderby=receivedDateTime desc';
-  let page = 0;
-
-  while (url) {
-    page++;
-    updateScanBanner(`Scanning all mail... (${allMessages.length.toLocaleString()} emails, page ${page})`);
-    const resp = await fetch(url, { headers });
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Graph API error: ${resp.status} — ${err}`);
-    }
-    const data = await resp.json();
-    if (data.value) allMessages.push(...data.value);
-    url = data['@odata.nextLink'] || null;
+function ensureDomain(domain) {
+  if (!domainMap[domain]) {
+    domainMap[domain] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null };
   }
+}
 
-  // Split into sent vs received based on whether the user is the sender
-  const myEmailLower = userEmail ? userEmail.toLowerCase() : '';
-  const inbox = [];
-  const sent = [];
-
-  for (const msg of allMessages) {
-    const fromEmail = msg.from?.emailAddress?.address?.toLowerCase() || '';
-    if (fromEmail === myEmailLower) {
-      sent.push(msg);
-    } else {
-      inbox.push(msg);
-    }
+function ensureContact(domain, email, name) {
+  ensureDomain(domain);
+  const le = email.toLowerCase();
+  if (!domainMap[domain].contacts[le]) {
+    domainMap[domain].contacts[le] = { name: name || email, email: le, sent: 0, received: 0, lastDate: null };
+  } else if (name && name !== email && domainMap[domain].contacts[le].name === le) {
+    domainMap[domain].contacts[le].name = name;
   }
+}
 
-  return { inbox, sent };
+function updateDate(obj, dateStr) {
+  if (!dateStr) return;
+  const d = new Date(dateStr);
+  if (!obj.lastDate || d > obj.lastDate) obj.lastDate = d;
 }
 
 // ──────────────────────────────────────────────
-// PROCESS EMAILS → COMPANIES & CONTACTS
+// PROCESS EMAIL BATCH → UPDATE DOMAIN MAP
 // ──────────────────────────────────────────────
-function processEmails(inbox, sent) {
-  // domainMap: { domain: { contacts: { email: { name, email, sent, received, lastDate } }, totalSent, totalReceived } }
-  const domainMap = {};
-
-  function getDomain(email) {
-    if (!email) return null;
-    const d = email.split('@')[1];
-    return d ? d.toLowerCase() : null;
-  }
-
-  function ensureDomain(domain) {
-    if (!domainMap[domain]) {
-      domainMap[domain] = { contacts: {}, totalSent: 0, totalReceived: 0, lastDate: null };
-    }
-  }
-
-  function ensureContact(domain, email, name) {
-    ensureDomain(domain);
-    const lowerEmail = email.toLowerCase();
-    if (!domainMap[domain].contacts[lowerEmail]) {
-      domainMap[domain].contacts[lowerEmail] = { name: name || email, email: lowerEmail, sent: 0, received: 0, lastDate: null };
-    } else if (name && name !== email && domainMap[domain].contacts[lowerEmail].name === lowerEmail) {
-      domainMap[domain].contacts[lowerEmail].name = name;
-    }
-  }
-
-  function updateDate(obj, dateStr) {
-    if (!dateStr) return;
-    const d = new Date(dateStr);
-    if (!obj.lastDate || d > obj.lastDate) obj.lastDate = d;
-  }
-
+function processEmailBatch(messages) {
+  const myEmailLower = userEmail ? userEmail.toLowerCase() : '';
   const myDomain = userEmail ? getDomain(userEmail) : null;
 
-  // Process inbox (received emails)
-  for (const msg of inbox) {
-    const fromEmail = msg.from?.emailAddress?.address;
-    const fromName = msg.from?.emailAddress?.name;
-    if (!fromEmail) continue;
-    const domain = getDomain(fromEmail);
-    if (!domain || SKIP_DOMAINS.has(domain) || domain === myDomain) continue;
+  for (const msg of messages) {
+    const fromEmail = msg.from?.emailAddress?.address?.toLowerCase() || '';
+    const isSent = (fromEmail === myEmailLower);
 
-    ensureContact(domain, fromEmail, fromName);
-    const lowerEmail = fromEmail.toLowerCase();
-    domainMap[domain].contacts[lowerEmail].received++;
-    domainMap[domain].totalReceived++;
-    updateDate(domainMap[domain], msg.receivedDateTime);
-    updateDate(domainMap[domain].contacts[lowerEmail], msg.receivedDateTime);
-  }
-
-  // Process sent emails
-  for (const msg of sent) {
-    const recipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
-    for (const r of recipients) {
-      const toEmail = r.emailAddress?.address;
-      const toName = r.emailAddress?.name;
-      if (!toEmail) continue;
-      const domain = getDomain(toEmail);
+    if (isSent) {
+      // SENT email — track all recipients
+      const recipients = [...(msg.toRecipients || []), ...(msg.ccRecipients || [])];
+      for (const r of recipients) {
+        const toEmail = r.emailAddress?.address;
+        const toName = r.emailAddress?.name;
+        if (!toEmail) continue;
+        const domain = getDomain(toEmail);
+        if (!domain || SKIP_DOMAINS.has(domain) || domain === myDomain) continue;
+        ensureContact(domain, toEmail, toName);
+        const le = toEmail.toLowerCase();
+        domainMap[domain].contacts[le].sent++;
+        domainMap[domain].totalSent++;
+        updateDate(domainMap[domain], msg.sentDateTime || msg.receivedDateTime);
+        updateDate(domainMap[domain].contacts[le], msg.sentDateTime || msg.receivedDateTime);
+      }
+    } else {
+      // RECEIVED email — track the sender
+      const senderEmail = msg.from?.emailAddress?.address;
+      const senderName = msg.from?.emailAddress?.name;
+      if (!senderEmail) continue;
+      const domain = getDomain(senderEmail);
       if (!domain || SKIP_DOMAINS.has(domain) || domain === myDomain) continue;
-
-      ensureContact(domain, toEmail, toName);
-      const lowerEmail = toEmail.toLowerCase();
-      domainMap[domain].contacts[lowerEmail].sent++;
-      domainMap[domain].totalSent++;
-      updateDate(domainMap[domain], msg.sentDateTime || msg.receivedDateTime);
-      updateDate(domainMap[domain].contacts[lowerEmail], msg.sentDateTime || msg.receivedDateTime);
+      ensureContact(domain, senderEmail, senderName);
+      const le = senderEmail.toLowerCase();
+      domainMap[domain].contacts[le].received++;
+      domainMap[domain].totalReceived++;
+      updateDate(domainMap[domain], msg.receivedDateTime);
+      updateDate(domainMap[domain].contacts[le], msg.receivedDateTime);
     }
   }
+}
 
-  // Convert to companies array
+// ──────────────────────────────────────────────
+// BUILD COMPANIES FROM DOMAIN MAP
+// (Selective contact creation — like Attio, only
+//  domains you've actively emailed become records.
+//  Spam, newsletters, and cold inbound are filtered.)
+// ──────────────────────────────────────────────
+function buildCompaniesFromDomainMap() {
   companies = [];
   let id = 1;
   for (const [domain, data] of Object.entries(domainMap)) {
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
-    // Primary contact = most total emails (sent + received)
+
+    // SELECTIVE: only create company if user has sent at least 1 email to this domain
+    if (data.totalSent === 0) continue;
+
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
     const primary = contactArr[0];
     const totalEmails = data.totalSent + data.totalReceived;
 
-    // AI score based on engagement
     let score = Math.min(99, Math.round(
       Math.min(totalEmails * 1.5, 50) +
       Math.min(contactArr.length * 5, 20) +
@@ -724,13 +784,11 @@ function processEmails(inbox, sent) {
       (data.lastDate && (Date.now() - data.lastDate.getTime()) < 7 * 86400000 ? 14 : 0)
     ));
 
-    // Status from score
     let status = 'Cold';
     if (score >= 75) status = 'Hot';
     else if (score >= 50) status = 'Warm';
     else if (score >= 30) status = 'New';
 
-    // Derive company name from domain
     const companyName = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
 
     companies.push({
@@ -749,10 +807,53 @@ function processEmails(inbox, sent) {
     });
   }
 
-  // Sort by total emails desc
   companies.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
-  // Reassign IDs
   companies.forEach((c, i) => c.id = i + 1);
+}
+
+// ──────────────────────────────────────────────
+// PROGRESSIVE EMAIL FETCH + PROCESS + RENDER
+// (Data populates in the table as emails are scanned)
+// ──────────────────────────────────────────────
+async function fetchEmailsProgressively(token, sinceDate) {
+  const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  let url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime&$orderby=receivedDateTime desc';
+
+  if (sinceDate) {
+    url += '&$filter=receivedDateTime ge ' + sinceDate.toISOString();
+  }
+
+  let page = 0;
+  let totalFetched = 0;
+
+  while (url) {
+    page++;
+    updateScanBanner('Scanning' + (sinceDate ? ' recent' : ' all') + ' mail... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
+
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error('Graph API error: ' + resp.status + ' — ' + err);
+    }
+    const data = await resp.json();
+
+    if (data.value && data.value.length > 0) {
+      totalFetched += data.value.length;
+
+      // Process this page immediately
+      processEmailBatch(data.value);
+
+      // Rebuild companies and update UI live
+      buildCompaniesFromDomainMap();
+      renderTable();
+      updateStats();
+      updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails — ' + companies.length + ' companies found');
+    }
+
+    url = data['@odata.nextLink'] || null;
+  }
+
+  return totalFetched;
 }
 
 function timeAgo(date) {
@@ -771,24 +872,66 @@ function timeAgo(date) {
 }
 
 // ──────────────────────────────────────────────
-// OUTLOOK SCAN
+// OUTLOOK SCAN — Smart: full first time, incremental after
 // ──────────────────────────────────────────────
-async function scanOutlookEmails() {
+async function scanOutlookEmails(forceFullScan) {
+  if (isScanning) return;
+  isScanning = true;
+
   try {
     showScanBanner('Connecting to Microsoft Graph...');
     const token = await getAccessToken();
-    showScanBanner('Fetching all emails from Outlook (all folders, all time)...');
-    const { inbox, sent } = await fetchAllEmails(token);
-    updateScanBanner(`Processing ${(inbox.length + sent.length).toLocaleString()} emails (${sent.length.toLocaleString()} sent, ${inbox.length.toLocaleString()} received)...`);
-    processEmails(inbox, sent);
-    hideScanBanner();
-    renderTable();
-    updateStats();
+
+    const isIncremental = !forceFullScan && lastScanTime && Object.keys(domainMap).length > 0;
+    let totalFetched;
+
+    if (isIncremental) {
+      // Incremental: only fetch emails since last scan
+      showScanBanner('Syncing new emails since last scan...');
+      totalFetched = await fetchEmailsProgressively(token, lastScanTime);
+      updateScanBanner('Sync complete — ' + totalFetched.toLocaleString() + ' new emails checked');
+    } else {
+      // Full scan: clear and rebuild everything
+      domainMap = {};
+      showScanBanner('Full email scan (all folders, all time)...');
+      totalFetched = await fetchEmailsProgressively(token, null);
+      updateScanBanner('Full scan complete — ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies');
+    }
+
+    lastScanTime = new Date();
+    await persistData();
+    updateLastSyncDisplay();
+
+    // Keep banner visible briefly so user sees the summary
+    setTimeout(() => { hideScanBanner(); }, 2500);
+
   } catch(e) {
     hideScanBanner();
     console.error('Scan error:', e);
     alert('Email scan failed: ' + e.message);
+  } finally {
+    isScanning = false;
   }
+}
+
+// Full re-scan: clears everything and starts fresh
+async function fullRescan() {
+  domainMap = {};
+  lastScanTime = null;
+  companies = [];
+  await clearPersistedData();
+  renderTable();
+  updateStats();
+  closeSettings();
+  scanOutlookEmails(true);
+}
+
+// Last sync display
+function updateLastSyncDisplay() {
+  const bar = document.getElementById('lastSyncBar');
+  if (!lastScanTime) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  document.getElementById('lastSyncText').textContent = 'Last synced: ' + timeAgo(lastScanTime) + ' — ' + companies.length + ' companies, ' + Object.keys(domainMap).length + ' domains tracked';
 }
 
 // ──────────────────────────────────────────────
@@ -806,7 +949,7 @@ function showWelcome() {
   document.getElementById('chatFab').style.display = 'none';
 }
 
-function onSignedIn() {
+async function onSignedIn() {
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('sidebar').style.display = 'flex';
@@ -817,7 +960,19 @@ function onSignedIn() {
   document.getElementById('chatFab').style.display = 'grid';
   document.getElementById('userPill').style.display = 'flex';
   document.getElementById('userName').textContent = userEmail;
-  // Auto-scan on first sign in
+
+  // Load cached data from IndexedDB — show instantly (no waiting for scan)
+  const cached = await loadPersistedData();
+  if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
+    domainMap = cached.domainMap;
+    lastScanTime = cached.lastScanTime;
+    buildCompaniesFromDomainMap();
+    renderTable();
+    updateStats();
+    updateLastSyncDisplay();
+  }
+
+  // Background sync: incremental if we have cached data, full if first time
   scanOutlookEmails();
 }
 
