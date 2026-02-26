@@ -70,6 +70,21 @@ body{min-height:100vh;overflow-x:hidden}
 .welcome-feat .feat-desc{font-size:11px;color:var(--text2)}
 .welcome-note{margin-top:20px;font-size:11px;color:var(--text2);line-height:1.5}
 
+/* ── CONNECTED ACCOUNT BAR ── */
+.account-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin:0 0 4px}
+.account-bar-left{display:flex;align-items:center;gap:10px;color:var(--text2)}
+.account-bar-left svg{flex-shrink:0;color:var(--ms-blue)}
+.account-email{font-size:13px;font-weight:500;color:var(--text)}
+.sync-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:rgba(52,168,83,.12);color:#1e7e34}
+.sync-badge.scanning{background:rgba(26,115,232,.12);color:var(--ms-blue)}
+.sync-badge.error{background:rgba(234,67,53,.12);color:var(--red)}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.sync-badge.scanning .sync-dot{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.account-bar-right{display:flex;align-items:center;gap:10px}
+.last-sync-text{font-size:11px;color:var(--text2)}
+.btn-xs{padding:3px 8px;font-size:11px;border-radius:6px}
+
 /* ── SCAN PROGRESS BANNER ── */
 .scan-banner{background:linear-gradient(135deg,rgba(26,115,232,.06),rgba(26,115,232,.03));border:1px solid rgba(26,115,232,.2);border-radius:12px;padding:16px 20px;display:none;align-items:center;gap:14px}
 .scan-banner.active{display:flex}
@@ -262,8 +277,10 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .tl-date-group{margin-top:12px}
 .tl-date-group:first-child{margin-top:0}
 .tl-date-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);padding:6px 0;position:sticky;top:0;background:var(--surface);z-index:1}
-.tl-item{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:6px;transition:.15s;cursor:pointer}
+.tl-item{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:6px;transition:.15s;cursor:pointer;position:relative}
 .tl-item:hover{background:var(--surface2)}
+.tl-open-icon{position:absolute;top:8px;right:8px;color:var(--text2);opacity:0;transition:.15s}
+.tl-item:hover .tl-open-icon{opacity:.6}
 .tl-icon{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;flex-shrink:0}
 .tl-icon.sent{background:rgba(26,115,232,.08);color:var(--accent)}
 .tl-icon.received{background:var(--green-bg);color:var(--green)}
@@ -481,17 +498,30 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 
     <!-- CRM CONTENT (shown after sign-in) -->
     <div class="crm-content" id="crmContent">
-      <!-- SCAN BANNER -->
+      <!-- CONNECTED ACCOUNT BAR -->
+      <div class="account-bar" id="accountBar" style="display:none">
+        <div class="account-bar-left">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <span class="account-email" id="accountEmail"></span>
+          <span class="sync-badge" id="syncBadge">
+            <span class="sync-dot"></span>
+            <span id="syncBadgeText">Connected</span>
+          </span>
+        </div>
+        <div class="account-bar-right">
+          <span class="last-sync-text" id="lastSyncText"></span>
+          <button class="btn btn-ghost btn-xs" id="accountSyncBtn" onclick="scanOutlookEmails()" title="Sync now">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Sync
+          </button>
+        </div>
+      </div>
+
+      <!-- SCAN PROGRESS (shown only during active scan) -->
       <div class="scan-banner" id="scanBanner">
         <div class="scan-spinner"></div>
         <span class="scan-text" id="scanText">Scanning your Outlook emails...</span>
         <span class="scan-count" id="scanCount"></span>
-      </div>
-
-      <!-- LAST SYNC STATUS -->
-      <div id="lastSyncBar" style="display:none;padding:6px 16px;font-size:11px;color:var(--text2);background:var(--surface2);border-radius:8px;margin:8px 16px 0;display:none;align-items:center;gap:6px">
-        <span id="syncStatusDot" style="width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0"></span>
-        <span id="lastSyncText">Never synced</span>
       </div>
 
       <!-- STATS -->
@@ -686,8 +716,7 @@ let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
 let fullScanDone = false;
-let autoSyncTimer = null;
-const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+// (auto-sync removed — manual sync only)
 let blockedDomains = new Set();
 let selectedIds = new Set();
 let starredContacts = {};  // { "domain": "email@example.com" }
@@ -1730,7 +1759,6 @@ async function signIn() {
 }
 
 function signOut() {
-  stopAutoSync();
   if (msalInstance && currentAccount) {
     msalInstance.logoutPopup({ account: currentAccount });
   }
@@ -1742,6 +1770,7 @@ function signOut() {
   lastScanTime = null;
   fullScanDone = false;
   isScanning = false;
+  document.getElementById('accountBar').style.display = 'none';
   showWelcome();
 }
 
@@ -2101,6 +2130,7 @@ function timeAgo(date) {
 async function scanOutlookEmails(forceFullScan) {
   if (isScanning) return;
   isScanning = true;
+  setSyncBadge('scanning');
 
   try {
     showScanBanner('Connecting to Microsoft Graph...');
@@ -2111,16 +2141,12 @@ async function scanOutlookEmails(forceFullScan) {
     let totalFetched;
 
     if (needsFullScan) {
-      // FULL SCAN: every email, all folders, all time
-      // NOTE: we do NOT clear domainMap — processEmailBatch merges into
-      // existing data, so a refresh mid-scan keeps all accumulated progress
-      if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); }  // only clear on explicit "Reset & Full Re-scan"
+      if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); }
       showScanBanner('Full scan — reading all emails' + (Object.keys(domainMap).length > 0 ? ' (resuming)' : '') + '...');
       totalFetched = await fetchEmailsProgressively(token, null);
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
     } else {
-      // INCREMENTAL SYNC: only new emails since last scan
       const sinceDate = lastScanTime || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       showScanBanner('Quick sync — checking for new emails...');
       totalFetched = await fetchEmailsProgressively(token, sinceDate);
@@ -2133,20 +2159,19 @@ async function scanOutlookEmails(forceFullScan) {
 
     lastScanTime = new Date();
     await persistData();
+    setSyncBadge('synced', 'In Sync');
     updateLastSyncDisplay();
 
-    // Resolve real company names and enrich custom columns in background
     resolveCompanyNames();
     runEnrichment();
 
-    // Keep banner visible briefly
     setTimeout(() => { hideScanBanner(); }, needsFullScan ? 4000 : 2000);
 
   } catch(e) {
     hideScanBanner();
+    setSyncBadge('error', 'Sync Failed');
     console.error('Scan error:', e);
-    // Don't alert on auto-sync errors, only on manual scans
-    if (!autoSyncTimer) alert('Email scan failed: ' + e.message);
+    alert('Email scan failed: ' + e.message);
   } finally {
     isScanning = false;
   }
@@ -2167,47 +2192,26 @@ async function fullRescan() {
 }
 
 // ──────────────────────────────────────────────
-// AUTO-SYNC — runs every 5 minutes while tab is open
-// ──────────────────────────────────────────────
-function startAutoSync() {
-  stopAutoSync();
-  autoSyncTimer = setInterval(() => {
-    if (!isScanning && fullScanDone && currentAccount) {
-      console.log('[Kennion CRM] Auto-sync triggered');
-      scanOutlookEmails();
-    }
-  }, AUTO_SYNC_INTERVAL);
-  console.log('[Kennion CRM] Auto-sync started (every ' + (AUTO_SYNC_INTERVAL / 60000) + ' min)');
-}
-
-function stopAutoSync() {
-  if (autoSyncTimer) {
-    clearInterval(autoSyncTimer);
-    autoSyncTimer = null;
-  }
-}
-
-// Also sync when tab becomes visible again (user comes back)
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && fullScanDone && currentAccount && !isScanning) {
-    // If more than 5 minutes since last sync, trigger immediately
-    if (lastScanTime && (Date.now() - lastScanTime.getTime()) > AUTO_SYNC_INTERVAL) {
-      console.log('[Kennion CRM] Tab visible — syncing stale data');
-      scanOutlookEmails();
-    }
-  }
-});
+// (Auto-sync removed — user manually clicks Sync)
 
 // Last sync display
 function updateLastSyncDisplay() {
-  const bar = document.getElementById('lastSyncBar');
-  if (!lastScanTime) { bar.style.display = 'none'; return; }
+  const bar = document.getElementById('accountBar');
+  if (!currentAccount) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  const syncStatus = fullScanDone ? 'Auto-sync active' : 'Full scan pending';
-  document.getElementById('lastSyncText').textContent =
-    'Last synced: ' + timeAgo(lastScanTime) + ' — ' +
-    companies.length + ' companies, ' + Object.keys(domainMap).length + ' domains tracked' +
-    ' · ' + syncStatus;
+  document.getElementById('accountEmail').textContent = userEmail || currentAccount.username || '';
+  if (lastScanTime) {
+    document.getElementById('lastSyncText').textContent =
+      'Last synced ' + timeAgo(lastScanTime) + ' · ' +
+      companies.length + ' companies';
+  } else {
+    document.getElementById('lastSyncText').textContent = 'Not yet synced';
+  }
+}
+function setSyncBadge(state, text) {
+  const badge = document.getElementById('syncBadge');
+  badge.className = 'sync-badge' + (state === 'scanning' ? ' scanning' : state === 'error' ? ' error' : '');
+  document.getElementById('syncBadgeText').textContent = text || (state === 'scanning' ? 'Syncing...' : state === 'error' ? 'Error' : 'In Sync');
 }
 
 // ──────────────────────────────────────────────
@@ -2268,11 +2272,9 @@ async function onSignedIn() {
   }
   updateBlockedCount();
 
-  // Scan: incremental sync from lastScanTime, or full if truly first time
+  // Show connected account bar, then scan
+  updateLastSyncDisplay();
   await scanOutlookEmails();
-
-  // Start auto-sync (every 5 min) after initial scan completes
-  startAutoSync();
 }
 
 function showScanBanner(text) {
@@ -2835,7 +2837,7 @@ async function fetchContactTimeline(email, domain) {
     const token = await getAccessToken();
     const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
     const items = [];
-    const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,conversationId';
+    const select = '$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,bodyPreview,conversationId,webLink';
     const top = '$top=75';
 
     // Use $search with "participants:" — this reliably finds ALL emails
@@ -2854,9 +2856,9 @@ async function fetchContactTimeline(email, domain) {
           const isFromContact = fromAddr === email.toLowerCase();
           // Classify: sent by me, received from contact, or skip
           if (isSent) {
-            items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+            items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
           } else if (isFromContact) {
-            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
           }
         }
       }
@@ -2870,7 +2872,7 @@ async function fetchContactTimeline(email, domain) {
         const filterData = await filterResp.json();
         if (filterData.value) {
           for (const m of filterData.value) {
-            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId });
+            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
           }
         }
       }
@@ -2933,12 +2935,15 @@ function renderTimeline(email) {
       const replyBtn = item.type !== 'meeting'
         ? ' <button class="tl-reply-btn" onclick="event.stopPropagation();openReply(\'' + item.id.replace(/'/g, "\\'") + '\',\'' + (currentContactOverlay ? currentContactOverlay.email.replace(/'/g, "\\'") : '') + '\',\'' + esc(item.subject).replace(/'/g, "\\'") + '\')">Reply</button>'
         : '';
-      html += '<div class="tl-item">' +
+      const openAttr = item.webLink ? ' onclick="window.open(\'' + item.webLink.replace(/'/g, "\\'") + '\',\'_blank\')"' : '';
+      const openHint = item.webLink ? ' title="Open in Outlook"' : '';
+      html += '<div class="tl-item"' + openAttr + openHint + '>' +
         '<div class="tl-icon ' + item.type + '">' + icon + '</div>' +
         '<div class="tl-content"><div class="tl-subject">' + esc(item.subject) + '</div>' +
         (item.preview ? '<div class="tl-preview">' + esc(item.preview.substring(0, 100)) + '</div>' : '') +
         '</div>' +
         '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><div class="tl-time">' + time + '</div>' + replyBtn + '</div>' +
+        (item.webLink ? '<svg class="tl-open-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>' : '') +
       '</div>';
     }
     html += '</div>';
