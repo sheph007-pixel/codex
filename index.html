@@ -4419,22 +4419,32 @@ function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml
   document.getElementById('composeTo').value = toName ? toName + ' <' + toEmail + '>' : toEmail;
   document.getElementById('composeTo').dataset.email = toEmail;
   document.getElementById('composeSubject').value = subject || '';
-  document.getElementById('composeBody').value = quotedBody || '';
+
+  // Build body with signature
+  var sig = getEmailSignature();
+  var sigBlock = sig ? '\n\n' + sig : '';
+  if (replyId) {
+    // Reply: cursor position → signature → quoted text
+    document.getElementById('composeBody').value = sigBlock + (quotedBody || '');
+  } else {
+    // New email: cursor position → signature
+    document.getElementById('composeBody').value = sigBlock;
+  }
+
   document.getElementById('composeSendStatus').textContent = '';
   document.getElementById('composeSendBtn').disabled = false;
   document.getElementById('composeTitle').textContent = replyId ? 'Reply' : 'New Email';
   composeSetState('normal');
   var popup = document.getElementById('composePopup');
   popup.classList.add('active');
-  // Place cursor at top of textarea for reply, so user types above the quoted text
+  // Place cursor at top of textarea so user types above signature/quoted text
   var bodyEl = document.getElementById('composeBody');
   setTimeout(function() {
-    if (replyId) {
-      bodyEl.focus();
-      bodyEl.setSelectionRange(0, 0);
-      bodyEl.scrollTop = 0;
-    } else {
-      document.getElementById(subject ? 'composeBody' : 'composeSubject').focus();
+    bodyEl.focus();
+    bodyEl.setSelectionRange(0, 0);
+    bodyEl.scrollTop = 0;
+    if (!replyId && !subject) {
+      document.getElementById('composeSubject').focus();
     }
   }, 100);
 }
@@ -4514,15 +4524,20 @@ async function sendComposedEmail() {
   var toEmail = document.getElementById('composeTo').dataset.email;
   var subject = document.getElementById('composeSubject').value.trim();
   var fullBody = document.getElementById('composeBody').value.trim();
-  // For replies, only validate that the user typed something above the quoted text
-  var replyText = fullBody;
+  // Validate that the user typed actual content (not just signature/quote)
+  var userText = fullBody;
+  var sig = getEmailSignature();
   if (composeReplyToId) {
-    // Extract just the new text the user typed (everything before the quoted section)
+    // Extract text before the quoted section
     var quoteMarker = fullBody.indexOf('\n\nOn ');
-    replyText = quoteMarker > -1 ? fullBody.substring(0, quoteMarker).trim() : fullBody.trim();
+    userText = quoteMarker > -1 ? fullBody.substring(0, quoteMarker).trim() : fullBody.trim();
   }
-  if (!toEmail || !subject || !replyText) {
-    document.getElementById('composeSendStatus').textContent = composeReplyToId ? 'Please type your reply message above the quoted text.' : 'Please fill in subject and message.';
+  // Strip the signature from validation so we check for real user input
+  if (sig && userText.endsWith(sig.trim())) {
+    userText = userText.substring(0, userText.length - sig.trim().length).trim();
+  }
+  if (!toEmail || !subject || !userText) {
+    document.getElementById('composeSendStatus').textContent = composeReplyToId ? 'Please type your reply message above the signature.' : 'Please fill in subject and message.';
     document.getElementById('composeSendStatus').style.color = 'var(--red)';
     return;
   }
@@ -4538,22 +4553,20 @@ async function sendComposedEmail() {
     var headers = graphHeaders(token);
     var resp;
 
-    // Append email signature if set
-    var sig = getEmailSignature();
-    var sigHtml = sig ? '<br><br>' + sig.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : '';
-    var sigText = sig ? '\n\n' + sig : '';
-
     if (composeReplyToId) {
       // Use Graph API reply endpoint for proper email threading
-      // Convert reply text to HTML for clean formatting
-      var replyHtml = replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + sigHtml;
+      // Send everything the user sees (their text + signature) as the comment
+      // Extract text above the quoted section (user's reply + signature)
+      var quoteMarker2 = fullBody.indexOf('\n\nOn ');
+      var commentText = quoteMarker2 > -1 ? fullBody.substring(0, quoteMarker2).trim() : fullBody.trim();
+      var commentHtml = commentText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
       resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeReplyToId + '/reply', {
         method: 'POST', headers: headers,
-        body: JSON.stringify({ comment: replyHtml })
+        body: JSON.stringify({ comment: commentHtml })
       });
     } else {
-      // New email — use sendMail
-      var message = { subject: subject, body: { contentType: 'Text', content: fullBody + sigText }, toRecipients: [{ emailAddress: { address: toEmail } }] };
+      // New email — send the full body as-is (includes signature already)
+      var message = { subject: subject, body: { contentType: 'Text', content: fullBody }, toRecipients: [{ emailAddress: { address: toEmail } }] };
       resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: headers, body: JSON.stringify({ message: message, saveToSentItems: true }) });
     }
     if (!resp.ok) { var err = await resp.text(); throw new Error('Send failed: ' + resp.status + ' — ' + err); }
