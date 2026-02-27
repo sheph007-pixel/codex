@@ -4197,12 +4197,18 @@ let currentViewerMsgId = null;
 let currentViewerWebLink = null;
 let currentViewerFromEmail = '';
 let currentViewerFromName = '';
+let currentViewerDate = '';
+let currentViewerBodyText = '';
+let currentViewerBodyHtml = '';
 
 async function openEmailViewer(messageId) {
   currentViewerMsgId = messageId;
   currentViewerWebLink = null;
   currentViewerFromEmail = '';
   currentViewerFromName = '';
+  currentViewerDate = '';
+  currentViewerBodyText = '';
+  currentViewerBodyHtml = '';
   const overlay = document.getElementById('emailViewerOverlay');
   const loading = document.getElementById('evLoading');
   overlay.classList.add('active');
@@ -4245,11 +4251,21 @@ async function openEmailViewer(messageId) {
 
     // Date
     const dt = new Date(msg.receivedDateTime || msg.sentDateTime);
-    document.getElementById('evDate').textContent = dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    currentViewerDate = dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    document.getElementById('evDate').textContent = currentViewerDate;
 
     // Body — render in sandboxed iframe with generous padding
     const bodyContent = msg.body?.content || '';
     const bodyType = msg.body?.contentType || 'text';
+    currentViewerBodyHtml = bodyContent;
+    // Extract plain text from HTML for quoted reply
+    if (bodyType === 'html') {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = bodyContent;
+      currentViewerBodyText = tmp.innerText || tmp.textContent || '';
+    } else {
+      currentViewerBodyText = bodyContent;
+    }
     const frame = document.getElementById('evBodyFrame');
     const baseStyle = 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:#222;padding:24px 28px;margin:0;line-height:1.6;word-break:break-word}img{max-width:100%;height:auto}a{color:#1a73e8}pre,code{white-space:pre-wrap;word-break:break-all}blockquote{border-left:3px solid #ddd;margin:8px 0;padding:4px 12px;color:#555}';
     if (bodyType === 'html') {
@@ -4312,6 +4328,9 @@ function closeEmailViewer() {
   currentViewerWebLink = null;
   currentViewerFromEmail = '';
   currentViewerFromName = '';
+  currentViewerDate = '';
+  currentViewerBodyText = '';
+  currentViewerBodyHtml = '';
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && currentViewerMsgId) closeEmailViewer(); });
 
@@ -4320,11 +4339,18 @@ function replyFromViewer() {
   const subject = document.getElementById('evSubject').textContent || '';
   const contactEmail = currentContactOverlay ? currentContactOverlay.email : currentViewerFromEmail;
   const msgId = currentViewerMsgId;
-  const fromName = currentViewerFromName;
+  const fromName = currentViewerFromName || currentViewerFromEmail;
+  const senderLabel = currentViewerFromName ? currentViewerFromName + ' <' + currentViewerFromEmail + '>' : currentViewerFromEmail;
+  const quotedDate = currentViewerDate;
+  const quotedBody = currentViewerBodyText;
+  const quotedHtml = currentViewerBodyHtml;
   closeEmailViewer();
   var reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
   var ctName = currentContactOverlay ? currentContactOverlay.contact.name : fromName;
-  openCompose(contactEmail, ctName, reSubject, msgId);
+  // Build quoted reply text
+  var quoteHeader = '\n\nOn ' + quotedDate + ', ' + senderLabel + ' wrote:\n';
+  var quotedLines = quotedBody.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
+  openCompose(contactEmail, ctName, reSubject, msgId, quoteHeader + quotedLines, quotedHtml);
 }
 
 function openInOutlook() {
@@ -4339,19 +4365,32 @@ let composeReplyToId = null;
 // ── Outlook-style compose popup ──
 var composePopupState = 'normal'; // 'normal', 'fullscreen', 'minimized'
 
-function openCompose(toEmail, toName, subject, replyId) {
+let composeOriginalBodyHtml = '';
+
+function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml) {
   composeReplyToId = replyId || null;
+  composeOriginalBodyHtml = originalHtml || '';
   document.getElementById('composeTo').value = toName ? toName + ' <' + toEmail + '>' : toEmail;
   document.getElementById('composeTo').dataset.email = toEmail;
   document.getElementById('composeSubject').value = subject || '';
-  document.getElementById('composeBody').value = '';
+  document.getElementById('composeBody').value = quotedBody || '';
   document.getElementById('composeSendStatus').textContent = '';
   document.getElementById('composeSendBtn').disabled = false;
   document.getElementById('composeTitle').textContent = replyId ? 'Reply' : 'New Email';
   composeSetState('normal');
   var popup = document.getElementById('composePopup');
   popup.classList.add('active');
-  setTimeout(function() { document.getElementById(subject ? 'composeBody' : 'composeSubject').focus(); }, 100);
+  // Place cursor at top of textarea for reply, so user types above the quoted text
+  var bodyEl = document.getElementById('composeBody');
+  setTimeout(function() {
+    if (replyId) {
+      bodyEl.focus();
+      bodyEl.setSelectionRange(0, 0);
+      bodyEl.scrollTop = 0;
+    } else {
+      document.getElementById(subject ? 'composeBody' : 'composeSubject').focus();
+    }
+  }, 100);
 }
 
 function openReply(messageId, toEmail, subject) {
@@ -4366,6 +4405,7 @@ function composeClose() {
   var popup = document.getElementById('composePopup');
   popup.classList.remove('active');
   composeReplyToId = null;
+  composeOriginalBodyHtml = '';
 }
 
 function composeMinimize() {
@@ -4404,9 +4444,16 @@ document.addEventListener('click', function(e) {
 async function sendComposedEmail() {
   var toEmail = document.getElementById('composeTo').dataset.email;
   var subject = document.getElementById('composeSubject').value.trim();
-  var body = document.getElementById('composeBody').value.trim();
-  if (!toEmail || !subject || !body) {
-    document.getElementById('composeSendStatus').textContent = 'Please fill in subject and message.';
+  var fullBody = document.getElementById('composeBody').value.trim();
+  // For replies, only validate that the user typed something above the quoted text
+  var replyText = fullBody;
+  if (composeReplyToId) {
+    // Extract just the new text the user typed (everything before the quoted section)
+    var quoteMarker = fullBody.indexOf('\n\nOn ');
+    replyText = quoteMarker > -1 ? fullBody.substring(0, quoteMarker).trim() : fullBody.trim();
+  }
+  if (!toEmail || !subject || !replyText) {
+    document.getElementById('composeSendStatus').textContent = composeReplyToId ? 'Please type your reply message above the quoted text.' : 'Please fill in subject and message.';
     document.getElementById('composeSendStatus').style.color = 'var(--red)';
     return;
   }
@@ -4420,8 +4467,21 @@ async function sendComposedEmail() {
   try {
     var token = await getAccessToken();
     var headers = graphHeaders(token);
-    var message = { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: toEmail } }] };
-    var resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: headers, body: JSON.stringify({ message: message, saveToSentItems: true }) });
+    var resp;
+
+    if (composeReplyToId) {
+      // Use Graph API reply endpoint for proper email threading
+      // Convert reply text to HTML for clean formatting
+      var replyHtml = replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeReplyToId + '/reply', {
+        method: 'POST', headers: headers,
+        body: JSON.stringify({ comment: replyHtml })
+      });
+    } else {
+      // New email — use sendMail
+      var message = { subject: subject, body: { contentType: 'Text', content: fullBody }, toRecipients: [{ emailAddress: { address: toEmail } }] };
+      resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: headers, body: JSON.stringify({ message: message, saveToSentItems: true }) });
+    }
     if (!resp.ok) { var err = await resp.text(); throw new Error('Send failed: ' + resp.status + ' — ' + err); }
 
     status.textContent = 'Sent!';
