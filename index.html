@@ -2363,8 +2363,9 @@ function buildCompaniesFromDomainMap() {
   companies = [];
   let id = 1;
   for (const [domain, data] of Object.entries(domainMap)) {
-    // Skip blocked domains (including ones blocked after initial scan)
+    // Skip blocked and flagged domains
     if (isBlockedDomain(domain)) continue;
+    if (flaggedCompanies.has(domain)) continue;
 
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
@@ -3024,8 +3025,8 @@ function renderTable() {
 
   let data = [...companies];
 
-  // Hide archived companies from normal views
-  data = data.filter(c => !archivedCompanies.has(c.domain));
+  // Hide archived and flagged companies from normal views
+  data = data.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain));
 
   // If showing proposals, only show starred companies
   if (showingProposals) {
@@ -3393,33 +3394,50 @@ function showFlaggedView() {
     '<th style="width:40px"></th>' +
     '<th>Company</th>' +
     '<th>Email Activity</th>' +
+    '<th>Days Since Contact</th>' +
     '<th>Reason</th>' +
     '<th style="text-align:right">Actions</th>' +
   '</tr>';
 
   const tbody = document.getElementById('tableBody');
-  const sorted = [...flaggedCompanies].sort();
+  const now = Date.now();
+  const DAY = 86400000;
 
-  if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.</td></tr>';
+  // Build flagged items with days-since-contact, sort by most recent first
+  const items = [...flaggedCompanies].map(domain => {
+    const data = domainMap[domain];
+    const lastDate = data ? data.lastDate : null;
+    const daysSince = lastDate ? Math.floor((now - lastDate.getTime()) / DAY) : 9999;
+    return { domain, data, daysSince };
+  }).sort((a, b) => a.daysSince - b.daysSince);
+
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text2)">No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.</td></tr>';
     updateViewTitleCount(0);
     return;
   }
 
-  tbody.innerHTML = sorted.map(domain => {
-    const data = domainMap[domain];
+  tbody.innerHTML = items.map(item => {
+    const domain = item.domain;
+    const data = item.data;
     const totalSent = data ? data.sentIds.size : 0;
     const totalRecv = data ? data.receivedIds.size : 0;
     const contactCount = data ? Object.keys(data.contacts).length : 0;
     const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
     const dSafe = domain.replace(/'/g, "\\'");
+    const company = companies.find(c => c.domain === domain);
+    const companyClick = company ? ' onclick="openDetail(' + company.id + ')" style="cursor:pointer;opacity:.8"' : ' style="opacity:.8"';
+    const daysLabel = item.daysSince < 9999 ? item.daysSince + 'd ago' : 'N/A';
+    const daysColor = item.daysSince <= 7 ? 'var(--green)' : item.daysSince <= 30 ? 'var(--orange)' : 'var(--red)';
 
     return '<tr>' +
       '<td style="width:40px"></td>' +
-      '<td><div class="company-cell"><div class="company-logo" style="background:#e8710a;opacity:.8">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.8">' + esc(name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
+      '<td><div class="company-cell"' + companyClick + '><div class="company-logo" style="background:#e8710a;opacity:.8">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.8">' + esc(name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
       '<td style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
+      '<td style="font-size:12px;font-weight:600;color:' + daysColor + '">' + daysLabel + '</td>' +
       '<td style="color:#e8710a;font-size:11px;font-weight:600">Domain unreachable</td>' +
       '<td style="text-align:right;white-space:nowrap">' +
+        '<a href="https://' + esc(domain) + '" target="_blank" class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--accent);border-color:var(--accent);text-decoration:none" title="Open ' + esc(domain) + ' in browser">Test URL</a> ' +
         '<button class="btn btn-ghost btn-sm" onclick="unflagCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Unflag</button> ' +
         '<button class="btn btn-ghost btn-sm" onclick="archiveFlaggedCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--text2);border-color:var(--border)">Archive</button>' +
       '</td>' +
@@ -3427,13 +3445,15 @@ function showFlaggedView() {
   }).join('');
 
   clearSelection();
-  updateViewTitleCount(sorted.length);
+  updateViewTitleCount(items.length);
 }
 
 function unflagCompany(domain) {
   flaggedCompanies.delete(domain);
   saveFlaggedCompanies();
   updateFlaggedCount();
+  buildCompaniesFromDomainMap();
+  updateStats();
   showFlaggedView();
 }
 
@@ -3557,6 +3577,11 @@ async function scanDomainValidity() {
 
   saveFlaggedCompanies();
   updateFlaggedCount();
+  if (newlyFlagged > 0) {
+    buildCompaniesFromDomainMap();
+    updateStats();
+    renderTable();
+  }
   localStorage.setItem('kennion_domain_scan_last', Date.now().toString());
   _domainScanRunning = false;
   console.log('[DomainScan] Complete. Checked ' + domainsToCheck.length + ' domains, flagged ' + newlyFlagged + ' new.');
@@ -4876,6 +4901,7 @@ async function refreshInbox() {
       const domain = getDomain(fromAddr);
       if (!domain || !crmDomains.has(domain)) continue;
       if (isBlockedDomain(domain)) continue;
+      if (flaggedCompanies.has(domain)) continue;
 
       const company = companies.find(c => c.domain === domain);
       inboxEmails.push({
