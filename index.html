@@ -4862,11 +4862,13 @@ async function refreshInbox() {
 
 function inboxOpenContact(email, domain, companyId) {
   if (!domain || !domainMap[domain]) return;
+  if (companyId === null) return;
+  // Open company panel first (sets up the full detail page layout)
+  showCompanyPanel(companyId);
+  // Then select the specific contact if they exist in the domain map
   var ct = domainMap[domain].contacts[email.toLowerCase()];
   if (ct) {
-    showContactPanel(email, domain, companyId);
-  } else if (companyId !== null) {
-    showCompanyPanel(companyId);
+    selectContact(email, domain, companyId);
   }
 }
 
