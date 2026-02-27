@@ -258,7 +258,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-company-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .dp-co-logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
 .dp-co-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:4px;border-radius:inherit}
-.dp-co-info h2{font-size:15px;font-weight:700;letter-spacing:-.2px}
+.dp-co-info h2{font-size:22px;font-weight:700;letter-spacing:-.3px}
 .dp-co-info .dp-domain{font-size:11px;color:var(--text2)}
 .dp-co-meta{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .cp-type-select{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;transition:border-color .15s}
@@ -284,6 +284,26 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-star.active{color:var(--orange)}
 .dp-primary-badge{font-size:8px;padding:1px 5px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;flex-shrink:0}
 .dp-left-foot{padding:8px 20px;border-top:1px solid var(--border);flex-shrink:0}
+
+/* Left panel tabs (Relationships / Files) */
+.dp-left-tabs{display:flex;gap:0;padding:0 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+.dp-left-tab{padding:8px 14px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
+.dp-left-tab:hover{color:var(--text)}
+.dp-left-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
+.dp-left-tab .tab-cnt{font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:8px;color:var(--text);margin-left:4px}
+
+/* Files list in left panel */
+.dp-left-files{flex:1;overflow-y:auto;padding:8px 12px 16px;display:none}
+.dp-files-loading{display:flex;align-items:center;gap:8px;padding:16px;color:var(--text2);font-size:12px}
+.dp-files-empty{text-align:center;padding:32px 16px;color:var(--text2);font-size:12px}
+.dp-file-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:.15s;margin-bottom:2px}
+.dp-file-item:hover{background:var(--surface2)}
+.dp-file-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase}
+.dp-file-info{flex:1;min-width:0}
+.dp-file-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-file-meta{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-file-size{font-size:10px;color:var(--text2);flex-shrink:0}
+.dp-file-date-group{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);padding:10px 10px 4px}
 
 /* Right: selected contact timeline */
 .dp-right{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
@@ -825,7 +845,9 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <div class="dp-body">
         <div class="dp-left">
           <div class="dp-left-head" id="dpLeftHead"></div>
+          <div class="dp-left-tabs" id="dpLeftTabs" style="display:none"></div>
           <div class="dp-left-contacts" id="dpLeftContacts"></div>
+          <div class="dp-left-files" id="dpLeftFiles" style="display:none"></div>
           <div class="dp-left-foot" id="dpLeftFoot"></div>
         </div>
         <div class="dp-right" id="dpRight">
@@ -1090,6 +1112,8 @@ let currentCompanyOverlay = null;  // company object for open overlay
 let currentContactOverlay = null;  // { contact, company, domain }
 let currentContactTab = 'all';
 let contactTimelineCache = {};  // "email" -> [{type,subject,date,...}]
+let companyFilesCache = {};     // "domain" -> [{name, size, messageId, attachmentId, date, from}, ...]
+let currentLeftTab = 'relationships'; // 'relationships' or 'files'
 
 // ──────────────────────────────────────────────
 // COLUMN CONFIGURATION (Attio-style)
@@ -4419,6 +4443,14 @@ function showCompanyPanel(id) {
 
   document.getElementById('dpLeftHead').innerHTML = headHtml;
 
+  // Left panel tabs (Relationships / Files)
+  currentLeftTab = 'relationships';
+  var dSafeTab = c.domain.replace(/'/g, "\\'");
+  document.getElementById('dpLeftTabs').style.display = 'flex';
+  document.getElementById('dpLeftTabs').innerHTML =
+    '<button class="dp-left-tab active" onclick="switchLeftTab(\'relationships\',this,\'' + dSafeTab + '\',' + c.id + ')">Relationships <span class="tab-cnt">' + sorted.length + '</span></button>' +
+    '<button class="dp-left-tab" onclick="switchLeftTab(\'files\',this,\'' + dSafeTab + '\',' + c.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:3px"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>Files</button>';
+
   // Left contacts list
   let ctHtml = '<div class="dp-section-title">Relationships <span class="cnt">' + sorted.length + '</span></div>';
   for (const ct of sorted) {
@@ -4452,6 +4484,10 @@ function showCompanyPanel(id) {
     '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + dSafeF + '\')" style="color:var(--red);border-color:var(--red);font-size:11px;width:100%">' +
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Block domain</button>' +
     '</div>';
+
+  // Reset left files panel (show contacts, hide files)
+  document.getElementById('dpLeftContacts').style.display = '';
+  document.getElementById('dpLeftFiles').style.display = 'none';
 
   // Reset right side to empty state
   document.getElementById('dpRightEmpty').style.display = 'flex';
@@ -4598,6 +4634,167 @@ function switchTab(tab, el) {
   document.querySelectorAll('.dp-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
   if (currentContactOverlay) renderTimeline(currentContactOverlay.email);
+}
+
+// ──────────────────────────────────────────────
+// LEFT PANEL TABS — Relationships / Files
+// ──────────────────────────────────────────────
+function switchLeftTab(tab, el, domain, companyId) {
+  currentLeftTab = tab;
+  document.querySelectorAll('.dp-left-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+
+  if (tab === 'relationships') {
+    document.getElementById('dpLeftContacts').style.display = '';
+    document.getElementById('dpLeftFiles').style.display = 'none';
+  } else if (tab === 'files') {
+    document.getElementById('dpLeftContacts').style.display = 'none';
+    document.getElementById('dpLeftFiles').style.display = 'block';
+    fetchCompanyFiles(domain);
+  }
+}
+
+async function fetchCompanyFiles(domain) {
+  const el = document.getElementById('dpLeftFiles');
+  if (!el) return;
+
+  // Use cache if available
+  if (companyFilesCache[domain] && companyFilesCache[domain].length >= 0) {
+    renderCompanyFiles(domain);
+    return;
+  }
+
+  el.innerHTML = '<div class="dp-files-loading"><div class="scan-spinner"></div>Loading files...</div>';
+
+  try {
+    const token = await getAccessToken();
+    const headers = graphHeaders(token);
+    const allFiles = [];
+
+    // Get all contacts for this domain
+    const data = domainMap[domain];
+    if (!data || !data.contacts) {
+      companyFilesCache[domain] = [];
+      renderCompanyFiles(domain);
+      return;
+    }
+
+    const contactEmails = Object.keys(data.contacts);
+
+    // For each contact, search emails and check for attachments
+    for (const email of contactEmails) {
+      try {
+        const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50' +
+          '&$select=id,subject,from,receivedDateTime,sentDateTime,hasAttachments' +
+          '&$filter=hasAttachments eq true' +
+          '&$search=' + encodeURIComponent('"participants:' + email + '"');
+        const resp = await fetch(searchUrl, { headers });
+        if (!resp.ok) continue;
+        const result = await resp.json();
+        if (!result.value) continue;
+
+        for (const msg of result.value) {
+          if (!msg.hasAttachments) continue;
+          // Fetch attachments for this message
+          try {
+            const attResp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + msg.id + '/attachments?$select=id,name,contentType,size', { headers });
+            if (!attResp.ok) continue;
+            const attData = await attResp.json();
+            if (!attData.value) continue;
+
+            for (const att of attData.value) {
+              // Skip inline images and very small items
+              if (att.contentType && att.contentType.startsWith('image/') && att.size < 5000) continue;
+              if (att.name === 'ATT00001') continue;
+              allFiles.push({
+                name: att.name || 'Unknown file',
+                size: att.size || 0,
+                contentType: att.contentType || '',
+                messageId: msg.id,
+                attachmentId: att.id,
+                date: new Date(msg.receivedDateTime || msg.sentDateTime),
+                from: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || '',
+                subject: msg.subject || '(no subject)'
+              });
+            }
+          } catch(e) { /* skip attachment fetch errors */ }
+        }
+      } catch(e) { /* skip contact search errors */ }
+    }
+
+    // Deduplicate by attachmentId and sort by date descending
+    const seen = new Set();
+    const unique = [];
+    for (const f of allFiles) {
+      const key = f.attachmentId + '_' + f.messageId;
+      if (!seen.has(key)) { seen.add(key); unique.push(f); }
+    }
+    unique.sort((a, b) => b.date - a.date);
+    companyFilesCache[domain] = unique;
+    renderCompanyFiles(domain);
+  } catch(e) {
+    el.innerHTML = '<div class="dp-files-empty">Could not load files: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderCompanyFiles(domain) {
+  const el = document.getElementById('dpLeftFiles');
+  if (!el) return;
+  const files = companyFilesCache[domain] || [];
+
+  // Update the Files tab badge count
+  const tabBtns = document.querySelectorAll('.dp-left-tab');
+  if (tabBtns.length > 1) {
+    const filesTab = tabBtns[1];
+    const existing = filesTab.querySelector('.tab-cnt');
+    if (existing) existing.textContent = files.length;
+    else if (files.length > 0) filesTab.innerHTML += ' <span class="tab-cnt">' + files.length + '</span>';
+  }
+
+  if (files.length === 0) {
+    el.innerHTML = '<div class="dp-files-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.3;margin-bottom:8px"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg><br>No files found in emails.</div>';
+    return;
+  }
+
+  // File extension color map
+  const extColors = {
+    pdf: '#d93025', doc: '#1a73e8', docx: '#1a73e8', xls: '#1e8e3e', xlsx: '#1e8e3e',
+    ppt: '#e8710a', pptx: '#e8710a', zip: '#9334e6', rar: '#9334e6',
+    png: '#1a73e8', jpg: '#1a73e8', jpeg: '#1a73e8', gif: '#1a73e8',
+    csv: '#1e8e3e', txt: '#5f6368', html: '#e8710a', mp4: '#d93025', mp3: '#9334e6'
+  };
+
+  // Group by date
+  const groups = {};
+  for (const f of files) {
+    const key = formatDateGroup(f.date);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(f);
+  }
+
+  let html = '';
+  for (const [dateLabel, groupFiles] of Object.entries(groups)) {
+    html += '<div class="dp-file-date-group">' + esc(dateLabel) + '</div>';
+    for (const f of groupFiles) {
+      const ext = f.name.includes('.') ? f.name.split('.').pop().toLowerCase() : '';
+      const color = extColors[ext] || '#5f6368';
+      const sizeKB = Math.round(f.size / 1024);
+      const sizeStr = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) + ' MB' : sizeKB + ' KB';
+      const msgIdSafe = f.messageId.replace(/'/g, "\\'");
+      const attIdSafe = f.attachmentId.replace(/'/g, "\\'");
+      const nameSafe = esc(f.name).replace(/'/g, "\\'");
+
+      html += '<div class="dp-file-item" onclick="downloadAttachment(\'' + msgIdSafe + '\',\'' + attIdSafe + '\',\'' + nameSafe + '\')" title="' + esc(f.subject) + '">' +
+        '<div class="dp-file-icon" style="background:' + color + '">' + (ext ? ext.substring(0, 4) : '?') + '</div>' +
+        '<div class="dp-file-info">' +
+          '<div class="dp-file-name">' + esc(f.name) + '</div>' +
+          '<div class="dp-file-meta">' + esc(f.from) + '</div>' +
+        '</div>' +
+        '<div class="dp-file-size">' + sizeStr + '</div>' +
+      '</div>';
+    }
+  }
+  el.innerHTML = html;
 }
 
 // ──────────────────────────────────────────────
