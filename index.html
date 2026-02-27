@@ -2390,9 +2390,10 @@ function buildCompaniesFromDomainMap() {
   companies = [];
   let id = 1;
   for (const [domain, data] of Object.entries(domainMap)) {
-    // Skip blocked and flagged domains
+    // Skip blocked, flagged, and archived domains — they have their own views
     if (isBlockedDomain(domain)) continue;
     if (flaggedCompanies.has(domain)) continue;
+    if (archivedCompanies.has(domain)) continue;
 
     const contactArr = Object.values(data.contacts);
     if (contactArr.length === 0) continue;
@@ -3147,13 +3148,13 @@ function renderTable() {
   }
 
   updateBulkBar();
-  document.getElementById('companyCount').textContent = companies.filter(c => !archivedCompanies.has(c.domain)).length;
+  document.getElementById('companyCount').textContent = companies.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain) && !blockedDomains.has(c.domain)).length;
   updateViewTitleCount();
 }
 
 function updateStats() {
-  // Exclude archived from main stats
-  const active = companies.filter(c => !archivedCompanies.has(c.domain));
+  // Exclude archived, flagged, and blocked from main stats
+  const active = companies.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain) && !blockedDomains.has(c.domain));
   document.getElementById('statCompanies').textContent = active.length;
   document.getElementById('statSent').textContent = active.reduce((s,c) => s + c.sent, 0).toLocaleString();
   document.getElementById('statRecv').textContent = active.reduce((s,c) => s + c.received, 0).toLocaleString();
@@ -3172,7 +3173,7 @@ function updateStats() {
 
 function updateTypeCounts() {
   var leads = 0, existing = 0, old = 0;
-  var active = companies.filter(function(c) { return !archivedCompanies.has(c.domain); });
+  var active = companies.filter(function(c) { return !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain) && !blockedDomains.has(c.domain); });
   active.forEach(function(c) {
     var t = getCompanyType(c.domain);
     if (t === 'Existing Client') existing++;
@@ -4137,7 +4138,12 @@ function showProposals() {
 
 function updateProposalCount() {
   const el = document.getElementById('proposalCount');
-  if (el) el.textContent = starredCompanies.size;
+  if (!el) return;
+  var count = 0;
+  for (var d of starredCompanies) {
+    if (!archivedCompanies.has(d) && !flaggedCompanies.has(d) && !blockedDomains.has(d)) count++;
+  }
+  el.textContent = count;
 }
 
 // ──────────────────────────────────────────────
