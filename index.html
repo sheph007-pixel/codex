@@ -191,6 +191,8 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .badge-hot{background:var(--green-bg);color:var(--green)}
 .badge-warm{background:var(--orange-bg);color:var(--orange)}
 .badge-cold{background:var(--blue-bg);color:var(--blue)}
+.badge-existing{background:rgba(128,90,213,.08);color:#8050d5}
+.badge-old{background:rgba(95,99,104,.08);color:var(--text2)}
 
 .email-bar{display:flex;align-items:center;gap:6px;font-size:12px}
 .bar-track{width:80px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;display:flex}
@@ -1094,7 +1096,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 // CONFIG & STATE
 // ──────────────────────────────────────────────
 const COLORS = ['#1a73e8','#1e8e3e','#e8710a','#d93025','#9334e6','#e37400','#0d652d','#185abc','#a142f4','#c5221f','#137333','#1967d2'];
-const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',Cold:'badge-cold'};
+const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',Cold:'badge-cold',Existing:'badge-existing',Old:'badge-old'};
 const SKIP_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','aol.com','icloud.com','me.com','mac.com','msn.com','googlemail.com','protonmail.com','proton.me','ymail.com','mail.com']);
 
 let companies = [];
@@ -2477,19 +2479,26 @@ function buildCompaniesFromDomainMap() {
       (hasTwoWay ? Math.min(Math.round(Math.min(uniqueReceived / uniqueSent, 1) * 9), 9) : 0)
     ));
 
-    // ── AI STATUS DETERMINATION ──
-    // Hot: Active two-way conversation, recent activity (last 30 days)
-    // Warm: Two-way activity in last 90-180 days, some engagement
-    // Cold: No inbound in 365+ days, or outbound-only with no replies
-    let status = 'Cold';
-    if (hasTwoWay && daysSinceRecv <= 30 && daysSinceAny <= 30) {
-      // Two-way interaction with received email in last 30 days = Hot
-      status = 'Hot';
-    } else if (hasTwoWay && daysSinceRecv <= 180) {
-      // Two-way interaction with received email in last 180 days = Warm
-      status = 'Warm';
+    // ── LEAD SEGMENT DETERMINATION ──
+    // Segments only apply to Leads (not Existing Client or Old Client)
+    // Cold Lead: 0 received emails (outbound only, no replies)
+    // Warm Lead: at least 1 received email (got a reply)
+    // Hot Lead: more than 2 received emails (active back-and-forth)
+    const companyType = getCompanyType(domain);
+    let status;
+    if (companyType === 'Existing Client' || companyType === 'Old Client') {
+      // Non-leads get neutral status based on their type
+      status = companyType === 'Existing Client' ? 'Existing' : 'Old';
+    } else {
+      // Lead segmentation based on received email count
+      if (uniqueReceived > 2) {
+        status = 'Hot';
+      } else if (uniqueReceived >= 1) {
+        status = 'Warm';
+      } else {
+        status = 'Cold';
+      }
     }
-    // Everything else stays Cold: outbound-only, no replies, or stale > 180 days
 
     // Use cached company name or smart fallback (async lookup happens separately)
     const companyName = companyNameCache[domain]
@@ -3105,7 +3114,10 @@ function renderTable() {
     data = data.filter(c => starredCompanies.has(c.domain));
   }
 
-  if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
+  if (currentFilter !== 'all') {
+    // Segments (Hot/Warm/Cold) only apply to Leads
+    data = data.filter(c => c.status === currentFilter && getCompanyType(c.domain) === 'Lead');
+  }
   if (currentTypeFilter !== 'all') data = data.filter(c => getCompanyType(c.domain) === currentTypeFilter);
   const q = (document.getElementById('searchInput').value || '').toLowerCase();
   if (q) data = data.filter(c => {
@@ -3195,10 +3207,11 @@ function updateStats() {
   document.getElementById('statSent').textContent = active.reduce((s,c) => s + c.sent, 0).toLocaleString();
   document.getElementById('statRecv').textContent = active.reduce((s,c) => s + c.received, 0).toLocaleString();
   document.getElementById('statContacts').textContent = active.reduce((s,c) => s + (c.allContacts?.length || 1), 0).toLocaleString();
-  // Update segment counts in sidebar
-  const hot = active.filter(c => c.status === 'Hot').length;
-  const warm = active.filter(c => c.status === 'Warm').length;
-  const cold = active.filter(c => c.status === 'Cold').length;
+  // Update segment counts in sidebar (only Leads — not Existing Client or Old Client)
+  const leads = active.filter(c => getCompanyType(c.domain) === 'Lead');
+  const hot = leads.filter(c => c.status === 'Hot').length;
+  const warm = leads.filter(c => c.status === 'Warm').length;
+  const cold = leads.filter(c => c.status === 'Cold').length;
   document.getElementById('hotCount').textContent = hot;
   document.getElementById('warmCount').textContent = warm;
   document.getElementById('coldCount').textContent = cold;
@@ -3296,7 +3309,7 @@ function filterByStatus(status, el) {
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.sidebar-item[data-group="segment"]').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
-  var titles = { all: 'All Companies', Hot: 'Hot Leads', Warm: 'Warm Leads', Cold: 'Cold Leads' };
+  var titles = { all: 'All Companies', Hot: 'Hot Leads (3+ replies)', Warm: 'Warm Leads (1+ reply)', Cold: 'Cold Leads (no replies)' };
   setViewTitle(titles[status] || status, status === 'all');
   clearSelection();
   renderTable();
@@ -3314,7 +3327,9 @@ function toggleRowSelect(id, checked) {
 function toggleSelectAll(checked) {
   // Get currently visible/filtered companies
   let data = [...companies];
-  if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
+  if (currentFilter !== 'all') {
+    data = data.filter(c => c.status === currentFilter && getCompanyType(c.domain) === 'Lead');
+  }
   if (currentTypeFilter !== 'all') data = data.filter(c => getCompanyType(c.domain) === currentTypeFilter);
   const q = (document.getElementById('searchInput').value || '').toLowerCase();
   if (q) data = data.filter(c => c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q));
@@ -3513,9 +3528,15 @@ function openFlaggedDetail(domain) {
     Math.min(contactArr.length * 3, 10) +
     (hasTwoWay ? Math.min(Math.round(Math.min(uniqueReceived / uniqueSent, 1) * 9), 9) : 0)
   ));
-  let status = 'Cold';
-  if (hasTwoWay && daysSinceRecv <= 30 && daysSinceAny <= 30) status = 'Hot';
-  else if (hasTwoWay && daysSinceRecv <= 180) status = 'Warm';
+  const tempCompanyType = getCompanyType(domain);
+  let status;
+  if (tempCompanyType === 'Existing Client' || tempCompanyType === 'Old Client') {
+    status = tempCompanyType === 'Existing Client' ? 'Existing' : 'Old';
+  } else {
+    if (uniqueReceived > 2) status = 'Hot';
+    else if (uniqueReceived >= 1) status = 'Warm';
+    else status = 'Cold';
+  }
   const companyName = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
   const tempId = 99999;
   const tempCompany = {
@@ -6069,40 +6090,44 @@ function generateAIReply(msg) {
 
   // ── FOLLOW-UPS & REACH OUT ──
   if (/follow.?up|followup|reach out|re-engage|reconnect/i.test(lower)) {
-    const targets = companies.filter(c => c.status === 'Cold' || c.status === 'Warm').sort((a,b) => b.score - a.score).slice(0, 7);
-    if (!targets.length) return 'All your contacts look engaged! No immediate follow-ups needed right now.';
+    const leadsOnly = companies.filter(c => getCompanyType(c.domain) === 'Lead');
+    const targets = leadsOnly.filter(c => c.status === 'Cold' || c.status === 'Warm').sort((a,b) => b.score - a.score).slice(0, 7);
+    if (!targets.length) return 'All your leads look engaged! No immediate follow-ups needed right now.';
     return _label('Recommended Follow-ups') + targets.map(c => _companyCard(c)).join('');
   }
 
   // ── HOT LEADS / TOP / BEST ──
   if (/\b(hot|hottest)\b.*\b(lead|compan)|best.*(lead|engag|compan)|top.*(lead|engag|compan|score)|highest.*(score|engag)|most engaged/i.test(lower) || (lower.includes('hot') && lower.includes('lead'))) {
-    const hot = companies.filter(c => c.status === 'Hot').sort((a,b) => b.score - a.score).slice(0, 8);
+    const leadsOnly = companies.filter(c => getCompanyType(c.domain) === 'Lead');
+    const hot = leadsOnly.filter(c => c.status === 'Hot').sort((a,b) => b.score - a.score).slice(0, 8);
     if (!hot.length) return 'No hot leads yet. Keep emailing to build engagement!';
-    return _label(`Hot Leads (${companies.filter(c=>c.status==='Hot').length} total)`) + hot.map(c => _companyCard(c)).join('');
+    return _label(`Hot Leads (${leadsOnly.filter(c=>c.status==='Hot').length} total)`) + hot.map(c => _companyCard(c)).join('');
   }
 
   // ── COLD / AT RISK ──
   if (/\bcold\b|at risk|losing|disengag|inactive|gone quiet|no reply|no response/i.test(lower)) {
-    const cold = companies.filter(c => c.status === 'Cold').sort((a,b) => a.score - b.score).slice(0, 8);
-    if (!cold.length) return 'No cold leads — all companies are engaged!';
-    return _label(`At Risk — Cold Leads (${companies.filter(c=>c.status==='Cold').length} total)`) + cold.map(c => _companyCard(c)).join('');
+    const leadsOnly = companies.filter(c => getCompanyType(c.domain) === 'Lead');
+    const cold = leadsOnly.filter(c => c.status === 'Cold').sort((a,b) => a.score - b.score).slice(0, 8);
+    if (!cold.length) return 'No cold leads — all leads are engaged!';
+    return _label(`At Risk — Cold Leads (${leadsOnly.filter(c=>c.status==='Cold').length} total)`) + cold.map(c => _companyCard(c)).join('');
   }
 
   // ── WARM LEADS ──
   if (/\bwarm\b/i.test(lower) && /lead|compan|list|show/i.test(lower)) {
-    const warm = companies.filter(c => c.status === 'Warm').sort((a,b) => b.score - a.score).slice(0, 8);
+    const leadsOnly = companies.filter(c => getCompanyType(c.domain) === 'Lead');
+    const warm = leadsOnly.filter(c => c.status === 'Warm').sort((a,b) => b.score - a.score).slice(0, 8);
     if (!warm.length) return 'No warm leads right now.';
-    return _label(`Warm Leads (${companies.filter(c=>c.status==='Warm').length} total)`) + warm.map(c => _companyCard(c)).join('');
+    return _label(`Warm Leads (${leadsOnly.filter(c=>c.status==='Warm').length} total)`) + warm.map(c => _companyCard(c)).join('');
   }
 
   // ── PIPELINE SUMMARY / OVERVIEW / STATS ──
   if (/summary|overview|stats|pipeline|dashboard|report|how.*(doing|look|going)|breakdown/i.test(lower)) {
     const ts = companies.reduce((s,c) => s + c.sent, 0);
     const tr = companies.reduce((s,c) => s + c.received, 0);
-    const hot = companies.filter(c => c.status === 'Hot');
-    const warm = companies.filter(c => c.status === 'Warm');
-    const cold = companies.filter(c => c.status === 'Cold');
     const leads = companies.filter(c => getCompanyType(c.domain) === 'Lead');
+    const hot = leads.filter(c => c.status === 'Hot');
+    const warm = leads.filter(c => c.status === 'Warm');
+    const cold = leads.filter(c => c.status === 'Cold');
     const existing = companies.filter(c => getCompanyType(c.domain) === 'Existing Client');
     const avgScore = companies.length ? Math.round(companies.reduce((s,c) => s + c.score, 0) / companies.length) : 0;
     const totalContacts = companies.reduce((s,c) => s + (c.allContacts?.length || 1), 0);
@@ -6254,7 +6279,7 @@ function generateAIReply(msg) {
       `<b>${companies.length}</b> companies<br>`
       + `<b>${totalContacts}</b> contacts<br>`
       + `<b>${(ts + tr).toLocaleString()}</b> total emails (${ts.toLocaleString()} sent, ${tr.toLocaleString()} received)<br>`
-      + `<b>${companies.filter(c => c.status === 'Hot').length}</b> hot · <b>${companies.filter(c => c.status === 'Warm').length}</b> warm · <b>${companies.filter(c => c.status === 'Cold').length}</b> cold`
+      + `<b>${companies.filter(c => c.status === 'Hot' && getCompanyType(c.domain) === 'Lead').length}</b> hot · <b>${companies.filter(c => c.status === 'Warm' && getCompanyType(c.domain) === 'Lead').length}</b> warm · <b>${companies.filter(c => c.status === 'Cold' && getCompanyType(c.domain) === 'Lead').length}</b> cold`
     );
   }
 
@@ -6533,7 +6558,7 @@ document.getElementById('searchInput').oninput = function() {
       companyMatches.forEach(function(c, idx) {
         const color = COLORS[c.id % COLORS.length];
         const initial = c.name.charAt(0).toUpperCase();
-        const statusColor = c.status === 'Hot' ? 'var(--green)' : c.status === 'Warm' ? 'var(--orange)' : 'var(--blue)';
+        const statusColor = c.status === 'Hot' ? 'var(--green)' : c.status === 'Warm' ? 'var(--orange)' : c.status === 'Cold' ? 'var(--blue)' : c.status === 'Existing' ? '#8050d5' : 'var(--text2)';
         html += '<div class="gs-item" data-type="company" data-id="' + c.id + '">' +
           '<div class="gs-avatar" style="background:' + color + '">' + esc(initial) + '</div>' +
           '<div class="gs-info"><div class="gs-name">' + esc(c.name) + '</div>' +
