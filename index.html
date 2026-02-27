@@ -4148,11 +4148,17 @@ function _formatScanAgo(ts) {
   return days + 'd ago';
 }
 
-// Update the scan bar timestamp (refreshes when flagged view is shown)
+// Update the scan bar timestamp in-place (no re-render to avoid recursion)
 function updateLastScanLabel() {
-  // Update scan bar if it exists
-  var scanBar = document.getElementById('flaggedScanBar');
-  if (scanBar && showingFlagged) showFlaggedView();
+  var tsEl = document.querySelector('.flagged-scan-bar .fsb-timestamp');
+  if (!tsEl) return;
+  var ts = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
+  if (ts) {
+    var scanDate = new Date(ts);
+    tsEl.innerHTML = '<b>Last scanned:</b> ' + _formatScanAgo(ts) + '<br><span style="font-size:10px;opacity:.7">' + scanDate.toLocaleString() + '</span>';
+  } else {
+    tsEl.innerHTML = '<b style="color:var(--orange)">Never scanned</b><br><span style="font-size:10px">Run a scan to detect broken domains</span>';
+  }
 }
 
 // Full rescan: clears all flagged data and rescans every company domain from scratch
