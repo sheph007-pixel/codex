@@ -3445,9 +3445,12 @@ function resetFlaggedFilters() {
   showFlaggedView();
 }
 
+let _cameFromFlagged = false;
 function openFlaggedDetail(domain) {
   const data = domainMap[domain];
   if (!data) return;
+  // Clear any pending filter debounce to prevent it from re-rendering after detail opens
+  clearTimeout(_flaggedFilterTimer);
   const contactArr = Object.values(data.contacts);
   for (const ct of contactArr) { ct.sent = ct.sentIds.size; ct.received = ct.receivedIds.size; }
   contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
@@ -3486,6 +3489,9 @@ function openFlaggedDetail(domain) {
   const existing = companies.findIndex(c => c.id === tempId);
   if (existing >= 0) companies.splice(existing, 1);
   companies.push(tempCompany);
+  // Mark that we came from flagged view, then clear the flag so renderTable() won't re-trigger showFlaggedView
+  _cameFromFlagged = true;
+  showingFlagged = false;
   showCompanyPanel(tempId);
 }
 
@@ -3583,7 +3589,7 @@ function showFlaggedView() {
   tbody.innerHTML = items.map(item => {
     const domain = item.domain;
     const dSafe = domain.replace(/'/g, "\\'");
-    const companyClick = ' onclick="openFlaggedDetail(\'' + dSafe + '\')" style="cursor:pointer"';
+    const companyClick = ' onclick="event.stopPropagation();openFlaggedDetail(\'' + dSafe + '\')" style="cursor:pointer"';
     const daysLabel = item.daysSince < 9999 ? item.daysSince + 'd ago' : 'N/A';
     const daysColor = item.daysSince <= 7 ? 'var(--green)' : item.daysSince <= 30 ? 'var(--orange)' : 'var(--red)';
     const isChecked = selectedFlaggedDomains.has(domain) ? ' checked' : '';
@@ -4331,6 +4337,14 @@ function closePanel() {
   panelState = null;
   currentCompanyOverlay = null;
   currentContactOverlay = null;
+  // If we came from flagged view, restore it
+  if (_cameFromFlagged) {
+    _cameFromFlagged = false;
+    // Remove temp company from array
+    const tempIdx = companies.findIndex(c => c.id === 99999);
+    if (tempIdx >= 0) companies.splice(tempIdx, 1);
+    showFlaggedView();
+  }
 }
 
 // Close with Escape key
@@ -5808,17 +5822,19 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
     startCellEdit(customCell);
     return;
   }
-  // Checkbox handling
+  // Checkbox handling — skip flagged view checkboxes (handled by their own onchange)
   const checkbox = e.target.closest('input.row-checkbox');
   if (checkbox) {
+    if (checkbox.dataset.flaggedDomain !== undefined) return;
     e.stopPropagation();
     const rid = parseInt(checkbox.dataset.rid, 10);
     if (checkbox.checked) selectedIds.add(rid); else selectedIds.delete(rid);
     renderTable();
     return;
   }
-  // Skip if clicking inside col-check area
+  // Skip if clicking inside col-check area or in flagged view
   if (e.target.closest('.col-check')) return;
+  if (showingFlagged) return;
   // Row click → open detail
   const row = e.target.closest('tr[data-id]');
   if (row) openDetail(parseInt(row.dataset.id, 10));
