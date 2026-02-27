@@ -3797,9 +3797,42 @@ async function probeSingleUrl(url, timeout) {
   } catch(e) { return false; }
 }
 
+// DNS check via Google DNS-over-HTTPS — if the domain has DNS records it's almost certainly alive
+async function checkDomainDNS(domain) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch('https://dns.google/resolve?name=' + encodeURIComponent(domain) + '&type=A', {
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    // Status 0 = NOERROR (domain exists), Status 3 = NXDOMAIN (domain does not exist)
+    // If we get Answer records or status 0, the domain has valid DNS
+    if (data.Status === 0 && data.Answer && data.Answer.length > 0) return true;
+    // Also check for CNAME-only responses (still means domain is configured)
+    if (data.Status === 0) return true;
+    return false;
+  } catch(e) { return false; }
+}
+
+// Image-based probe — loads favicon.ico via an <img> tag, bypassing CORS restrictions
+function probeViaImage(domain, timeout) {
+  return new Promise(function(resolve) {
+    const timer = setTimeout(function() { resolve(false); }, timeout || 6000);
+    const img = new Image();
+    img.onload = function() { clearTimeout(timer); resolve(true); };
+    img.onerror = function() { clearTimeout(timer); resolve(false); };
+    img.src = 'https://' + domain + '/favicon.ico?_t=' + Date.now();
+  });
+}
+
 async function checkDomainReachable(domain) {
-  // Try multiple URL variations — if ANY resolves (including after redirects), the domain is valid.
-  // This handles domains that forward/redirect to another working URL.
+  // Signal 1: DNS lookup — fast and reliable, bypasses CORS entirely
+  if (await checkDomainDNS(domain)) return true;
+
+  // Signal 2: HTTP fetch with multiple URL variations
   const urls = [
     'https://' + domain,
     'http://' + domain,
@@ -3809,8 +3842,12 @@ async function checkDomainReachable(domain) {
   for (const url of urls) {
     if (await probeSingleUrl(url, 8000)) return true;
   }
-  // All variations failed — retry the primary URLs once more with a longer timeout
-  // to handle slow redirect chains and reduce false positives from transient failures
+
+  // Signal 3: Favicon/image probe — bypasses some CORS restrictions
+  if (await probeViaImage(domain, 6000)) return true;
+  if (await probeViaImage('www.' + domain, 6000)) return true;
+
+  // All signals failed — retry primary URLs with longer timeout for slow redirect chains
   if (await probeSingleUrl('https://' + domain, 12000)) return true;
   if (await probeSingleUrl('http://' + domain, 12000)) return true;
   return false;
@@ -3863,15 +3900,28 @@ async function scanDomainValidity() {
 
     // Collect domains that failed the first check for a confirmation retest
     const failedDomains = results.filter(r => !r.ok).map(r => r.domain);
-    // Confirmation recheck: wait briefly then retest failed domains to avoid transient false positives
+    // Confirmation recheck: first do a quick DNS-only check (catches CORS false positives),
+    // then do a full recheck for anything DNS also can't find
     let confirmedFailed = [];
     if (failedDomains.length > 0) {
       await new Promise(function(res) { setTimeout(res, 1500); });
-      const retestResults = await Promise.all(failedDomains.map(async function(domain) {
-        const ok = await checkDomainReachable(domain);
-        return { domain: domain, ok: ok };
+      // Quick DNS pass — any domain with valid DNS is almost certainly alive
+      const stillSuspect = [];
+      const dnsResults = await Promise.all(failedDomains.map(async function(domain) {
+        const hasDNS = await checkDomainDNS(domain);
+        return { domain: domain, hasDNS: hasDNS };
       }));
-      confirmedFailed = retestResults.filter(r => !r.ok).map(r => r.domain);
+      for (const dr of dnsResults) {
+        if (!dr.hasDNS) stillSuspect.push(dr.domain);
+      }
+      // Full recheck only for domains with no DNS
+      if (stillSuspect.length > 0) {
+        const retestResults = await Promise.all(stillSuspect.map(async function(domain) {
+          const ok = await checkDomainReachable(domain);
+          return { domain: domain, ok: ok };
+        }));
+        confirmedFailed = retestResults.filter(r => !r.ok).map(r => r.domain);
+      }
     }
 
     for (const r of results) {
