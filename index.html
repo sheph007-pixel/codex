@@ -3879,17 +3879,17 @@ async function checkDomainReachable(domain) {
 }
 
 async function scanDomainValidity() {
-  if (_domainScanRunning) return;
-  if (!companies.length) return;
+  if (_domainScanRunning) return 'already_running';
+  if (!companies.length) return 'no_companies';
   _domainScanRunning = true;
   console.log('[DomainScan] Starting domain validity scan...');
 
-  // Canary test: check well-known domains first.
-  // If these fail, the environment can't make external requests — skip scan entirely.
+  // Canary test: quick check that we can reach the internet at all.
+  // Uses fast DNS lookups first, then falls back to fetch probes.
   const canaryDomains = ['google.com', 'microsoft.com', 'amazon.com'];
   let canaryPass = 0;
   for (const cd of canaryDomains) {
-    if (await checkDomainReachable(cd)) canaryPass++;
+    if (await checkDomainDNS(cd) || await probeSingleUrl('https://' + cd, 5000)) canaryPass++;
   }
   if (canaryPass < 2) {
     console.warn('[DomainScan] Canary test failed (' + canaryPass + '/' + canaryDomains.length + ' reachable). Network environment cannot validate domains — clearing stale flags and skipping scan.');
@@ -3900,7 +3900,7 @@ async function scanDomainValidity() {
       updateFlaggedCount();
     }
     _domainScanRunning = false;
-    return;
+    return 'canary_failed';
   }
   console.log('[DomainScan] Canary test passed (' + canaryPass + '/' + canaryDomains.length + '). Proceeding with scan.');
 
@@ -3968,7 +3968,7 @@ async function scanDomainValidity() {
       saveFlaggedCompanies();
       updateFlaggedCount();
       _domainScanRunning = false;
-      return;
+      return 'aborted_high_rate';
     }
 
     // Live-update UI after every batch so results populate as scan runs
@@ -3980,9 +3980,8 @@ async function scanDomainValidity() {
       if (showingFlagged) showFlaggedView();
       else renderTable();
       // Update progress on button
-      var _btn = document.getElementById('fullRescanBtn');
-      if (_btn && _btn.disabled) {
-        _btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> ' + totalChecked + ' / ' + domainsToCheck.length;
+      if (typeof _setRescanBtn === 'function') {
+        _setRescanBtn(totalChecked + ' / ' + domainsToCheck.length, true, true);
       }
     }
 
@@ -4002,6 +4001,7 @@ async function scanDomainValidity() {
   updateLastScanLabel();
   _domainScanRunning = false;
   console.log('[DomainScan] Complete. Checked ' + domainsToCheck.length + ' domains, flagged ' + newlyFlagged + ' new.');
+  return 'done';
 }
 
 function scheduleDomainScan() {
@@ -4052,12 +4052,23 @@ function updateLastScanLabel() {
 }
 
 // Full rescan: clears all flagged data and rescans every company domain from scratch
+var _rescanBtnIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>';
+
+function _setRescanBtn(text, disabled, spin) {
+  var btn = document.getElementById('fullRescanBtn');
+  if (!btn) return;
+  btn.disabled = !!disabled;
+  var icon = spin
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>'
+    : _rescanBtnIcon;
+  btn.innerHTML = icon + ' ' + text;
+}
+
 async function fullDomainRescan() {
   if (_domainScanRunning) return;
   if (!companies.length) return;
 
-  var btn = document.getElementById('fullRescanBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> 0 / ' + companies.length; }
+  _setRescanBtn('Starting...', true, true);
 
   // Clear all existing flags so every domain gets a fresh check
   flaggedCompanies.clear();
@@ -4067,11 +4078,19 @@ async function fullDomainRescan() {
 
   // Enable live UI updates during scan
   _domainScanLive = true;
-  await scanDomainValidity();
+  var result = await scanDomainValidity();
   _domainScanLive = false;
 
-  // Restore button
-  if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Rescan Domains'; }
+  // Restore button with feedback
+  if (result === 'canary_failed') {
+    _setRescanBtn('Network error', false, false);
+    setTimeout(function() { _setRescanBtn('Rescan Domains', false, false); }, 3000);
+  } else if (result === 'aborted_high_rate') {
+    _setRescanBtn('Aborted — network issue', false, false);
+    setTimeout(function() { _setRescanBtn('Rescan Domains', false, false); }, 3000);
+  } else {
+    _setRescanBtn('Rescan Domains', false, false);
+  }
 
   // Final refresh
   buildCompaniesFromDomainMap();
