@@ -3574,6 +3574,7 @@ function showFlaggedView() {
       '<div class="ff-group"><label>Days since (min)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.minDays !== '' ? flaggedFilters.minDays : '') + '" onchange="updateFlaggedFilter(\'minDays\',this.value)"></div>' +
       '<div class="ff-group"><label>Days since (max)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.maxDays !== '' ? flaggedFilters.maxDays : '') + '" onchange="updateFlaggedFilter(\'maxDays\',this.value)"></div>' +
       (hasFilters ? '<button class="btn btn-ghost btn-sm ff-reset" onclick="resetFlaggedFilters()">Clear filters</button>' : '') +
+      '<div style="margin-left:auto"><button class="btn btn-ghost btn-sm" id="recheckAllBtn" onclick="recheckAllFlagged()" style="font-size:11px;color:var(--accent);border-color:var(--accent)">Recheck All Domains</button></div>' +
     '</div>';
 
   const tbody = document.getElementById('tableBody');
@@ -3602,6 +3603,7 @@ function showFlaggedView() {
       '<td style="color:#e8710a;font-size:11px;font-weight:600">Domain unreachable</td>' +
       '<td style="text-align:right;white-space:nowrap">' +
         '<a href="https://' + esc(domain) + '" target="_blank" class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--accent);border-color:var(--accent);text-decoration:none" title="Open ' + esc(domain) + ' in browser">Test URL</a> ' +
+        '<button class="btn btn-ghost btn-sm" id="recheck-' + esc(domain).replace(/\./g, '-') + '" onclick="recheckFlaggedDomain(\'' + dSafe + '\', this)" style="font-size:11px;color:var(--text2);border-color:var(--border)" title="Recheck if domain is now reachable">Recheck</button> ' +
         '<button class="btn btn-ghost btn-sm" onclick="unflagCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Unflag</button> ' +
         '<button class="btn btn-sm btn-danger" onclick="blockFlaggedCompany(\'' + dSafe + '\')" style="font-size:11px">Block</button>' +
       '</td>' +
@@ -3644,6 +3646,48 @@ function blockFlaggedCompany(domain) {
   buildCompaniesFromDomainMap();
   updateStats();
   showFlaggedView();
+}
+
+async function recheckFlaggedDomain(domain, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+  const ok = await checkDomainReachable(domain);
+  if (ok) {
+    unflagCompany(domain);
+    // Brief notification
+    if (btn) { btn.textContent = 'Valid!'; btn.style.color = 'var(--green)'; }
+  } else {
+    if (btn) { btn.disabled = false; btn.textContent = 'Still down'; btn.style.color = 'var(--red)'; setTimeout(function() { btn.textContent = 'Recheck'; btn.style.color = 'var(--text2)'; }, 2000); }
+  }
+}
+
+async function recheckAllFlagged() {
+  const btn = document.getElementById('recheckAllBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Rechecking...'; }
+  const domains = [...flaggedCompanies];
+  let unflaggedCount = 0;
+  const BATCH = 5;
+  for (let i = 0; i < domains.length; i += BATCH) {
+    const batch = domains.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(async function(d) {
+      return { domain: d, ok: await checkDomainReachable(d) };
+    }));
+    for (const r of results) {
+      if (r.ok) {
+        flaggedCompanies.delete(r.domain);
+        selectedFlaggedDomains.delete(r.domain);
+        unflaggedCount++;
+      }
+    }
+    if (i + BATCH < domains.length) await new Promise(function(res) { setTimeout(res, 800); });
+  }
+  saveFlaggedCompanies();
+  updateFlaggedCount();
+  if (unflaggedCount > 0) {
+    buildCompaniesFromDomainMap();
+    updateStats();
+  }
+  showFlaggedView();
+  console.log('[DomainScan] Recheck complete. ' + unflaggedCount + ' of ' + domains.length + ' domains are now reachable and were unflagged.');
 }
 
 // ── Flagged view multi-select ──
@@ -3743,24 +3787,33 @@ function clearFlaggedSelection() {
 // ──────────────────────────────────────────────
 let _domainScanRunning = false;
 
-async function checkDomainReachable(domain) {
+async function probeSingleUrl(url, timeout) {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-    await fetch('https://' + domain, { mode: 'no-cors', signal: controller.signal });
+    const timer = setTimeout(() => controller.abort(), timeout || 8000);
+    await fetch(url, { mode: 'no-cors', signal: controller.signal, redirect: 'follow' });
     clearTimeout(timer);
     return true;
-  } catch(e1) {
-    try {
-      const controller2 = new AbortController();
-      const timer2 = setTimeout(() => controller2.abort(), 6000);
-      await fetch('http://' + domain, { mode: 'no-cors', signal: controller2.signal });
-      clearTimeout(timer2);
-      return true;
-    } catch(e2) {
-      return false;
-    }
+  } catch(e) { return false; }
+}
+
+async function checkDomainReachable(domain) {
+  // Try multiple URL variations — if ANY resolves (including after redirects), the domain is valid.
+  // This handles domains that forward/redirect to another working URL.
+  const urls = [
+    'https://' + domain,
+    'http://' + domain,
+    'https://www.' + domain,
+    'http://www.' + domain
+  ];
+  for (const url of urls) {
+    if (await probeSingleUrl(url, 8000)) return true;
   }
+  // All variations failed — retry the primary URLs once more with a longer timeout
+  // to handle slow redirect chains and reduce false positives from transient failures
+  if (await probeSingleUrl('https://' + domain, 12000)) return true;
+  if (await probeSingleUrl('http://' + domain, 12000)) return true;
+  return false;
 }
 
 async function scanDomainValidity() {
@@ -3808,9 +3861,22 @@ async function scanDomainValidity() {
       return { domain: domain, ok: ok };
     }));
 
+    // Collect domains that failed the first check for a confirmation retest
+    const failedDomains = results.filter(r => !r.ok).map(r => r.domain);
+    // Confirmation recheck: wait briefly then retest failed domains to avoid transient false positives
+    let confirmedFailed = [];
+    if (failedDomains.length > 0) {
+      await new Promise(function(res) { setTimeout(res, 1500); });
+      const retestResults = await Promise.all(failedDomains.map(async function(domain) {
+        const ok = await checkDomainReachable(domain);
+        return { domain: domain, ok: ok };
+      }));
+      confirmedFailed = retestResults.filter(r => !r.ok).map(r => r.domain);
+    }
+
     for (const r of results) {
       totalChecked++;
-      if (!r.ok) {
+      if (!r.ok && confirmedFailed.includes(r.domain)) {
         flaggedCompanies.add(r.domain);
         flaggedThisScan.add(r.domain);
         newlyFlagged++;
