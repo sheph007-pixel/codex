@@ -3409,7 +3409,12 @@ function unblockDomain(domain) {
 // ──────────────────────────────────────────────
 function updateFlaggedCount() {
   const el = document.getElementById('flaggedCount');
-  if (el) el.textContent = flaggedCompanies.size;
+  if (!el) return;
+  var count = 0;
+  for (var d of flaggedCompanies) {
+    if (!blockedDomains.has(d) && !archivedCompanies.has(d)) count++;
+  }
+  el.textContent = count;
 }
 
 let selectedFlaggedDomains = new Set();
@@ -3509,8 +3514,8 @@ function showFlaggedView() {
   const now = Date.now();
   const DAY = 86400000;
 
-  // Build flagged items with computed fields
-  let items = [...flaggedCompanies].map(domain => {
+  // Build flagged items with computed fields (exclude blocked/archived domains)
+  let items = [...flaggedCompanies].filter(d => !blockedDomains.has(d) && !archivedCompanies.has(d)).map(domain => {
     const data = domainMap[domain];
     const lastDate = data ? data.lastDate : null;
     const daysSince = lastDate ? Math.floor((now - lastDate.getTime()) / DAY) : 9999;
