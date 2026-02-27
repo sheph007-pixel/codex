@@ -768,7 +768,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
             <input type="text" id="searchInput" placeholder="Search companies, contacts...">
           </div>
         </div>
-        <div class="toolbar-right">
+        <div class="toolbar-right" style="display:flex;align-items:center;gap:10px">
+          <span id="lastScanLabel" style="font-size:11px;color:var(--text2)"></span>
           <button class="btn btn-ghost btn-sm" id="fullRescanBtn" onclick="fullDomainRescan()" title="Rescan all company domains to find dead/invalid websites">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
             Rescan Domains
@@ -2928,6 +2929,7 @@ async function onSignedIn() {
 
   // Schedule domain validity scan (runs once, then once per day)
   if (companies.length > 0) scheduleDomainScan();
+  updateLastScanLabel();
 
   // If we have cached data, show it instantly — sync in background
   // If no cached data (first time), run scan in foreground
@@ -3783,6 +3785,7 @@ function clearFlaggedSelection() {
 // DOMAIN VALIDITY SCANNER
 // ──────────────────────────────────────────────
 let _domainScanRunning = false;
+let _domainScanLive = false; // When true, scanDomainValidity updates the UI after every batch
 
 async function probeSingleUrl(url, timeout) {
   try {
@@ -3943,10 +3946,19 @@ async function scanDomainValidity() {
       return;
     }
 
-    // Update count progressively so UI stays current
-    if (newlyFlagged > 0 && i % (BATCH * 5) === 0) {
-      saveFlaggedCompanies();
-      updateFlaggedCount();
+    // Live-update UI after every batch so results populate as scan runs
+    saveFlaggedCompanies();
+    updateFlaggedCount();
+    if (_domainScanLive) {
+      buildCompaniesFromDomainMap();
+      updateStats();
+      if (showingFlagged) showFlaggedView();
+      else renderTable();
+      // Update progress on button
+      var _btn = document.getElementById('fullRescanBtn');
+      if (_btn && _btn.disabled) {
+        _btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> ' + totalChecked + ' / ' + domainsToCheck.length;
+      }
     }
 
     if (i + BATCH < domainsToCheck.length) {
@@ -3962,6 +3974,7 @@ async function scanDomainValidity() {
     renderTable();
   }
   localStorage.setItem('kennion_domain_scan_last', Date.now().toString());
+  updateLastScanLabel();
   _domainScanRunning = false;
   console.log('[DomainScan] Complete. Checked ' + domainsToCheck.length + ' domains, flagged ' + newlyFlagged + ' new.');
 }
@@ -3992,39 +4005,55 @@ function scheduleDomainScan() {
   }
 }
 
+// Format a timestamp into a readable "Last scan: ..." label
+function updateLastScanLabel() {
+  var label = document.getElementById('lastScanLabel');
+  if (!label) return;
+  var ts = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
+  if (!ts) { label.textContent = ''; return; }
+  var d = new Date(ts);
+  var now = new Date();
+  var diff = now - d;
+  var mins = Math.floor(diff / 60000);
+  var hrs = Math.floor(diff / 3600000);
+  var days = Math.floor(diff / 86400000);
+  var ago;
+  if (mins < 1) ago = 'just now';
+  else if (mins < 60) ago = mins + 'm ago';
+  else if (hrs < 24) ago = hrs + 'h ago';
+  else ago = days + 'd ago';
+  label.textContent = 'Last scan: ' + ago;
+  label.title = d.toLocaleString();
+}
+
 // Full rescan: clears all flagged data and rescans every company domain from scratch
 async function fullDomainRescan() {
-  if (_domainScanRunning) {
-    alert('A domain scan is already running. Please wait for it to finish.');
-    return;
-  }
-  if (!companies.length) {
-    alert('No companies to scan. Sync your emails first.');
-    return;
-  }
-  if (!confirm('Rescan all ' + companies.length + ' company domains?\n\nThis will clear existing flags and recheck every domain. It may take a few minutes.')) return;
+  if (_domainScanRunning) return;
+  if (!companies.length) return;
 
-  const btn = document.getElementById('fullRescanBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Scanning...'; }
+  var btn = document.getElementById('fullRescanBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> 0 / ' + companies.length; }
 
   // Clear all existing flags so every domain gets a fresh check
   flaggedCompanies.clear();
   saveFlaggedCompanies();
   updateFlaggedCount();
-  // Reset the last-scan timestamp so the normal scheduler doesn't skip
   localStorage.removeItem('kennion_domain_scan_last');
 
+  // Enable live UI updates during scan
+  _domainScanLive = true;
   await scanDomainValidity();
+  _domainScanLive = false;
 
+  // Restore button
   if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Rescan Domains'; }
 
-  // Refresh views
+  // Final refresh
   buildCompaniesFromDomainMap();
   updateStats();
-  renderTable();
   if (showingFlagged) showFlaggedView();
-
-  alert('Domain rescan complete.\n\n' + flaggedCompanies.size + ' domain' + (flaggedCompanies.size !== 1 ? 's' : '') + ' flagged as unreachable.');
+  else renderTable();
+  updateLastScanLabel();
 }
 
 // ──────────────────────────────────────────────
