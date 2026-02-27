@@ -4393,10 +4393,40 @@ function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml
   }, 100);
 }
 
-function openReply(messageId, toEmail, subject) {
+async function openReply(messageId, toEmail, subject) {
   var reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
   var ctName = currentContactOverlay ? currentContactOverlay.contact.name : '';
-  openCompose(toEmail, ctName, reSubject, messageId);
+  // Fetch original email body for quoted reply
+  var quotedBody = '';
+  var originalHtml = '';
+  try {
+    var token = await getAccessToken();
+    var resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '?$select=from,body,receivedDateTime,sentDateTime', { headers: graphHeaders(token) });
+    if (resp.ok) {
+      var msg = await resp.json();
+      var fromName = msg.from?.emailAddress?.name || '';
+      var fromAddr = msg.from?.emailAddress?.address || toEmail;
+      if (!ctName) ctName = fromName;
+      var senderLabel = fromName ? fromName + ' <' + fromAddr + '>' : fromAddr;
+      var dt = new Date(msg.receivedDateTime || msg.sentDateTime);
+      var dateStr = dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      var bodyContent = msg.body?.content || '';
+      var bodyType = msg.body?.contentType || 'text';
+      originalHtml = bodyContent;
+      var bodyText;
+      if (bodyType === 'html') {
+        var tmp = document.createElement('div');
+        tmp.innerHTML = bodyContent;
+        bodyText = tmp.innerText || tmp.textContent || '';
+      } else {
+        bodyText = bodyContent;
+      }
+      var quoteHeader = '\n\nOn ' + dateStr + ', ' + senderLabel + ' wrote:\n';
+      var quotedLines = bodyText.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
+      quotedBody = quoteHeader + quotedLines;
+    }
+  } catch(e) { console.warn('Could not fetch original email for quote:', e); }
+  openCompose(toEmail, ctName, reSubject, messageId, quotedBody, originalHtml);
 }
 
 function closeInlineReply() { composeClose(); }
@@ -4884,7 +4914,7 @@ function renderInbox() {
             <button class="inbox-act act-delete" onclick="event.stopPropagation();inboxDeleteOne('${eid}')" title="Delete">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </button>
-            <button class="inbox-act" onclick="event.stopPropagation();openCompose('${item.fromEmail.replace(/'/g, "\\'")}','${esc(item.from).replace(/'/g, "\\'")}','Re: ${esc(item.subject).replace(/'/g, "\\'")}')" title="Reply">
+            <button class="inbox-act" onclick="event.stopPropagation();openReply('${eid}','${item.fromEmail.replace(/'/g, "\\'")}','${esc(item.subject).replace(/'/g, "\\'")}')" title="Reply">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg>
             </button>
           </div>
