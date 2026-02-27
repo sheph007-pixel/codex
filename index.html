@@ -111,6 +111,9 @@ body{min-height:100vh;overflow-x:hidden}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── STATS ROW ── */
+.view-title-bar{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.view-title{font-size:22px;font-weight:700;color:var(--text);margin:0;letter-spacing:-.3px}
+.view-title-count{font-size:14px;font-weight:600;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:2px 10px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(60,64,67,.08)}
 .stat-card .stat-label{font-size:12px;color:var(--text2);font-weight:500}
@@ -677,8 +680,14 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         </div>
       </div>
 
+      <!-- VIEW TITLE -->
+      <div class="view-title-bar" id="viewTitleBar" style="display:none">
+        <h2 class="view-title" id="viewTitle">All Companies</h2>
+        <span class="view-title-count" id="viewTitleCount"></span>
+      </div>
+
       <!-- STATS -->
-      <div class="stats">
+      <div class="stats" id="statsSection">
         <div class="stat-card">
           <span class="stat-label">Total Companies</span>
           <span class="stat-value" id="statCompanies">0</span>
@@ -2740,6 +2749,7 @@ function showWelcome() {
 async function onSignedIn() {
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
+  setViewTitle('All Companies', true);
   const sb = document.getElementById('sidebar');
   sb.style.display = 'flex';
   if (localStorage.getItem('relateflow_sidebar') === 'collapsed') {
@@ -3006,6 +3016,7 @@ function renderTable() {
   if (data.length === 0) {
     tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
     updateBulkBar();
+    updateViewTitleCount(0);
     return;
   }
 
@@ -3044,6 +3055,7 @@ function renderTable() {
 
   updateBulkBar();
   document.getElementById('companyCount').textContent = companies.filter(c => !archivedCompanies.has(c.domain)).length;
+  updateViewTitleCount();
 }
 
 function updateStats() {
@@ -3081,6 +3093,32 @@ function updateTypeCounts() {
   el = document.getElementById('oldClientCount'); if (el) el.textContent = old;
 }
 
+function setViewTitle(title, showDashboard) {
+  var bar = document.getElementById('viewTitleBar');
+  var titleEl = document.getElementById('viewTitle');
+  var stats = document.getElementById('statsSection');
+  var ai = document.getElementById('aiPanel');
+  if (title) {
+    titleEl.textContent = title;
+    bar.style.display = '';
+  } else {
+    bar.style.display = 'none';
+  }
+  stats.style.display = showDashboard ? '' : 'none';
+  ai.style.display = showDashboard ? '' : 'none';
+}
+
+function updateViewTitleCount(count) {
+  var el = document.getElementById('viewTitleCount');
+  var bar = document.getElementById('viewTitleBar');
+  if (bar.style.display === 'none') return;
+  if (typeof count !== 'number') {
+    var rows = document.querySelectorAll('#tableBody tr[data-id]');
+    count = rows.length;
+  }
+  el.textContent = count + (count === 1 ? ' item' : ' items');
+}
+
 function filterByType(type, el) {
   currentTypeFilter = type;
   tableShowAll = false;
@@ -3095,6 +3133,8 @@ function filterByType(type, el) {
     e.classList.remove('active');
   });
   if (el) el.classList.add('active');
+  var titles = { all: 'All Types', Lead: 'Leads', 'Existing Client': 'Existing Clients', 'Old Client': 'Old Clients' };
+  setViewTitle(titles[type] || type, false);
   clearSelection();
   renderTable();
 }
@@ -3113,6 +3153,7 @@ function toggleSidebar() {
 
 function filterByStatus(status, el) {
   currentFilter = status;
+  currentTypeFilter = 'all';
   tableShowAll = false;
   showingProposals = false;
   showingArchived = false;
@@ -3123,6 +3164,8 @@ function filterByStatus(status, el) {
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.sidebar-item[data-group="segment"]').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
+  var titles = { all: 'All Companies', Hot: 'Hot Leads', Warm: 'Warm Leads', Cold: 'Cold Leads' };
+  setViewTitle(titles[status] || status, status === 'all');
   clearSelection();
   renderTable();
 }
@@ -3222,6 +3265,7 @@ function showBlockedView() {
   // Switch sidebar active
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.getElementById('blockedViewItem').classList.add('active');
+  setViewTitle('Blocked', false);
 
   // Render blocked domains as a table in the main table body
   const tbody = document.getElementById('tableBody');
@@ -3229,6 +3273,7 @@ function showBlockedView() {
 
   if (sorted.length === 0) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No blocked domains. Domains you block will appear here.</td></tr>';
+    updateViewTitleCount(0);
     return;
   }
 
@@ -3251,6 +3296,7 @@ function showBlockedView() {
 
   // Clear select-all since blocked view doesn't use checkboxes
   clearSelection();
+  updateViewTitleCount(sorted.length);
 }
 
 function unblockDomain(domain) {
@@ -3290,6 +3336,7 @@ function showProposals() {
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.getElementById('proposalNavItem').classList.add('active');
+  setViewTitle('Proposals', false);
   clearSelection();
   renderTable();
 }
@@ -3334,6 +3381,7 @@ function showArchivedView() {
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.getElementById('archivedViewItem').classList.add('active');
+  setViewTitle('Archived', false);
 
   const tbody = document.getElementById('tableBody');
   const archivedDomains = [...archivedCompanies].sort();
@@ -3341,6 +3389,7 @@ function showArchivedView() {
   if (archivedDomains.length === 0) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No archived companies. Companies you archive will appear here.</td></tr>';
     clearSelection();
+    updateViewTitleCount(0);
     return;
   }
 
@@ -3362,6 +3411,7 @@ function showArchivedView() {
   }).join('');
 
   clearSelection();
+  updateViewTitleCount(archivedDomains.length);
 }
 
 function updateArchivedCount() {
@@ -4350,6 +4400,7 @@ let inboxLoading = false;
 function showInbox() {
   showingProposals = false;
   showingArchived = false;
+  setViewTitle(null, false);
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
   const dp = document.getElementById('detailPage');
