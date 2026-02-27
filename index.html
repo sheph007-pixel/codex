@@ -76,7 +76,7 @@ body{min-height:100vh;overflow-x:hidden}
 .main:has(.detail-page.active){padding:0;gap:0;overflow:hidden}
 
 /* ── WELCOME / SIGN-IN SCREEN ── */
-.welcome-screen{display:flex;align-items:center;justify-content:center;flex:1;padding:40px}
+.welcome-screen{display:none;align-items:center;justify-content:center;flex:1;padding:40px}
 .welcome-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:48px;max-width:520px;text-align:center;box-shadow:0 1px 4px rgba(60,64,67,.1)}
 .welcome-card h1{font-size:28px;font-weight:700;margin-bottom:8px}
 .welcome-card .subtitle{color:var(--text2);font-size:15px;line-height:1.6;margin-bottom:32px}
@@ -630,6 +630,11 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 
   <!-- MAIN CONTENT -->
   <main class="main">
+    <!-- AUTH LOADING SCREEN (shown while checking session) -->
+    <div id="authLoading" style="display:flex;align-items:center;justify-content:center;flex:1;gap:10px;color:var(--text2);font-size:14px">
+      <div class="scan-spinner"></div> Loading...
+    </div>
+
     <!-- WELCOME / SIGN IN -->
     <div class="welcome-screen" id="welcomeScreen">
       <div class="welcome-card">
@@ -2762,6 +2767,7 @@ function setSyncBadge(state, text) {
 // UI STATE
 // ──────────────────────────────────────────────
 function showWelcome() {
+  document.getElementById('authLoading').style.display = 'none';
   document.getElementById('welcomeScreen').style.display = 'flex';
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('sidebar').style.display = 'none';
@@ -2773,6 +2779,7 @@ function showWelcome() {
 }
 
 async function onSignedIn() {
+  document.getElementById('authLoading').style.display = 'none';
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
   setViewTitle('All Companies', true);
