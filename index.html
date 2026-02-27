@@ -3424,48 +3424,97 @@ function archiveFlaggedCompany(domain) {
 // ──────────────────────────────────────────────
 let _domainScanRunning = false;
 
+async function checkDomainReachable(domain) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    await fetch('https://' + domain, { mode: 'no-cors', signal: controller.signal });
+    clearTimeout(timer);
+    return true;
+  } catch(e1) {
+    try {
+      const controller2 = new AbortController();
+      const timer2 = setTimeout(() => controller2.abort(), 6000);
+      await fetch('http://' + domain, { mode: 'no-cors', signal: controller2.signal });
+      clearTimeout(timer2);
+      return true;
+    } catch(e2) {
+      return false;
+    }
+  }
+}
+
 async function scanDomainValidity() {
   if (_domainScanRunning) return;
   if (!companies.length) return;
   _domainScanRunning = true;
   console.log('[DomainScan] Starting domain validity scan...');
 
+  // Canary test: check well-known domains first.
+  // If these fail, the environment can't make external requests — skip scan entirely.
+  const canaryDomains = ['google.com', 'microsoft.com', 'amazon.com'];
+  let canaryPass = 0;
+  for (const cd of canaryDomains) {
+    if (await checkDomainReachable(cd)) canaryPass++;
+  }
+  if (canaryPass < 2) {
+    console.warn('[DomainScan] Canary test failed (' + canaryPass + '/' + canaryDomains.length + ' reachable). Network environment cannot validate domains — clearing stale flags and skipping scan.');
+    // Clear any previously flagged companies since the scan is unreliable
+    if (flaggedCompanies.size > 0) {
+      flaggedCompanies.clear();
+      saveFlaggedCompanies();
+      updateFlaggedCount();
+    }
+    _domainScanRunning = false;
+    return;
+  }
+  console.log('[DomainScan] Canary test passed (' + canaryPass + '/' + canaryDomains.length + '). Proceeding with scan.');
+
   const domainsToCheck = companies
     .filter(c => !archivedCompanies.has(c.domain) && !blockedDomains.has(c.domain) && !flaggedCompanies.has(c.domain))
     .map(c => c.domain);
 
   let newlyFlagged = 0;
+  let totalChecked = 0;
+  const flaggedThisScan = new Set(); // Track what we flag this run for rollback
   const BATCH = 5;
   const DELAY = 800;
+  const MAX_FLAG_RATE = 0.3; // If >30% of domains fail, abort — likely a network issue
+  const MIN_CHECKED_FOR_THRESHOLD = 20; // Need at least this many checks before evaluating rate
 
   for (let i = 0; i < domainsToCheck.length; i += BATCH) {
     const batch = domainsToCheck.slice(i, i + BATCH);
     const results = await Promise.all(batch.map(async function(domain) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
-        await fetch('https://' + domain, { mode: 'no-cors', signal: controller.signal });
-        clearTimeout(timer);
-        return { domain: domain, ok: true };
-      } catch(e1) {
-        // Try http as fallback
-        try {
-          const controller2 = new AbortController();
-          const timer2 = setTimeout(() => controller2.abort(), 6000);
-          await fetch('http://' + domain, { mode: 'no-cors', signal: controller2.signal });
-          clearTimeout(timer2);
-          return { domain: domain, ok: true };
-        } catch(e2) {
-          return { domain: domain, ok: false };
-        }
-      }
+      const ok = await checkDomainReachable(domain);
+      return { domain: domain, ok: ok };
     }));
 
     for (const r of results) {
+      totalChecked++;
       if (!r.ok) {
         flaggedCompanies.add(r.domain);
+        flaggedThisScan.add(r.domain);
         newlyFlagged++;
       }
+    }
+
+    // Safety check: if flag rate is too high, abort — it's a network/environment issue
+    if (totalChecked >= MIN_CHECKED_FOR_THRESHOLD && newlyFlagged / totalChecked > MAX_FLAG_RATE) {
+      console.warn('[DomainScan] Aborting — flag rate too high (' + newlyFlagged + '/' + totalChecked + ' = ' + Math.round(newlyFlagged / totalChecked * 100) + '%). Likely a network issue, not invalid domains. Rolling back newly flagged.');
+      // Roll back all domains flagged during this scan
+      for (const d of flaggedThisScan) {
+        flaggedCompanies.delete(d);
+      }
+      saveFlaggedCompanies();
+      updateFlaggedCount();
+      _domainScanRunning = false;
+      return;
+    }
+
+    // Update count progressively so UI stays current
+    if (newlyFlagged > 0 && i % (BATCH * 5) === 0) {
+      saveFlaggedCompanies();
+      updateFlaggedCount();
     }
 
     if (i + BATCH < domainsToCheck.length) {
@@ -3481,6 +3530,17 @@ async function scanDomainValidity() {
 }
 
 function scheduleDomainScan() {
+  // One-time cleanup: if flagged count is >30% of total companies, previous scan was
+  // unreliable (likely all domains were incorrectly flagged). Clear and force re-scan.
+  if (companies.length > 0 && flaggedCompanies.size > companies.length * 0.3) {
+    console.warn('[DomainScan] Flagged count (' + flaggedCompanies.size + ') exceeds 30% of total (' + companies.length + '). Previous scan was unreliable — clearing stale flags and forcing re-scan.');
+    flaggedCompanies.clear();
+    saveFlaggedCompanies();
+    updateFlaggedCount();
+    // Force immediate re-scan
+    localStorage.removeItem('kennion_domain_scan_last');
+  }
+
   const lastScan = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
   const ONE_DAY = 24 * 60 * 60 * 1000;
   const now = Date.now();
@@ -5215,6 +5275,7 @@ function esc(text) {
   loadStarredCompanies();
   loadArchivedCompanies();
   loadFlaggedCompanies();
+  updateFlaggedCount(); // Show correct flagged count immediately on load
   loadCompanyNameCache();
   loadStarredContacts();
   loadCompanyTypes();
