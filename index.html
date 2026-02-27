@@ -131,6 +131,9 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .bulk-bar .btn-danger:hover{background:rgba(255,118,117,.2)}
 
 .company-cell{display:flex;align-items:center;gap:10px}
+.row-star{background:none;border:none;cursor:pointer;font-size:16px;color:var(--border);padding:0 2px;transition:.15s;flex-shrink:0;line-height:1}
+.row-star:hover{color:#f5a623}
+.row-star.active{color:#f5a623}
 .company-logo{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
 .company-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:3px;border-radius:inherit}
 .company-info{display:flex;flex-direction:column}
@@ -517,6 +520,11 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       Inbox
       <span class="sidebar-badge inbox-badge-new" id="inboxCount" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px;vertical-align:middle;margin-right:3px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg><span id="inboxCountNum">0</span></span>
     </div>
+    <div class="sidebar-item" id="proposalNavItem" onclick="showProposals()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      Proposals
+      <span class="sidebar-badge" id="proposalCount" style="background:#f5a623">0</span>
+    </div>
     <div style="border-bottom:1px solid #2a2a3d;margin:8px 0"></div>
     <div class="sidebar-item active" data-group="segment" onclick="filterByStatus('all',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
@@ -561,6 +569,15 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <span class="sidebar-badge" id="oldClientCount" style="background:var(--text3)">0</span>
     </div>
     <div class="sidebar-section">Manage</div>
+    <div class="sidebar-item" id="addCompanyItem" onclick="showAddCompanyModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Add Company
+    </div>
+    <div class="sidebar-item" id="archivedViewItem" onclick="showArchivedView()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+      Archived
+      <span class="sidebar-badge" id="archivedCount" style="background:#7a7a95">0</span>
+    </div>
     <div class="sidebar-item" id="blockedViewItem" onclick="showBlockedView()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
       Blocked
@@ -776,6 +793,14 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     <option value="Old Client">Old Client</option>
   </select>
   <div class="bulk-sep"></div>
+  <button class="btn btn-ghost btn-sm" onclick="bulkStarSelected()" style="color:#f5a623;border-color:#f5a623">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+    Star
+  </button>
+  <button class="btn btn-ghost btn-sm" onclick="bulkArchiveSelected()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+    Archive
+  </button>
   <button class="btn btn-sm btn-danger" onclick="bulkBlockSelected()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
     Block
@@ -912,6 +937,39 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   </div>
 </div>
 
+<!-- ADD COMPANY MODAL -->
+<div class="modal-overlay" id="addCompanyModal">
+  <div class="modal" style="max-width:420px">
+    <h2>Add Company</h2>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:16px">Manually add a company to your CRM pipeline.</p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Company Name</label>
+        <input type="text" id="addCompanyName" placeholder="e.g. Acme Corp" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Domain</label>
+        <input type="text" id="addCompanyDomain" placeholder="e.g. acme.com" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Contact Email (optional)</label>
+        <input type="text" id="addCompanyEmail" placeholder="e.g. john@acme.com" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Type</label>
+        <select id="addCompanyType" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit">
+          <option value="Lead">Lead</option>
+          <option value="Existing Client">Existing Client</option>
+          <option value="Old Client">Old Client</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeAddCompanyModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addCompanyManually()">Add Company</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ──────────────────────────────────────────────
@@ -938,6 +996,8 @@ let fullScanDone = false;
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let autoSyncTimer = null;
 let blockedDomains = new Set();
+let starredCompanies = new Set();   // domains starred for Proposals
+let archivedCompanies = new Set();  // domains archived
 let selectedIds = new Set();
 let starredContacts = {};  // { "domain": "email@example.com" }
 let currentCompanyOverlay = null;  // company object for open overlay
@@ -1444,6 +1504,34 @@ function isBlockedDomain(domain) {
 }
 
 // ──────────────────────────────────────────────
+// STARRED COMPANIES (Proposals) PERSISTENCE
+// ──────────────────────────────────────────────
+function loadStarredCompanies() {
+  try {
+    const raw = localStorage.getItem('kennion_starred_companies');
+    starredCompanies = raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch(e) { starredCompanies = new Set(); }
+}
+function saveStarredCompanies() {
+  localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
+  scheduleCloudSync();
+}
+
+// ──────────────────────────────────────────────
+// ARCHIVED COMPANIES PERSISTENCE
+// ──────────────────────────────────────────────
+function loadArchivedCompanies() {
+  try {
+    const raw = localStorage.getItem('kennion_archived_companies');
+    archivedCompanies = raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch(e) { archivedCompanies = new Set(); }
+}
+function saveArchivedCompanies() {
+  localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
+  scheduleCloudSync();
+}
+
+// ──────────────────────────────────────────────
 // SMART NAME FORMATTING
 // ──────────────────────────────────────────────
 const NAME_SMALL_WORDS = new Set(['a','an','the','and','but','or','for','nor','at','by','in','of','on','to','up','as','is','it']);
@@ -1735,6 +1823,8 @@ function gatherSyncPayload() {
   const settings = {
     blocked_domains: [...blockedDomains],
     starred_contacts: starredContacts,
+    starred_companies: [...starredCompanies],
+    archived_companies: [...archivedCompanies],
     company_types: companyTypes,
     column_config: columnConfig,
     custom_column_data: customColumnData,
@@ -1832,6 +1922,14 @@ function applyCloudData(data) {
   if (s.starred_contacts && Object.keys(s.starred_contacts).length > 0) {
     starredContacts = s.starred_contacts;
     saveStarredContacts();
+  }
+  if (s.starred_companies && s.starred_companies.length > 0) {
+    starredCompanies = new Set(s.starred_companies);
+    saveStarredCompanies();
+  }
+  if (s.archived_companies && s.archived_companies.length > 0) {
+    archivedCompanies = new Set(s.archived_companies);
+    saveArchivedCompanies();
   }
   if (s.company_types && Object.keys(s.company_types).length > 0) {
     companyTypes = s.company_types;
@@ -2746,7 +2844,11 @@ function buildCellHTML(col, c, color) {
   if (col.type === 'builtin') {
     switch (col.id) {
       case 'company':
-        return '<div class="company-cell"><div class="company-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name) + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div>';
+        var isStarred = starredCompanies.has(c.domain);
+        var starDSafe = c.domain.replace(/'/g, "\\'");
+        return '<div class="company-cell">' +
+          '<button class="row-star' + (isStarred ? ' active' : '') + '" onclick="event.stopPropagation();toggleCompanyStar(\'' + starDSafe + '\')" title="' + (isStarred ? 'Remove from Proposals' : 'Add to Proposals') + '">&#9733;</button>' +
+          '<div class="company-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name) + '</div><div class="company-info"><span class="company-name">' + esc(c.name) + '</span><span class="company-domain">' + esc(c.domain) + '</span></div></div>';
       case 'contact':
         var initials = c.contact ? c.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2) : '';
         var ctTitle = getContactTitle(c.contactEmail || '');
@@ -2784,7 +2886,19 @@ function buildCellHTML(col, c, color) {
 }
 
 function renderTable() {
+  // If showing archived view, use that renderer instead
+  if (showingArchived) { showArchivedView(); return; }
+
   let data = [...companies];
+
+  // Hide archived companies from normal views
+  data = data.filter(c => !archivedCompanies.has(c.domain));
+
+  // If showing proposals, only show starred companies
+  if (showingProposals) {
+    data = data.filter(c => starredCompanies.has(c.domain));
+  }
+
   if (currentFilter !== 'all') data = data.filter(c => c.status === currentFilter);
   if (currentTypeFilter !== 'all') data = data.filter(c => getCompanyType(c.domain) === currentTypeFilter);
   const q = (document.getElementById('searchInput').value || '').toLowerCase();
@@ -2863,34 +2977,39 @@ function renderTable() {
   }
 
   updateBulkBar();
-  document.getElementById('companyCount').textContent = companies.length;
+  document.getElementById('companyCount').textContent = companies.filter(c => !archivedCompanies.has(c.domain)).length;
 }
 
 function updateStats() {
-  document.getElementById('statCompanies').textContent = companies.length;
-  document.getElementById('statSent').textContent = companies.reduce((s,c) => s + c.sent, 0).toLocaleString();
-  document.getElementById('statRecv').textContent = companies.reduce((s,c) => s + c.received, 0).toLocaleString();
-  document.getElementById('statContacts').textContent = companies.reduce((s,c) => s + (c.allContacts?.length || 1), 0).toLocaleString();
+  // Exclude archived from main stats
+  const active = companies.filter(c => !archivedCompanies.has(c.domain));
+  document.getElementById('statCompanies').textContent = active.length;
+  document.getElementById('statSent').textContent = active.reduce((s,c) => s + c.sent, 0).toLocaleString();
+  document.getElementById('statRecv').textContent = active.reduce((s,c) => s + c.received, 0).toLocaleString();
+  document.getElementById('statContacts').textContent = active.reduce((s,c) => s + (c.allContacts?.length || 1), 0).toLocaleString();
   // Update segment counts in sidebar
-  const hot = companies.filter(c => c.status === 'Hot').length;
-  const warm = companies.filter(c => c.status === 'Warm').length;
-  const cold = companies.filter(c => c.status === 'Cold').length;
+  const hot = active.filter(c => c.status === 'Hot').length;
+  const warm = active.filter(c => c.status === 'Warm').length;
+  const cold = active.filter(c => c.status === 'Cold').length;
   document.getElementById('hotCount').textContent = hot;
   document.getElementById('warmCount').textContent = warm;
   document.getElementById('coldCount').textContent = cold;
   updateTypeCounts();
+  updateProposalCount();
+  updateArchivedCount();
 }
 
 function updateTypeCounts() {
   var leads = 0, existing = 0, old = 0;
-  companies.forEach(function(c) {
+  var active = companies.filter(function(c) { return !archivedCompanies.has(c.domain); });
+  active.forEach(function(c) {
     var t = getCompanyType(c.domain);
     if (t === 'Existing Client') existing++;
     else if (t === 'Old Client') old++;
     else leads++;
   });
   var el;
-  el = document.getElementById('allTypesCount'); if (el) el.textContent = companies.length;
+  el = document.getElementById('allTypesCount'); if (el) el.textContent = active.length;
   el = document.getElementById('leadCount'); if (el) el.textContent = leads;
   el = document.getElementById('existingCount'); if (el) el.textContent = existing;
   el = document.getElementById('oldClientCount'); if (el) el.textContent = old;
@@ -2899,8 +3018,13 @@ function updateTypeCounts() {
 function filterByType(type, el) {
   currentTypeFilter = type;
   tableShowAll = false;
+  showingProposals = false;
+  showingArchived = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
+  document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.sidebar-item[data-group="type"]').forEach(function(e) {
     e.classList.remove('active');
   });
@@ -2924,8 +3048,13 @@ function toggleSidebar() {
 function filterByStatus(status, el) {
   currentFilter = status;
   tableShowAll = false;
+  showingProposals = false;
+  showingArchived = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
+  document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.sidebar-item[data-group="segment"]').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
   clearSelection();
@@ -3018,8 +3147,12 @@ function updateBlockedCount() {
 }
 
 function showBlockedView() {
+  showingProposals = false;
+  showingArchived = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
   // Switch sidebar active
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.getElementById('blockedViewItem').classList.add('active');
@@ -3061,6 +3194,246 @@ function unblockDomain(domain) {
   updateStats();
   updateBlockedCount();
   showBlockedView(); // Re-render the blocked view
+}
+
+// ──────────────────────────────────────────────
+// STARRED COMPANIES (Proposals)
+// ──────────────────────────────────────────────
+let showingProposals = false;
+
+function toggleCompanyStar(domain) {
+  if (starredCompanies.has(domain)) {
+    starredCompanies.delete(domain);
+  } else {
+    starredCompanies.add(domain);
+  }
+  saveStarredCompanies();
+  updateProposalCount();
+  renderTable();
+}
+
+function showProposals() {
+  showingProposals = true;
+  showingArchived = false;
+  currentFilter = 'all';
+  currentTypeFilter = 'all';
+  tableShowAll = false;
+  hideInbox();
+  document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
+  document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
+  document.getElementById('proposalNavItem').classList.add('active');
+  clearSelection();
+  renderTable();
+}
+
+function updateProposalCount() {
+  const el = document.getElementById('proposalCount');
+  if (el) el.textContent = starredCompanies.size;
+}
+
+// ──────────────────────────────────────────────
+// ARCHIVED COMPANIES
+// ──────────────────────────────────────────────
+let showingArchived = false;
+
+function archiveCompany(domain) {
+  archivedCompanies.add(domain);
+  starredCompanies.delete(domain); // unstar if starred
+  saveArchivedCompanies();
+  saveStarredCompanies();
+  updateArchivedCount();
+  updateProposalCount();
+  buildCompaniesFromDomainMap();
+  updateStats();
+  renderTable();
+}
+
+function unarchiveCompany(domain) {
+  archivedCompanies.delete(domain);
+  saveArchivedCompanies();
+  updateArchivedCount();
+  buildCompaniesFromDomainMap();
+  updateStats();
+  showArchivedView();
+}
+
+function showArchivedView() {
+  showingProposals = false;
+  showingArchived = true;
+  hideInbox();
+  document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
+  document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
+  document.getElementById('archivedViewItem').classList.add('active');
+
+  const tbody = document.getElementById('tableBody');
+  const archivedDomains = [...archivedCompanies].sort();
+
+  if (archivedDomains.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No archived companies. Companies you archive will appear here.</td></tr>';
+    clearSelection();
+    return;
+  }
+
+  tbody.innerHTML = archivedDomains.map(domain => {
+    const data = domainMap[domain];
+    const totalSent = data ? data.sentIds.size : 0;
+    const totalRecv = data ? data.receivedIds.size : 0;
+    const contactCount = data ? Object.keys(data.contacts).length : 0;
+    const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
+
+    return '<tr>' +
+      '<td class="col-check"></td>' +
+      '<td><div class="company-cell"><div class="company-logo" style="background:var(--text2);opacity:.6">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.7">' + esc(name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
+      '<td colspan="5" style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
+      '<td colspan="2" style="text-align:right">' +
+        '<button class="btn btn-ghost btn-sm" onclick="unarchiveCompany(\'' + domain.replace(/'/g, "\\'") + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Restore</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  clearSelection();
+}
+
+function updateArchivedCount() {
+  const el = document.getElementById('archivedCount');
+  if (el) el.textContent = archivedCompanies.size;
+}
+
+function bulkArchiveSelected() {
+  const domains = [];
+  for (const id of selectedIds) {
+    const c = companies.find(x => x.id === id);
+    if (c) domains.push(c.domain);
+  }
+  if (domains.length === 0) return;
+  const msg = domains.length === 1
+    ? 'Archive "' + domains[0] + '"?'
+    : 'Archive ' + domains.length + ' companies?';
+  if (!confirm(msg)) return;
+
+  for (const d of domains) {
+    archivedCompanies.add(d.toLowerCase());
+    starredCompanies.delete(d.toLowerCase());
+  }
+  saveArchivedCompanies();
+  saveStarredCompanies();
+  selectedIds.clear();
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  updateArchivedCount();
+  updateProposalCount();
+}
+
+function bulkStarSelected() {
+  for (const id of selectedIds) {
+    const c = companies.find(x => x.id === id);
+    if (c) starredCompanies.add(c.domain);
+  }
+  saveStarredCompanies();
+  selectedIds.clear();
+  updateProposalCount();
+  renderTable();
+}
+
+// ──────────────────────────────────────────────
+// ADD COMPANY MANUALLY
+// ──────────────────────────────────────────────
+function showAddCompanyModal() {
+  document.getElementById('addCompanyModal').classList.add('active');
+  document.getElementById('addCompanyName').value = '';
+  document.getElementById('addCompanyDomain').value = '';
+  document.getElementById('addCompanyEmail').value = '';
+  document.getElementById('addCompanyType').value = 'Lead';
+  setTimeout(() => document.getElementById('addCompanyName').focus(), 100);
+}
+
+function closeAddCompanyModal() {
+  document.getElementById('addCompanyModal').classList.remove('active');
+}
+
+function addCompanyManually() {
+  const name = document.getElementById('addCompanyName').value.trim();
+  const domain = document.getElementById('addCompanyDomain').value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+  const email = document.getElementById('addCompanyEmail').value.trim().toLowerCase();
+  const type = document.getElementById('addCompanyType').value;
+
+  if (!name || !domain) {
+    alert('Company name and domain are required.');
+    return;
+  }
+  if (domain.indexOf('.') === -1) {
+    alert('Please enter a valid domain (e.g. acme.com).');
+    return;
+  }
+  if (isBlockedDomain(domain)) {
+    alert('This domain is currently blocked. Unblock it first.');
+    return;
+  }
+
+  // Create entry in domainMap if it doesn't exist
+  if (!domainMap[domain]) {
+    domainMap[domain] = {
+      contacts: {},
+      sentIds: new Set(),
+      receivedIds: new Set(),
+      lastDate: new Date(),
+      lastSentDate: new Date(),
+      lastReceivedDate: null
+    };
+  }
+
+  // Add a placeholder sent message so buildCompaniesFromDomainMap includes it
+  const placeholderId = 'manual_' + domain + '_' + Date.now();
+  domainMap[domain].sentIds.add(placeholderId);
+
+  // Add contact if provided
+  if (email) {
+    const contactName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    if (!domainMap[domain].contacts[email]) {
+      domainMap[domain].contacts[email] = {
+        name: contactName,
+        email: email,
+        sentIds: new Set([placeholderId]),
+        receivedIds: new Set(),
+        lastDate: new Date()
+      };
+    }
+  } else {
+    // Add a generic placeholder contact
+    const placeholder = 'contact@' + domain;
+    if (!domainMap[domain].contacts[placeholder]) {
+      domainMap[domain].contacts[placeholder] = {
+        name: name,
+        email: placeholder,
+        sentIds: new Set([placeholderId]),
+        receivedIds: new Set(),
+        lastDate: new Date()
+      };
+    }
+  }
+
+  // Cache the company name
+  companyNameCache[domain] = name;
+  companyNameCacheDirty = true;
+  saveCompanyNameCache();
+
+  // Set the type
+  companyTypes[domain] = type;
+  saveCompanyTypes();
+
+  // Rebuild and render
+  persistData();
+  buildCompaniesFromDomainMap();
+  updateStats();
+  renderTable();
+  closeAddCompanyModal();
+  updateProposalCount();
+  updateArchivedCount();
 }
 
 // ──────────────────────────────────────────────
@@ -3153,9 +3526,18 @@ function showCompanyPanel(id) {
   document.getElementById('dpLeftContacts').innerHTML = ctHtml;
 
   // Left footer
+  var dSafeF = c.domain.replace(/'/g, "\\'");
+  var isStarredF = starredCompanies.has(c.domain);
+  var isArchivedF = archivedCompanies.has(c.domain);
   document.getElementById('dpLeftFoot').innerHTML =
-    '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + c.domain.replace(/'/g, "\\'") + '\')" style="color:var(--red);border-color:var(--red);font-size:11px;width:100%">' +
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Block domain</button>';
+    '<div style="display:flex;flex-direction:column;gap:6px">' +
+    '<button class="btn btn-ghost btn-sm" onclick="toggleCompanyStar(\'' + dSafeF + '\');showCompanyPanel(' + c.id + ')" style="color:#f5a623;border-color:#f5a623;font-size:11px;width:100%">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="' + (isStarredF ? '#f5a623' : 'none') + '" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> ' + (isStarredF ? 'Remove from Proposals' : 'Add to Proposals') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Archive ' + esc(c.domain) + '?\'))archiveCompanyFromDetail(\'' + dSafeF + '\')" style="color:var(--text2);border-color:var(--border);font-size:11px;width:100%">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> Archive company</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + dSafeF + '\')" style="color:var(--red);border-color:var(--red);font-size:11px;width:100%">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Block domain</button>' +
+    '</div>';
 
   // Reset right side to empty state
   document.getElementById('dpRightEmpty').style.display = 'flex';
@@ -3850,6 +4232,19 @@ function blockDomainFromDetail(domain) {
   closePanel();
 }
 
+function archiveCompanyFromDetail(domain) {
+  archivedCompanies.add(domain.toLowerCase());
+  starredCompanies.delete(domain.toLowerCase());
+  saveArchivedCompanies();
+  saveStarredCompanies();
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  updateArchivedCount();
+  updateProposalCount();
+  closePanel();
+}
+
 function renderBlockedDomainsList() {
   const container = document.getElementById('blockedDomainsList');
   if (!container) return;
@@ -3887,6 +4282,8 @@ let inboxCurrentTab = 'all';
 let inboxLoading = false;
 
 function showInbox() {
+  showingProposals = false;
+  showingArchived = false;
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
   const dp = document.getElementById('detailPage');
@@ -4511,6 +4908,8 @@ function esc(text) {
 // ──────────────────────────────────────────────
 (async function init() {
   loadBlockedDomains();
+  loadStarredCompanies();
+  loadArchivedCompanies();
   loadCompanyNameCache();
   loadStarredContacts();
   loadCompanyTypes();
