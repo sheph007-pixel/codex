@@ -2999,8 +2999,12 @@ function buildCellHTML(col, c, color) {
 }
 
 function renderTable() {
-  // If showing archived view, use that renderer instead
+  // If showing archived or flagged view, use those renderers instead
   if (showingArchived) { showArchivedView(); return; }
+  if (showingFlagged) { showFlaggedView(); return; }
+
+  // Restore normal table header (in case we're returning from flagged/archived view)
+  renderTableHeader();
 
   let data = [...companies];
 
@@ -3161,6 +3165,7 @@ function filterByType(type, el) {
   tableShowAll = false;
   showingProposals = false;
   showingArchived = false;
+  showingFlagged = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
@@ -3194,6 +3199,7 @@ function filterByStatus(status, el) {
   tableShowAll = false;
   showingProposals = false;
   showingArchived = false;
+  showingFlagged = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
@@ -3295,6 +3301,7 @@ function updateBlockedCount() {
 function showBlockedView() {
   showingProposals = false;
   showingArchived = false;
+  showingFlagged = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
@@ -3356,6 +3363,7 @@ function updateFlaggedCount() {
 function showFlaggedView() {
   showingProposals = false;
   showingArchived = false;
+  showingFlagged = true;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
@@ -3364,11 +3372,20 @@ function showFlaggedView() {
   document.getElementById('flaggedViewItem').classList.add('active');
   setViewTitle('Flagged', false);
 
+  // Simplified header for flagged view
+  document.getElementById('tableHead').innerHTML = '<tr>' +
+    '<th style="width:40px"></th>' +
+    '<th>Company</th>' +
+    '<th>Email Activity</th>' +
+    '<th>Reason</th>' +
+    '<th style="text-align:right">Actions</th>' +
+  '</tr>';
+
   const tbody = document.getElementById('tableBody');
   const sorted = [...flaggedCompanies].sort();
 
   if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.</td></tr>';
     updateViewTitleCount(0);
     return;
   }
@@ -3382,11 +3399,11 @@ function showFlaggedView() {
     const dSafe = domain.replace(/'/g, "\\'");
 
     return '<tr>' +
-      '<td class="col-check"></td>' +
+      '<td style="width:40px"></td>' +
       '<td><div class="company-cell"><div class="company-logo" style="background:#e8710a;opacity:.8">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.8">' + esc(name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
-      '<td colspan="4" style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
+      '<td style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
       '<td style="color:#e8710a;font-size:11px;font-weight:600">Domain unreachable</td>' +
-      '<td colspan="2" style="text-align:right;white-space:nowrap">' +
+      '<td style="text-align:right;white-space:nowrap">' +
         '<button class="btn btn-ghost btn-sm" onclick="unflagCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Unflag</button> ' +
         '<button class="btn btn-ghost btn-sm" onclick="archiveFlaggedCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--text2);border-color:var(--border)">Archive</button>' +
       '</td>' +
@@ -3559,6 +3576,7 @@ function scheduleDomainScan() {
 // STARRED COMPANIES (Proposals)
 // ──────────────────────────────────────────────
 let showingProposals = false;
+let showingFlagged = false;
 
 function toggleCompanyStar(domain) {
   if (starredCompanies.has(domain)) {
@@ -3574,6 +3592,7 @@ function toggleCompanyStar(domain) {
 function showProposals() {
   showingProposals = true;
   showingArchived = false;
+  showingFlagged = false;
   currentFilter = 'all';
   currentTypeFilter = 'all';
   tableShowAll = false;
@@ -3622,6 +3641,7 @@ function unarchiveCompany(domain) {
 function showArchivedView() {
   showingProposals = false;
   showingArchived = true;
+  showingFlagged = false;
   hideInbox();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
@@ -4749,6 +4769,7 @@ let inboxLoading = false;
 function showInbox() {
   showingProposals = false;
   showingArchived = false;
+  showingFlagged = false;
   setViewTitle(null, false);
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
