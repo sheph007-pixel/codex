@@ -866,7 +866,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <li>Go to <strong>portal.azure.com</strong> &rarr; <strong>Microsoft Entra ID</strong> &rarr; <strong>App registrations</strong></li>
         <li>Click <strong>New registration</strong>, name it "Kennion CRM"</li>
         <li>Set <strong>Redirect URI</strong> (SPA) to: <code id="redirectDisplay">https://sheph007-pixel.github.io/codex/</code></li>
-        <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code> and <code>Mail.Send</code> (Delegated)</li>
+        <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code>, <code>Mail.Send</code>, and <code>Files.ReadWrite.AppFolder</code> (Delegated)</li>
         <li>Click <strong>Grant admin consent</strong> (or have your admin do it)</li>
         <li>Copy the <strong>Application (client) ID</strong> and paste it below</li>
       </ol>
@@ -884,6 +884,19 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <button class="btn btn-primary" onclick="addBlockedDomainsFromInput()" style="align-self:flex-start;font-size:12px;white-space:nowrap">Block</button>
       </div>
       <div id="blockedDomainsList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
+    </div>
+
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Cloud Sync</label>
+      <p class="help-text" style="margin-top:0;margin-bottom:8px">Your data (contacts, blocked domains, settings) is automatically synced to your OneDrive so it's available on any device. You can also manually backup/restore.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="manualCloudSave()" id="cloudSaveBtn" style="font-size:12px">Save to Cloud Now</button>
+        <button class="btn btn-ghost btn-sm" onclick="manualCloudRestore()" style="font-size:12px">Restore from Cloud</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportBackup()" style="font-size:12px">Export Backup File</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importBackupInput').click()" style="font-size:12px">Import Backup File</button>
+        <input type="file" id="importBackupInput" accept=".json" style="display:none" onchange="importBackup(event)">
+      </div>
+      <p class="help-text" id="cloudSyncStatus" style="margin-top:6px"></p>
     </div>
 
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
@@ -987,6 +1000,7 @@ function loadColumnConfig() {
 
 function saveColumnConfig() {
   localStorage.setItem('kennion_columns', JSON.stringify(columnConfig));
+  scheduleCloudSync();
 }
 
 function loadCustomColumnData() {
@@ -998,6 +1012,7 @@ function loadCustomColumnData() {
 
 function saveCustomColumnData() {
   localStorage.setItem('kennion_custom_data', JSON.stringify(customColumnData));
+  scheduleCloudSync();
 }
 
 function loadEnrichmentCache() {
@@ -1373,6 +1388,7 @@ function loadStarredContacts() {
 
 function saveStarredContacts() {
   localStorage.setItem('relateflow_starred_contacts', JSON.stringify(starredContacts));
+  scheduleCloudSync();
 }
 
 function loadCompanyTypes() {
@@ -1384,6 +1400,7 @@ function loadCompanyTypes() {
 
 function saveCompanyTypes() {
   localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
+  scheduleCloudSync();
 }
 
 function getCompanyType(domain) {
@@ -1419,6 +1436,7 @@ function loadBlockedDomains() {
 
 function saveBlockedDomains() {
   localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
+  scheduleCloudSync();
 }
 
 function isBlockedDomain(domain) {
@@ -1682,6 +1700,203 @@ async function clearPersistedData() {
 }
 
 // ──────────────────────────────────────────────
+// ONEDRIVE CLOUD SYNC
+// Persists all user settings & contacts to OneDrive app folder
+// so data roams across devices automatically.
+// ──────────────────────────────────────────────
+let cloudSyncInProgress = false;
+let cloudSyncTimer = null;
+const CLOUD_SYNC_FILE = 'kennion-crm-sync.json';
+
+async function getCloudToken() {
+  if (!msalInstance || !currentAccount) return null;
+  try {
+    const resp = await msalInstance.acquireTokenSilent({
+      scopes: ['Files.ReadWrite.AppFolder'],
+      account: currentAccount
+    });
+    return resp.accessToken;
+  } catch(e) {
+    try {
+      const resp = await msalInstance.acquireTokenPopup({
+        scopes: ['Files.ReadWrite.AppFolder']
+      });
+      currentAccount = resp.account;
+      return resp.accessToken;
+    } catch(e2) {
+      console.warn('Cloud sync token failed:', e2);
+      return null;
+    }
+  }
+}
+
+function gatherSyncPayload() {
+  // Collect all localStorage settings
+  const settings = {
+    blocked_domains: [...blockedDomains],
+    starred_contacts: starredContacts,
+    company_types: companyTypes,
+    column_config: columnConfig,
+    custom_column_data: customColumnData,
+    company_names: companyNameCache,
+    client_id: getClientId(),
+  };
+
+  // Collect IndexedDB domain data (already in memory)
+  const domains = {};
+  for (const [domain, data] of Object.entries(domainMap)) {
+    domains[domain] = {
+      contacts: {},
+      sentIds: Array.from(data.sentIds || []),
+      receivedIds: Array.from(data.receivedIds || []),
+      lastDate: data.lastDate ? data.lastDate.toISOString() : null,
+      lastSentDate: data.lastSentDate ? data.lastSentDate.toISOString() : null,
+      lastReceivedDate: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null,
+    };
+    for (const [email, c] of Object.entries(data.contacts)) {
+      domains[domain].contacts[email] = {
+        name: c.name, email: c.email,
+        sentIds: Array.from(c.sentIds || []),
+        receivedIds: Array.from(c.receivedIds || []),
+        lastDate: c.lastDate ? c.lastDate.toISOString() : null,
+      };
+    }
+  }
+
+  return {
+    version: 2,
+    syncedAt: new Date().toISOString(),
+    userEmail: userEmail,
+    settings: settings,
+    domainData: domains,
+    meta: {
+      lastScanTime: lastScanTime ? lastScanTime.toISOString() : null,
+      fullScanDone: fullScanDone,
+      seenMsgIds: Array.from(seenMsgIds),
+      deltaLink: deltaLink,
+    }
+  };
+}
+
+async function saveToCloud() {
+  if (cloudSyncInProgress) return;
+  if (!currentAccount || Object.keys(domainMap).length === 0) return;
+  cloudSyncInProgress = true;
+  try {
+    const token = await getCloudToken();
+    if (!token) return;
+    const payload = gatherSyncPayload();
+    const body = JSON.stringify(payload);
+    const resp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE + ':/content',
+      { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body }
+    );
+    if (resp.ok) {
+      console.log('Cloud sync saved successfully (' + Math.round(body.length/1024) + ' KB)');
+    } else {
+      console.warn('Cloud sync save failed:', resp.status, await resp.text());
+    }
+  } catch(e) {
+    console.warn('Cloud sync save error:', e);
+  } finally {
+    cloudSyncInProgress = false;
+  }
+}
+
+async function loadFromCloud() {
+  try {
+    const token = await getCloudToken();
+    if (!token) return null;
+    const resp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE + ':/content',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (resp.status === 404) return null; // no cloud data yet
+    if (!resp.ok) { console.warn('Cloud load failed:', resp.status); return null; }
+    const data = await resp.json();
+    if (data.version && data.settings) return data;
+    return null;
+  } catch(e) {
+    console.warn('Cloud load error:', e);
+    return null;
+  }
+}
+
+function applyCloudData(data) {
+  // Restore settings
+  const s = data.settings;
+  if (s.blocked_domains && s.blocked_domains.length > 0) {
+    blockedDomains = new Set(s.blocked_domains);
+    saveBlockedDomains();
+  }
+  if (s.starred_contacts && Object.keys(s.starred_contacts).length > 0) {
+    starredContacts = s.starred_contacts;
+    saveStarredContacts();
+  }
+  if (s.company_types && Object.keys(s.company_types).length > 0) {
+    companyTypes = s.company_types;
+    saveCompanyTypes();
+  }
+  if (s.column_config && s.column_config.length > 0) {
+    columnConfig = s.column_config;
+    saveColumnConfig();
+  }
+  if (s.custom_column_data && Object.keys(s.custom_column_data).length > 0) {
+    customColumnData = s.custom_column_data;
+    saveCustomColumnData();
+  }
+  if (s.company_names && Object.keys(s.company_names).length > 0) {
+    Object.assign(companyNameCache, s.company_names);
+    companyNameCacheDirty = true;
+    saveCompanyNameCache();
+  }
+  if (s.client_id) {
+    localStorage.setItem('relateflow_client_id', s.client_id);
+  }
+
+  // Restore domain/contact data
+  if (data.domainData && Object.keys(data.domainData).length > 0) {
+    for (const [domain, d] of Object.entries(data.domainData)) {
+      const key = domain.toLowerCase();
+      if (!domainMap[key]) {
+        domainMap[key] = { contacts: {}, sentIds: new Set(), receivedIds: new Set(), lastDate: null, lastSentDate: null, lastReceivedDate: null };
+      }
+      const entry = domainMap[key];
+      for (const id of (d.sentIds || [])) entry.sentIds.add(id);
+      for (const id of (d.receivedIds || [])) entry.receivedIds.add(id);
+      if (d.lastDate) { const dt = new Date(d.lastDate); if (!entry.lastDate || dt > entry.lastDate) entry.lastDate = dt; }
+      if (d.lastSentDate) { const sd = new Date(d.lastSentDate); if (!entry.lastSentDate || sd > entry.lastSentDate) entry.lastSentDate = sd; }
+      if (d.lastReceivedDate) { const rd = new Date(d.lastReceivedDate); if (!entry.lastReceivedDate || rd > entry.lastReceivedDate) entry.lastReceivedDate = rd; }
+      for (const [email, c] of Object.entries(d.contacts || {})) {
+        const le = email.toLowerCase();
+        if (!entry.contacts[le]) {
+          entry.contacts[le] = { name: c.name, email: le, sentIds: new Set(c.sentIds || []), receivedIds: new Set(c.receivedIds || []), lastDate: c.lastDate ? new Date(c.lastDate) : null };
+        } else {
+          for (const id of (c.sentIds || [])) entry.contacts[le].sentIds.add(id);
+          for (const id of (c.receivedIds || [])) entry.contacts[le].receivedIds.add(id);
+          if (c.lastDate) { const cdt = new Date(c.lastDate); if (!entry.contacts[le].lastDate || cdt > entry.contacts[le].lastDate) entry.contacts[le].lastDate = cdt; }
+        }
+      }
+    }
+  }
+
+  // Restore meta
+  if (data.meta) {
+    if (data.meta.lastScanTime) lastScanTime = new Date(data.meta.lastScanTime);
+    if (data.meta.fullScanDone) fullScanDone = data.meta.fullScanDone;
+    if (data.meta.seenMsgIds) seenMsgIds = new Set(data.meta.seenMsgIds);
+    if (data.meta.deltaLink) deltaLink = data.meta.deltaLink;
+  }
+}
+
+// Debounced cloud save — triggers 30s after last change
+function scheduleCloudSync() {
+  if (!currentAccount) return;
+  if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => { saveToCloud(); }, 30000);
+}
+
+// ──────────────────────────────────────────────
 // MSAL SETUP
 // ──────────────────────────────────────────────
 const MSAL_CDN_URLS = [
@@ -1763,7 +1978,7 @@ async function signIn() {
 
   try {
     const resp = await msalInstance.loginPopup({
-      scopes: ['Mail.Read','Mail.Send','User.Read'],
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'],
       prompt: 'select_account'
     });
     currentAccount = resp.account;
@@ -1775,7 +1990,7 @@ async function signIn() {
     // If popup blocked, try redirect
     if (e.errorCode === 'popup_window_error' || e.errorCode === 'empty_window_error') {
       alert('Popup was blocked by your browser. Trying redirect login instead...');
-      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read'] });
+      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'] });
       return;
     }
     alert('Sign-in failed: ' + (e.errorCode || '') + ' — ' + (e.message || e));
@@ -1804,13 +2019,13 @@ async function getAccessToken() {
   if (!msalInstance || !currentAccount) throw new Error('Not signed in');
   try {
     const resp = await msalInstance.acquireTokenSilent({
-      scopes: ['Mail.Read','Mail.Send','User.Read'],
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'],
       account: currentAccount
     });
     return resp.accessToken;
   } catch(e) {
     const resp = await msalInstance.acquireTokenPopup({
-      scopes: ['Mail.Read','Mail.Send','User.Read']
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder']
     });
     currentAccount = resp.account;
     return resp.accessToken;
@@ -2274,6 +2489,7 @@ async function scanOutlookEmails(forceFullScan) {
 
     lastScanTime = new Date();
     await persistData();
+    scheduleCloudSync(); // sync to OneDrive after scan completes
     setSyncBadge('synced', 'In Sync');
     updateLastSyncDisplay();
 
@@ -2376,7 +2592,9 @@ async function onSignedIn() {
 
   // Load cached data from IndexedDB — show instantly (no waiting for scan)
   const cached = await loadPersistedData();
-  if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
+  let hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
+
+  if (hasLocalData) {
     domainMap = cached.domainMap;
     lastScanTime = cached.lastScanTime;
     fullScanDone = cached.fullScanDone || false;
@@ -2426,8 +2644,35 @@ async function onSignedIn() {
     resolveCompanyNames();
     runEnrichment();
   }
-  updateBlockedCount();
 
+  // If no local data, try restoring from OneDrive cloud sync
+  if (!hasLocalData) {
+    try {
+      setSyncBadge('scanning', 'Restoring...');
+      document.getElementById('lastSyncText').textContent = 'Checking cloud backup...';
+      const cloudData = await loadFromCloud();
+      if (cloudData && cloudData.domainData && Object.keys(cloudData.domainData).length > 0) {
+        applyCloudData(cloudData);
+        hasLocalData = Object.keys(domainMap).length > 0;
+        if (hasLocalData) {
+          buildCompaniesFromDomainMap();
+          renderTableHeader();
+          renderTable();
+          updateStats();
+          updateLastSyncDisplay();
+          resolveCompanyNames();
+          runEnrichment();
+          // Also persist to local IndexedDB so it's cached locally too
+          persistData();
+          console.log('Restored ' + Object.keys(domainMap).length + ' domains from cloud backup');
+        }
+      }
+    } catch(e) {
+      console.warn('Cloud restore failed:', e);
+    }
+  }
+
+  updateBlockedCount();
   updateLastSyncDisplay();
 
   // If we have cached data, show it instantly — sync in background
@@ -3468,6 +3713,89 @@ async function saveSettings() {
 }
 
 // ──────────────────────────────────────────────
+// CLOUD SYNC & BACKUP UI ACTIONS
+// ──────────────────────────────────────────────
+async function manualCloudSave() {
+  const status = document.getElementById('cloudSyncStatus');
+  const btn = document.getElementById('cloudSaveBtn');
+  if (!currentAccount) { status.textContent = 'Sign in first to sync.'; return; }
+  btn.disabled = true;
+  status.textContent = 'Saving to OneDrive...';
+  status.style.color = 'var(--text2)';
+  try {
+    await saveToCloud();
+    status.textContent = 'Saved to OneDrive successfully!';
+    status.style.color = 'var(--green)';
+  } catch(e) {
+    status.textContent = 'Save failed: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+  btn.disabled = false;
+}
+
+async function manualCloudRestore() {
+  const status = document.getElementById('cloudSyncStatus');
+  if (!currentAccount) { status.textContent = 'Sign in first to restore.'; return; }
+  if (!confirm('This will merge cloud data with your current local data. Continue?')) return;
+  status.textContent = 'Restoring from OneDrive...';
+  status.style.color = 'var(--text2)';
+  try {
+    const data = await loadFromCloud();
+    if (!data) { status.textContent = 'No cloud backup found.'; status.style.color = 'var(--orange)'; return; }
+    applyCloudData(data);
+    buildCompaniesFromDomainMap();
+    renderTableHeader();
+    renderTable();
+    updateStats();
+    updateBlockedCount();
+    persistData();
+    status.textContent = 'Restored from cloud! (' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)';
+    status.style.color = 'var(--green)';
+  } catch(e) {
+    status.textContent = 'Restore failed: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+function exportBackup() {
+  const payload = gatherSyncPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kennion-crm-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  const status = document.getElementById('cloudSyncStatus');
+  if (status) { status.textContent = 'Backup file downloaded.'; status.style.color = 'var(--green)'; }
+}
+
+function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('cloudSyncStatus');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.version || !data.settings) { alert('Invalid backup file.'); return; }
+      if (!confirm('This will merge the backup with your current data. Continue?')) return;
+      applyCloudData(data);
+      buildCompaniesFromDomainMap();
+      renderTableHeader();
+      renderTable();
+      updateStats();
+      updateBlockedCount();
+      persistData();
+      scheduleCloudSync();
+      if (status) { status.textContent = 'Backup imported! (' + Object.keys(domainMap).length + ' domains)'; status.style.color = 'var(--green)'; }
+    } catch(err) {
+      alert('Failed to parse backup file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = ''; // reset file input
+}
+
+// ──────────────────────────────────────────────
 // BLOCKED DOMAINS MANAGEMENT
 // ──────────────────────────────────────────────
 function addBlockedDomainsFromInput() {
@@ -4206,6 +4534,20 @@ function esc(text) {
   document.getElementById('settingsBtn').style.display = '';
   showWelcome();
 })();
+
+// Save data on page close/hide to prevent data loss
+window.addEventListener('beforeunload', () => {
+  if (currentAccount && Object.keys(domainMap).length > 0) {
+    persistData();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && currentAccount && Object.keys(domainMap).length > 0) {
+    persistData();
+    // Fire cloud sync immediately if changes pending
+    if (cloudSyncTimer) { clearTimeout(cloudSyncTimer); cloudSyncTimer = null; saveToCloud(); }
+  }
+});
 
 // ──────────────────────────────────────────────
 // EVENT DELEGATION — single listener on table body
