@@ -465,9 +465,13 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .inbox-row.unread::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
 .inbox-row .inbox-check{width:40px;display:grid;place-items:center;flex-shrink:0;padding:0 4px 0 12px}
 .inbox-row .inbox-check input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
-.inbox-row-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;color:#fff;flex-shrink:0;margin-right:10px}
+.inbox-row-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;color:#fff;flex-shrink:0;margin-right:10px;cursor:pointer;transition:opacity .15s}
+.inbox-row-avatar:hover{opacity:.8}
 .inbox-row-from{width:180px;min-width:120px;padding:8px 8px 8px 0;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
-.inbox-row-from .from-company{font-size:11px;color:var(--text2);font-weight:400;display:block;margin-top:1px}
+.inbox-row-from .inbox-from-name{cursor:pointer;display:block;overflow:hidden;text-overflow:ellipsis}
+.inbox-row-from .inbox-from-name:hover{color:var(--accent);text-decoration:underline}
+.inbox-row-from .from-company{font-size:11px;color:var(--text2);font-weight:400;display:block;margin-top:1px;cursor:pointer}
+.inbox-row-from .from-company:hover{color:var(--accent);text-decoration:underline}
 .inbox-row-content{flex:1;min-width:0;padding:8px 12px;display:flex;flex-direction:column;gap:1px}
 .inbox-row-subject{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inbox-row-preview{font-size:12px;color:var(--text2);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -4854,6 +4858,20 @@ async function refreshInbox() {
   inboxLoading = false;
 }
 
+function inboxOpenContact(email, domain, companyId) {
+  if (!domain || !domainMap[domain]) return;
+  var ct = domainMap[domain].contacts[email.toLowerCase()];
+  if (ct) {
+    showContactPanel(email, domain, companyId);
+  } else if (companyId !== null) {
+    showCompanyPanel(companyId);
+  }
+}
+
+function inboxOpenCompany(companyId) {
+  if (companyId !== null && companyId !== undefined) showCompanyPanel(companyId);
+}
+
 function renderInbox() {
   const list = document.getElementById('inboxList');
   let items = [...inboxEmails];
@@ -4915,12 +4933,15 @@ function renderInbox() {
       const selected = inboxSelectedIds.has(item.id) ? ' selected' : '';
       const checked = inboxSelectedIds.has(item.id) ? ' checked' : '';
       const eid = item.id.replace(/'/g, "\\'");
+      const emailSafe = item.fromEmail.replace(/'/g, "\\'");
+      const domainSafe = item.domain.replace(/'/g, "\\'");
+      const cidSafe = item.companyId !== null ? item.companyId : 'null';
       html += `<div class="inbox-row${unread}${selected}" data-id="${esc(item.id)}">
         <div class="inbox-check"><input type="checkbox"${checked} onclick="event.stopPropagation();inboxToggleSelect('${eid}',this.checked)"></div>
-        <div class="inbox-row-avatar" style="background:${COLORS[colorIdx]}">${initials}</div>
-        <div class="inbox-row-from" onclick="openEmailViewer('${eid}')">
-          ${esc(item.from)}
-          <span class="from-company">${esc(item.companyName)}</span>
+        <div class="inbox-row-avatar" style="background:${COLORS[colorIdx]}" onclick="event.stopPropagation();inboxOpenContact('${emailSafe}','${domainSafe}',${cidSafe})" title="View contact">${initials}</div>
+        <div class="inbox-row-from">
+          <span class="inbox-from-name" onclick="event.stopPropagation();inboxOpenContact('${emailSafe}','${domainSafe}',${cidSafe})" title="View contact">${esc(item.from)}</span>
+          <span class="from-company" onclick="event.stopPropagation();inboxOpenCompany(${cidSafe})" title="View company">${esc(item.companyName)}</span>
         </div>
         <div class="inbox-row-content" onclick="openEmailViewer('${eid}')">
           <div class="inbox-row-subject">${esc(item.subject)}</div>
