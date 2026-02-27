@@ -2435,18 +2435,42 @@ async function fetchEmailsProgressively(token, useDelta) {
     page++;
     updateScanBanner('Scanning' + (useDelta ? ' changes' : ' all mail') + '... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
 
-    // Fetch with 30s timeout to prevent hanging forever
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    // Fetch with 30s timeout and retry for transient errors
     let resp;
-    try {
-      resp = await fetch(url, { headers, signal: controller.signal });
-    } catch(e) {
+    const TRANSIENT_CODES = [429, 500, 502, 503, 504];
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      try {
+        resp = await fetch(url, { headers, signal: controller.signal });
+      } catch(e) {
+        clearTimeout(timeout);
+        if (e.name === 'AbortError') {
+          if (attempt < MAX_RETRIES) {
+            const wait = Math.pow(2, attempt + 1) * 1000;
+            console.warn('Request timed out (attempt ' + (attempt + 1) + '/' + (MAX_RETRIES + 1) + '), retrying in ' + (wait / 1000) + 's...');
+            updateScanBanner('Request timed out — retrying in ' + (wait / 1000) + 's...');
+            await new Promise(r => setTimeout(r, wait));
+            continue;
+          }
+          throw new Error('Request timed out after ' + (MAX_RETRIES + 1) + ' attempts — please try again later');
+        }
+        throw e;
+      }
       clearTimeout(timeout);
-      if (e.name === 'AbortError') throw new Error('Request timed out — please try again');
-      throw e;
+
+      // Retry on transient server errors (429, 5xx) with exponential backoff
+      if (TRANSIENT_CODES.includes(resp.status) && attempt < MAX_RETRIES) {
+        const retryAfter = resp.headers.get('Retry-After');
+        const wait = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt + 1) * 1000;
+        console.warn('Graph API returned ' + resp.status + ' (attempt ' + (attempt + 1) + '/' + (MAX_RETRIES + 1) + '), retrying in ' + (wait / 1000) + 's...');
+        updateScanBanner('Server busy (' + resp.status + ') — retrying in ' + (wait / 1000) + 's...');
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      break; // Success or non-transient error — exit retry loop
     }
-    clearTimeout(timeout);
 
     if (!resp.ok) {
       // Delta token expired/invalid (410 Gone or 404) — reset to full delta scan
@@ -2600,7 +2624,17 @@ async function scanOutlookEmails(forceFullScan) {
     hideScanBanner();
     setSyncBadge('error', 'Sync Failed');
     console.error('Scan error:', e);
-    alert('Email scan failed: ' + e.message);
+    // Show user-friendly message for common transient errors
+    const msg = e.message || '';
+    if (msg.includes('504') || msg.includes('502') || msg.includes('503') || msg.includes('timed out')) {
+      alert('Email sync temporarily unavailable — Microsoft servers are slow or unreachable. Please try again in a few minutes.');
+    } else if (msg.includes('429')) {
+      alert('Too many requests — Microsoft is rate-limiting your account. Please wait a few minutes before syncing again.');
+    } else if (msg.includes('Not signed in') || msg.includes('interaction_required')) {
+      alert('Your session has expired. Please sign out and sign back in.');
+    } else {
+      alert('Email scan failed: ' + msg);
+    }
   } finally {
     isScanning = false;
   }
