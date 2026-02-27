@@ -58,20 +58,20 @@ body{min-height:100vh;overflow-x:hidden}
 
 /* ── LAYOUT ── */
 .layout{display:flex;height:calc(100vh - 56px)}
-.sidebar{width:240px;min-width:0;background:#1e1e2d;border-right:1px solid #2a2a3d;padding:16px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:4px;overflow-y:auto;overflow-x:hidden;transition:width .25s cubic-bezier(.4,0,.2,1),padding .25s cubic-bezier(.4,0,.2,1),border .25s}
-.sidebar.collapsed{width:52px!important;min-width:52px;padding:16px 12px!important;overflow:hidden}
+.sidebar{width:240px;min-width:0;background:#1e1e2d;border-right:1px solid #2a2a3d;padding:10px 10px;flex-shrink:0;display:flex;flex-direction:column;gap:1px;overflow-y:auto;overflow-x:hidden;transition:width .25s cubic-bezier(.4,0,.2,1),padding .25s cubic-bezier(.4,0,.2,1),border .25s}
+.sidebar.collapsed{width:52px!important;min-width:52px;padding:10px 10px!important;overflow:hidden}
 .sidebar.collapsed>*:not(.sidebar-collapse-row){display:none}
-.sidebar-collapse-row{display:flex;align-items:center;justify-content:flex-end;margin-bottom:8px;flex-shrink:0}
+.sidebar-collapse-row{display:flex;align-items:center;justify-content:flex-end;margin-bottom:4px;flex-shrink:0}
 .sidebar.collapsed .sidebar-collapse-row{justify-content:center}
-.sidebar-toggle{background:none;border:1px solid #3a3a4d;color:#9e9eb8;cursor:pointer;width:28px;height:28px;border-radius:6px;display:grid;place-items:center;transition:.15s}
+.sidebar-toggle{background:none;border:1px solid #3a3a4d;color:#9e9eb8;cursor:pointer;width:26px;height:26px;border-radius:6px;display:grid;place-items:center;transition:.15s}
 .sidebar-toggle:hover{background:#2a2a3d;color:#e0e0ef}
-.sidebar-toggle svg{width:16px;height:16px}
-.sidebar-section{margin-top:16px;margin-bottom:6px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:#7a7a95;padding:0 12px}
-.sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;color:#b0b0c8;cursor:pointer;transition:.15s;font-size:13px;font-weight:500}
+.sidebar-toggle svg{width:14px;height:14px}
+.sidebar-section{margin-top:10px;margin-bottom:2px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:#7a7a95;padding:0 10px}
+.sidebar-item{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:6px;color:#b0b0c8;cursor:pointer;transition:.15s;font-size:12px;font-weight:500}
 .sidebar-item:hover,.sidebar-item.active{background:#2a2a3d;color:#e8e8f0}
 .sidebar-item.active{color:#5b9cf6}
-.sidebar-item svg{width:18px;height:18px;flex-shrink:0}
-.sidebar-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
+.sidebar-item svg{width:16px;height:16px;flex-shrink:0}
+.sidebar-badge{margin-left:auto;background:var(--accent);color:#fff;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px}
 .main{flex:1;overflow-y:auto;overflow-x:hidden;padding:24px;display:flex;flex-direction:column;gap:20px}
 .main:has(.detail-page.active){padding:0;gap:0;overflow:hidden}
 
@@ -569,7 +569,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       Proposals
       <span class="sidebar-badge" id="proposalCount" style="background:#f5a623">0</span>
     </div>
-    <div style="border-bottom:1px solid #2a2a3d;margin:8px 0"></div>
+    <div style="border-bottom:1px solid #2a2a3d;margin:4px 0"></div>
     <div class="sidebar-item active" data-group="segment" onclick="filterByStatus('all',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       All Companies
