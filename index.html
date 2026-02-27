@@ -286,12 +286,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-mini-stat{background:var(--surface2);border-radius:8px;padding:8px 10px}
 .dp-mini-stat .label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
 .dp-mini-stat .value{font-size:16px;font-weight:700;margin-top:2px}
-.dp-ai-summary{background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:10px;font-size:12px;line-height:1.6;color:var(--text)}
-.dp-ai-summary .dp-ai-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--accent2);margin-bottom:6px;display:flex;align-items:center;gap:5px}
-.dp-ai-summary .dp-ai-label svg{width:12px;height:12px}
-.dp-ai-summary .dp-ai-text{color:var(--text);font-size:12px;line-height:1.55}
-.dp-ai-summary .dp-ai-loading{display:flex;align-items:center;gap:8px;color:var(--text2);font-size:12px}
-.dp-ai-summary .dp-ai-loading .scan-spinner{width:12px;height:12px;border-width:2px}
 .dp-left-contacts{flex:1;overflow-y:auto;padding:0 12px 16px}
 .dp-section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin-bottom:8px;padding:8px 8px 0;display:flex;align-items:center;gap:6px}
 .dp-section-title .cnt{font-size:10px;background:var(--surface2);padding:1px 6px;border-radius:8px;color:var(--text)}
@@ -1102,7 +1096,6 @@ let currentContactOverlay = null;  // { contact, company, domain }
 let currentContactTab = 'all';
 let contactTimelineCache = {};  // "email" -> [{type,subject,date,...}]
 let companyFilesCache = {};     // "domain" -> [{name, size, messageId, attachmentId, date, from}, ...]
-let companyAiSummaryCache = {}; // "domain" -> "AI summary text"
 let currentLeftTab = 'relationships'; // 'relationships' or 'files'
 
 // ──────────────────────────────────────────────
@@ -1944,7 +1937,6 @@ function gatherSyncPayload() {
     column_config: columnConfig,
     custom_column_data: customColumnData,
     company_names: companyNameCache,
-    ai_summaries: companyAiSummaryCache,
     client_id: getClientId(),
     email_signature: getEmailSignature(),
   };
@@ -2068,10 +2060,6 @@ function applyCloudData(data) {
     Object.assign(companyNameCache, s.company_names);
     companyNameCacheDirty = true;
     saveCompanyNameCache();
-  }
-  if (s.ai_summaries && Object.keys(s.ai_summaries).length > 0) {
-    Object.assign(companyAiSummaryCache, s.ai_summaries);
-    saveAiSummaryCache();
   }
   if (s.client_id) {
     localStorage.setItem('relateflow_client_id', s.client_id);
@@ -4448,17 +4436,7 @@ function showCompanyPanel(id) {
     '<div class="dp-inline-stat"><b>' + (c.sent + c.received) + '</b> Total</div>' +
   '</div>';
 
-  // AI company summary
-  headHtml += '<div class="dp-ai-summary" id="dpAiSummary">' +
-    '<div class="dp-ai-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> AI Company Summary</div>' +
-    '<div class="dp-ai-text" id="dpAiText"><div class="dp-ai-loading"><div class="scan-spinner"></div>Searching...</div></div>' +
-  '</div>';
-
-
   document.getElementById('dpLeftHead').innerHTML = headHtml;
-
-  // Trigger AI company summary (fetches once, then caches)
-  fetchAiCompanySummary(c.name, c.domain);
 
   // Left panel tabs (Relationships / Files)
   currentLeftTab = 'relationships';
@@ -4467,6 +4445,9 @@ function showCompanyPanel(id) {
   document.getElementById('dpLeftTabs').innerHTML =
     '<button class="dp-left-tab active" onclick="switchLeftTab(\'relationships\',this,\'' + dSafeTab + '\',' + c.id + ')">Relationships <span class="tab-cnt">' + sorted.length + '</span></button>' +
     '<button class="dp-left-tab" onclick="switchLeftTab(\'files\',this,\'' + dSafeTab + '\',' + c.id + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px;margin-right:3px"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>Files</button>';
+
+  // Auto-fetch files in background so count and content are ready
+  fetchCompanyFiles(c.domain);
 
   // Left contacts list
   let ctHtml = '<div class="dp-section-title">Relationships <span class="cnt">' + sorted.length + '</span></div>';
@@ -4673,7 +4654,6 @@ function switchLeftTab(tab, el, domain, companyId) {
 
 async function fetchCompanyFiles(domain) {
   const el = document.getElementById('dpLeftFiles');
-  if (!el) return;
 
   // Use cache if available
   if (companyFilesCache[domain] && companyFilesCache[domain].length >= 0) {
@@ -4681,7 +4661,10 @@ async function fetchCompanyFiles(domain) {
     return;
   }
 
-  el.innerHTML = '<div class="dp-files-loading"><div class="scan-spinner"></div>Loading files...</div>';
+  // Show loading only if files tab is visible
+  if (el && currentLeftTab === 'files') {
+    el.innerHTML = '<div class="dp-files-loading"><div class="scan-spinner"></div>Loading files from all emails...</div>';
+  }
 
   try {
     const token = await getAccessToken();
@@ -4698,48 +4681,67 @@ async function fetchCompanyFiles(domain) {
 
     const contactEmails = Object.keys(data.contacts);
 
-    // For each contact, search emails and check for attachments
-    for (const email of contactEmails) {
+    // Fetch attachments for all contacts in parallel for speed
+    const fetchContactFiles = async (email) => {
+      const contactFiles = [];
       try {
-        const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50' +
-          '&$select=id,subject,from,receivedDateTime,sentDateTime,hasAttachments' +
+        // Search all emails (sent & received) with this contact that have attachments
+        const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=200' +
+          '&$select=id,subject,from,toRecipients,receivedDateTime,sentDateTime,hasAttachments' +
           '&$filter=hasAttachments eq true' +
           '&$search=' + encodeURIComponent('"participants:' + email + '"');
         const resp = await fetch(searchUrl, { headers });
-        if (!resp.ok) continue;
+        if (!resp.ok) return contactFiles;
         const result = await resp.json();
-        if (!result.value) continue;
+        if (!result.value) return contactFiles;
 
-        for (const msg of result.value) {
-          if (!msg.hasAttachments) continue;
-          // Fetch attachments for this message
-          try {
-            const attResp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + msg.id + '/attachments?$select=id,name,contentType,size', { headers });
-            if (!attResp.ok) continue;
-            const attData = await attResp.json();
-            if (!attData.value) continue;
+        // Fetch attachments for all messages in parallel (batches of 5)
+        const msgs = result.value.filter(m => m.hasAttachments);
+        for (let i = 0; i < msgs.length; i += 5) {
+          const batch = msgs.slice(i, i + 5);
+          const attResults = await Promise.allSettled(batch.map(msg =>
+            fetch('https://graph.microsoft.com/v1.0/me/messages/' + msg.id + '/attachments?$select=id,name,contentType,size,isInline', { headers })
+              .then(r => r.ok ? r.json() : null)
+              .then(d => ({ msg, attachments: d?.value || [] }))
+          ));
 
-            for (const att of attData.value) {
-              // Skip inline images and very small items
-              if (att.contentType && att.contentType.startsWith('image/') && att.size < 5000) continue;
-              if (att.name === 'ATT00001') continue;
-              allFiles.push({
-                name: att.name || 'Unknown file',
+          for (const r of attResults) {
+            if (r.status !== 'fulfilled' || !r.value) continue;
+            const { msg, attachments } = r.value;
+            for (const att of attachments) {
+              // Skip inline images (signatures, logos) and tiny items
+              if (att.isInline) continue;
+              if (att.contentType && att.contentType.startsWith('image/') && att.size < 10000) continue;
+              if (att.name === 'ATT00001' || !att.name) continue;
+              // Determine if sent or received
+              const fromAddr = msg.from?.emailAddress?.address?.toLowerCase() || '';
+              const direction = fromAddr === email.toLowerCase() ? 'received' : 'sent';
+              contactFiles.push({
+                name: att.name,
                 size: att.size || 0,
                 contentType: att.contentType || '',
                 messageId: msg.id,
                 attachmentId: att.id,
                 date: new Date(msg.receivedDateTime || msg.sentDateTime),
                 from: msg.from?.emailAddress?.name || msg.from?.emailAddress?.address || '',
-                subject: msg.subject || '(no subject)'
+                subject: msg.subject || '(no subject)',
+                direction: direction,
+                contactEmail: email
               });
             }
-          } catch(e) { /* skip attachment fetch errors */ }
+          }
         }
-      } catch(e) { /* skip contact search errors */ }
+      } catch(e) { /* skip contact errors */ }
+      return contactFiles;
+    };
+
+    // Run all contact file fetches in parallel
+    const results = await Promise.allSettled(contactEmails.map(e => fetchContactFiles(e)));
+    for (const r of results) {
+      if (r.status === 'fulfilled') allFiles.push(...r.value);
     }
 
-    // Deduplicate by attachmentId and sort by date descending
+    // Deduplicate by attachmentId+messageId and sort by date descending
     const seen = new Set();
     const unique = [];
     for (const f of allFiles) {
@@ -4750,7 +4752,7 @@ async function fetchCompanyFiles(domain) {
     companyFilesCache[domain] = unique;
     renderCompanyFiles(domain);
   } catch(e) {
-    el.innerHTML = '<div class="dp-files-empty">Could not load files: ' + esc(e.message) + '</div>';
+    if (el) el.innerHTML = '<div class="dp-files-empty">Could not load files: ' + esc(e.message) + '</div>';
   }
 }
 
@@ -4801,11 +4803,12 @@ function renderCompanyFiles(domain) {
       const attIdSafe = f.attachmentId.replace(/'/g, "\\'");
       const nameSafe = esc(f.name).replace(/'/g, "\\'");
 
+      const dirLabel = f.direction === 'sent' ? '<span style="color:var(--accent2)">Sent</span>' : '<span style="color:var(--green)">Received</span>';
       html += '<div class="dp-file-item" onclick="downloadAttachment(\'' + msgIdSafe + '\',\'' + attIdSafe + '\',\'' + nameSafe + '\')" title="' + esc(f.subject) + '">' +
         '<div class="dp-file-icon" style="background:' + color + '">' + (ext ? ext.substring(0, 4) : '?') + '</div>' +
         '<div class="dp-file-info">' +
           '<div class="dp-file-name">' + esc(f.name) + '</div>' +
-          '<div class="dp-file-meta">' + esc(f.from) + '</div>' +
+          '<div class="dp-file-meta">' + dirLabel + ' · ' + esc(f.from) + '</div>' +
         '</div>' +
         '<div class="dp-file-size">' + sizeStr + '</div>' +
       '</div>';
@@ -4815,115 +4818,6 @@ function renderCompanyFiles(domain) {
 }
 
 // ──────────────────────────────────────────────
-// AI COMPANY SUMMARY — Google search + AI summary
-// ──────────────────────────────────────────────
-function loadAiSummaryCache() {
-  try {
-    const raw = localStorage.getItem('kennion_ai_summaries');
-    if (raw) Object.assign(companyAiSummaryCache, JSON.parse(raw));
-  } catch(e) {}
-}
-function saveAiSummaryCache() {
-  try { localStorage.setItem('kennion_ai_summaries', JSON.stringify(companyAiSummaryCache)); } catch(e) {}
-}
-
-async function fetchAiCompanySummary(companyName, domain) {
-  const el = document.getElementById('dpAiText');
-  if (!el) return;
-
-  // Check cache first
-  if (companyAiSummaryCache[domain]) {
-    el.innerHTML = companyAiSummaryCache[domain];
-    return;
-  }
-
-  el.innerHTML = '<div class="dp-ai-loading"><div class="scan-spinner"></div>Researching ' + esc(companyName) + '...</div>';
-
-  try {
-    const snippets = [];
-
-    // Source 1: Wikipedia search
-    try {
-      const wikiUrl = 'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(companyName.replace(/\s+/g, '_'));
-      const wikiResp = await fetch(wikiUrl);
-      if (wikiResp.ok) {
-        const wikiData = await wikiResp.json();
-        if (wikiData.extract && wikiData.extract.length > 40) {
-          snippets.push(wikiData.extract);
-        }
-      }
-    } catch(e) {}
-
-    // Source 2: Wikipedia search (broader query if exact match failed)
-    if (snippets.length === 0) {
-      try {
-        const searchUrl = 'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' + encodeURIComponent(companyName + ' company') + '&srlimit=1&format=json&origin=*';
-        const searchResp = await fetch(searchUrl);
-        if (searchResp.ok) {
-          const searchData = await searchResp.json();
-          const results = searchData.query?.search;
-          if (results && results.length > 0) {
-            const pageTitle = results[0].title;
-            const pageUrl = 'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(pageTitle.replace(/\s+/g, '_'));
-            const pageResp = await fetch(pageUrl);
-            if (pageResp.ok) {
-              const pageData = await pageResp.json();
-              if (pageData.extract && pageData.extract.length > 40) {
-                snippets.push(pageData.extract);
-              }
-            }
-          }
-        }
-      } catch(e) {}
-    }
-
-    // Source 3: DuckDuckGo Instant Answer API (CORS-friendly)
-    try {
-      const ddgUrl = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(companyName) + '&format=json&no_html=1&skip_disambig=1';
-      const ddgResp = await fetch(ddgUrl);
-      if (ddgResp.ok) {
-        const ddgData = await ddgResp.json();
-        if (ddgData.Abstract && ddgData.Abstract.length > 30) {
-          snippets.push(ddgData.Abstract);
-        } else if (ddgData.RelatedTopics && ddgData.RelatedTopics.length > 0) {
-          const topic = ddgData.RelatedTopics[0];
-          if (topic.Text && topic.Text.length > 30) snippets.push(topic.Text);
-        }
-      }
-    } catch(e) {}
-
-    // Source 4: Clearbit Company API (free, no auth needed for logo — but let's try name/domain)
-    try {
-      const cbUrl = 'https://autocomplete.clearbit.com/v1/companies/suggest?query=' + encodeURIComponent(companyName);
-      const cbResp = await fetch(cbUrl);
-      if (cbResp.ok) {
-        const cbData = await cbResp.json();
-        if (cbData.length > 0 && cbData[0].name) {
-          const match = cbData.find(c => c.domain === domain) || cbData[0];
-          if (match.name) snippets.push('Company: ' + match.name + (match.domain ? ' (' + match.domain + ')' : ''));
-        }
-      }
-    } catch(e) {}
-
-    // Build summary
-    let summary = '';
-    if (snippets.length > 0) {
-      // Use the best snippet (longest, most informative)
-      const best = snippets.sort((a, b) => b.length - a.length)[0];
-      // Trim to ~300 chars for a clean summary
-      summary = best.length > 350 ? best.substring(0, 350).replace(/\s+\S*$/, '') + '...' : best;
-    } else {
-      // Fallback: construct from domain
-      summary = companyName + ' (' + domain + '). No detailed company information found online. Check their website for more details.';
-    }
-
-    companyAiSummaryCache[domain] = summary;
-    saveAiSummaryCache();
-    el.textContent = summary;
-  } catch(e) {
-    el.textContent = 'Could not retrieve company information.';
-  }
-}
 
 // ──────────────────────────────────────────────
 // TIMELINE — fetch from Outlook and render inline
@@ -6309,7 +6203,6 @@ function esc(text) {
   loadEnrichmentCache();
   loadContactEnrichment();
   loadLogoFailedCache();
-  loadAiSummaryCache();
   renderTableHeader();
   if (getClientId()) {
     await initMSAL();
