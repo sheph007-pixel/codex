@@ -25,6 +25,24 @@ body{min-height:100vh;overflow-x:hidden}
 .topbar .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:-.3px}
 .topbar .logo svg{width:28px;height:28px}
 .topbar-actions{display:flex;align-items:center;gap:12px}
+.global-search-wrap{position:relative;flex:1;max-width:480px;margin:0 24px}
+.global-search-box{display:flex;align-items:center;gap:8px;background:#1e1e2d;border:1px solid var(--border);border-radius:10px;padding:7px 14px;transition:.2s}
+.global-search-box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,156,246,.15)}
+.global-search-box svg{width:16px;height:16px;color:var(--text3);flex-shrink:0}
+.global-search-box input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:100%;font-family:inherit}
+.global-search-box input::placeholder{color:var(--text3)}
+.global-search-kbd{margin-left:auto;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:11px;color:var(--text3);font-family:inherit;line-height:1.4}
+.global-search-dropdown{display:none;position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.35);max-height:420px;overflow-y:auto;z-index:999;padding:6px}
+.global-search-dropdown.open{display:block}
+.global-search-dropdown .gs-section{padding:6px 12px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)}
+.global-search-dropdown .gs-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:.1s}
+.global-search-dropdown .gs-item:hover,.global-search-dropdown .gs-item.gs-active{background:#2a2a3d}
+.global-search-dropdown .gs-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;color:#fff;flex-shrink:0}
+.global-search-dropdown .gs-info{flex:1;min-width:0}
+.global-search-dropdown .gs-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.global-search-dropdown .gs-meta{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.global-search-dropdown .gs-tag{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;flex-shrink:0}
+.global-search-dropdown .gs-empty{padding:20px;text-align:center;color:var(--text3);font-size:13px}
 .btn{padding:7px 16px;border-radius:8px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:.15s;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover{background:#1557b0}
@@ -477,6 +495,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 @media(max-width:600px){
   .stats{grid-template-columns:1fr}
   .search-box{width:100%}
+  .global-search-wrap{margin:0 8px;max-width:none}
   .toolbar{flex-direction:column;align-items:stretch}
   .compose-box{width:100%;max-width:100%;border-radius:0;max-height:100vh}
   .ev-panel{width:100vw}
@@ -493,6 +512,14 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   <div class="logo">
     <svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="7" fill="#1a73e8"/><path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     Kennion CRM
+  </div>
+  <div class="global-search-wrap" id="globalSearchWrap">
+    <div class="global-search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="globalSearchInput" placeholder="Search companies, contacts..." autocomplete="off">
+      <kbd class="global-search-kbd">/</kbd>
+    </div>
+    <div class="global-search-dropdown" id="globalSearchDropdown"></div>
   </div>
   <div class="topbar-actions" id="topbarActions">
     <button class="btn btn-ghost btn-sm" id="settingsBtn" onclick="openSettings()" style="display:none" title="Configure Azure App">
@@ -5052,6 +5079,162 @@ document.getElementById('searchInput').oninput = function() {
   tableShowAll = false;
   _searchTimer = setTimeout(renderTable, 150);
 };
+
+// ── GLOBAL SEARCH (Header Bar) ──
+(function() {
+  const input = document.getElementById('globalSearchInput');
+  const dropdown = document.getElementById('globalSearchDropdown');
+  const wrap = document.getElementById('globalSearchWrap');
+  const kbd = wrap.querySelector('.global-search-kbd');
+  let gsTimer = null;
+  let gsActiveIdx = -1;
+  let gsResults = [];
+
+  // "/" keyboard shortcut to focus search
+  document.addEventListener('keydown', function(e) {
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target.isContentEditable) return;
+      e.preventDefault();
+      input.focus();
+    }
+  });
+
+  // Hide kbd hint when focused
+  input.addEventListener('focus', function() { kbd.style.display = 'none'; });
+  input.addEventListener('blur', function() {
+    if (!input.value) kbd.style.display = '';
+  });
+
+  input.addEventListener('input', function() {
+    clearTimeout(gsTimer);
+    gsTimer = setTimeout(function() { runGlobalSearch(input.value.trim()); }, 120);
+  });
+
+  input.addEventListener('keydown', function(e) {
+    if (!dropdown.classList.contains('open')) return;
+    const items = dropdown.querySelectorAll('.gs-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      gsActiveIdx = Math.min(gsActiveIdx + 1, items.length - 1);
+      highlightItem(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      gsActiveIdx = Math.max(gsActiveIdx - 1, 0);
+      highlightItem(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (gsActiveIdx >= 0 && items[gsActiveIdx]) items[gsActiveIdx].click();
+    } else if (e.key === 'Escape') {
+      closeDropdown();
+      input.blur();
+    }
+  });
+
+  // Close on outside click
+  document.addEventListener('mousedown', function(e) {
+    if (!wrap.contains(e.target)) closeDropdown();
+  });
+
+  function highlightItem(items) {
+    items.forEach(function(el, i) { el.classList.toggle('gs-active', i === gsActiveIdx); });
+    if (items[gsActiveIdx]) items[gsActiveIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  function closeDropdown() {
+    dropdown.classList.remove('open');
+    gsActiveIdx = -1;
+  }
+
+  function runGlobalSearch(query) {
+    if (!query || query.length < 1) { closeDropdown(); dropdown.innerHTML = ''; return; }
+    const q = query.toLowerCase();
+    gsResults = [];
+    gsActiveIdx = -1;
+    let companyMatches = [];
+    let contactMatches = [];
+
+    // Search companies
+    for (let i = 0; i < companies.length; i++) {
+      const c = companies[i];
+      if (c.name.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q)) {
+        companyMatches.push(c);
+        if (companyMatches.length >= 5) break;
+      }
+    }
+
+    // Search contacts
+    for (const domain in domainMap) {
+      const dm = domainMap[domain];
+      for (const email in dm.contacts) {
+        const ct = dm.contacts[email];
+        if (ct.name.toLowerCase().includes(q) || email.includes(q)) {
+          const comp = companies.find(function(x) { return x.domain === domain; });
+          contactMatches.push({ name: ct.name, email: email, domain: domain, company: comp });
+        }
+        if (contactMatches.length >= 5) break;
+      }
+      if (contactMatches.length >= 5) break;
+    }
+
+    let html = '';
+
+    if (companyMatches.length) {
+      html += '<div class="gs-section">Companies</div>';
+      companyMatches.forEach(function(c, idx) {
+        const color = COLORS[c.id % COLORS.length];
+        const initial = c.name.charAt(0).toUpperCase();
+        const statusColor = c.status === 'Hot' ? 'var(--green)' : c.status === 'Warm' ? 'var(--orange)' : 'var(--blue)';
+        html += '<div class="gs-item" data-type="company" data-id="' + c.id + '">' +
+          '<div class="gs-avatar" style="background:' + color + '">' + esc(initial) + '</div>' +
+          '<div class="gs-info"><div class="gs-name">' + esc(c.name) + '</div>' +
+          '<div class="gs-meta">' + esc(c.domain) + ' &middot; ' + c.sent + ' sent, ' + c.received + ' received</div></div>' +
+          '<span class="gs-tag" style="background:' + statusColor + ';color:#fff">' + esc(c.status) + '</span></div>';
+      });
+    }
+
+    if (contactMatches.length) {
+      html += '<div class="gs-section">Contacts</div>';
+      contactMatches.forEach(function(ct) {
+        const comp = ct.company;
+        const color = comp ? COLORS[comp.id % COLORS.length] : '#666';
+        const initial = ct.name.charAt(0).toUpperCase();
+        const companyName = comp ? comp.name : ct.domain;
+        html += '<div class="gs-item" data-type="contact" data-email="' + esc(ct.email) + '" data-domain="' + esc(ct.domain) + '" data-companyid="' + (comp ? comp.id : 0) + '">' +
+          '<div class="gs-avatar" style="background:' + color + '">' + esc(initial) + '</div>' +
+          '<div class="gs-info"><div class="gs-name">' + esc(ct.name) + '</div>' +
+          '<div class="gs-meta">' + esc(ct.email) + ' &middot; ' + esc(companyName) + '</div></div></div>';
+      });
+    }
+
+    if (!companyMatches.length && !contactMatches.length) {
+      html = '<div class="gs-empty">No results for &ldquo;' + esc(query) + '&rdquo;</div>';
+    }
+
+    dropdown.innerHTML = html;
+    dropdown.classList.add('open');
+
+    // Click handlers for results
+    dropdown.querySelectorAll('.gs-item').forEach(function(el) {
+      el.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        const type = el.dataset.type;
+        if (type === 'company') {
+          showCompanyPanel(parseInt(el.dataset.id));
+        } else if (type === 'contact') {
+          const compId = parseInt(el.dataset.companyid);
+          if (compId) showCompanyPanel(compId);
+          setTimeout(function() {
+            selectContact(el.dataset.email, el.dataset.domain, compId);
+          }, 100);
+        }
+        input.value = '';
+        closeDropdown();
+        kbd.style.display = '';
+      });
+    });
+  }
+})();
 </script>
 </body>
 </html>
