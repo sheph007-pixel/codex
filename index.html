@@ -768,12 +768,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
             <input type="text" id="searchInput" placeholder="Search companies, contacts...">
           </div>
         </div>
-        <div class="toolbar-right" style="display:flex;align-items:center;gap:10px">
-          <span id="lastScanLabel" style="font-size:11px;color:var(--text2)"></span>
-          <button class="btn btn-ghost btn-sm" id="fullRescanBtn" onclick="fullDomainRescan()" title="Rescan all company domains to find dead/invalid websites">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-            Rescan Domains
-          </button>
+        <div class="toolbar-right">
         </div>
       </div>
 
@@ -3596,7 +3591,13 @@ function showFlaggedView() {
       '<div class="ff-group"><label>Days since (min)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.minDays !== '' ? flaggedFilters.minDays : '') + '" onchange="updateFlaggedFilter(\'minDays\',this.value)"></div>' +
       '<div class="ff-group"><label>Days since (max)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.maxDays !== '' ? flaggedFilters.maxDays : '') + '" onchange="updateFlaggedFilter(\'maxDays\',this.value)"></div>' +
       (hasFilters ? '<button class="btn btn-ghost btn-sm ff-reset" onclick="resetFlaggedFilters()">Clear filters</button>' : '') +
-      '<div style="margin-left:auto"><button class="btn btn-ghost btn-sm" id="recheckAllBtn" onclick="recheckAllFlagged()" style="font-size:11px;color:var(--accent);border-color:var(--accent)">Recheck All Domains</button></div>' +
+      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">' +
+        '<span id="lastScanLabel" style="font-size:11px;color:var(--text2)"></span>' +
+        '<button class="btn btn-ghost btn-sm" id="fullRescanBtn" onclick="fullDomainRescan()" title="Rescan all company domains" style="font-size:11px;color:var(--accent);border-color:var(--accent)">' +
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Rescan Domains' +
+        '</button>' +
+        '<button class="btn btn-ghost btn-sm" id="recheckAllBtn" onclick="recheckAllFlagged()" style="font-size:11px;color:var(--accent);border-color:var(--accent)">Recheck Flagged</button>' +
+      '</div>' +
     '</div>';
 
   const tbody = document.getElementById('tableBody');
@@ -3647,6 +3648,7 @@ function showFlaggedView() {
   clearSelection();
   updateFlaggedBulkBar();
   updateViewTitleCount(items.length);
+  updateLastScanLabel();
 }
 
 function unflagCompany(domain) {
