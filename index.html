@@ -865,6 +865,25 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Cancel</button>
 </div>
 
+<!-- FLAGGED BULK ACTIONS BAR -->
+<div class="bulk-bar" id="flaggedBulkBar">
+  <span class="bulk-count" id="flaggedBulkCount">0 selected</span>
+  <div class="bulk-sep"></div>
+  <button class="btn btn-ghost btn-sm" onclick="bulkTestFlaggedURLs()" style="color:var(--accent);border-color:var(--accent)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    Test URLs
+  </button>
+  <button class="btn btn-ghost btn-sm" onclick="bulkUnflagSelected()" style="color:var(--green);border-color:var(--green)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+    Unflag
+  </button>
+  <button class="btn btn-sm btn-danger" onclick="bulkBlockFlagged()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+    Block
+  </button>
+  <button class="btn btn-ghost btn-sm" onclick="clearFlaggedSelection()">Cancel</button>
+</div>
+
 <!-- COMPOSE EMAIL MODAL -->
 <!-- Outlook-style compose popup -->
 <div class="compose-popup cp-normal" id="composePopup">
@@ -3023,6 +3042,11 @@ function renderTable() {
   // Restore normal table header (in case we're returning from flagged/archived view)
   renderTableHeader();
 
+  // Hide flagged bulk bar when not in flagged view
+  selectedFlaggedDomains.clear();
+  const fBar = document.getElementById('flaggedBulkBar');
+  if (fBar) fBar.classList.remove('active');
+
   let data = [...companies];
 
   // Hide archived and flagged companies from normal views
@@ -3377,6 +3401,8 @@ function updateFlaggedCount() {
   if (el) el.textContent = flaggedCompanies.size;
 }
 
+let selectedFlaggedDomains = new Set();
+
 function showFlaggedView() {
   showingProposals = false;
   showingArchived = false;
@@ -3389,17 +3415,6 @@ function showFlaggedView() {
   document.getElementById('flaggedViewItem').classList.add('active');
   setViewTitle('Flagged', false);
 
-  // Simplified header for flagged view
-  document.getElementById('tableHead').innerHTML = '<tr>' +
-    '<th style="width:40px"></th>' +
-    '<th>Company</th>' +
-    '<th>Email Activity</th>' +
-    '<th>Days Since Contact</th>' +
-    '<th>Reason</th>' +
-    '<th style="text-align:right">Actions</th>' +
-  '</tr>';
-
-  const tbody = document.getElementById('tableBody');
   const now = Date.now();
   const DAY = 86400000;
 
@@ -3411,9 +3426,23 @@ function showFlaggedView() {
     return { domain, data, daysSince };
   }).sort((a, b) => a.daysSince - b.daysSince);
 
+  // Header with select-all checkbox
+  document.getElementById('tableHead').innerHTML = '<tr>' +
+    '<th class="col-check"><input type="checkbox" class="row-checkbox" id="flaggedSelectAll" onchange="toggleFlaggedSelectAll(this.checked)"></th>' +
+    '<th>Company</th>' +
+    '<th>Email Activity</th>' +
+    '<th>Days Since Contact</th>' +
+    '<th>Reason</th>' +
+    '<th style="text-align:right">Actions</th>' +
+  '</tr>';
+
+  const tbody = document.getElementById('tableBody');
+
   if (items.length === 0) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text2)">No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.</td></tr>';
     updateViewTitleCount(0);
+    selectedFlaggedDomains.clear();
+    updateFlaggedBulkBar();
     return;
   }
 
@@ -3429,9 +3458,10 @@ function showFlaggedView() {
     const companyClick = company ? ' onclick="openDetail(' + company.id + ')" style="cursor:pointer;opacity:.8"' : ' style="opacity:.8"';
     const daysLabel = item.daysSince < 9999 ? item.daysSince + 'd ago' : 'N/A';
     const daysColor = item.daysSince <= 7 ? 'var(--green)' : item.daysSince <= 30 ? 'var(--orange)' : 'var(--red)';
+    const isChecked = selectedFlaggedDomains.has(domain) ? ' checked' : '';
 
     return '<tr>' +
-      '<td style="width:40px"></td>' +
+      '<td class="col-check"><input type="checkbox" class="row-checkbox" data-flagged-domain="' + esc(domain) + '"' + isChecked + ' onchange="toggleFlaggedSelect(\'' + dSafe + '\', this.checked)"></td>' +
       '<td><div class="company-cell"' + companyClick + '><div class="company-logo" style="background:#e8710a;opacity:.8">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.8">' + esc(name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
       '<td style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
       '<td style="font-size:12px;font-weight:600;color:' + daysColor + '">' + daysLabel + '</td>' +
@@ -3439,17 +3469,28 @@ function showFlaggedView() {
       '<td style="text-align:right;white-space:nowrap">' +
         '<a href="https://' + esc(domain) + '" target="_blank" class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--accent);border-color:var(--accent);text-decoration:none" title="Open ' + esc(domain) + ' in browser">Test URL</a> ' +
         '<button class="btn btn-ghost btn-sm" onclick="unflagCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Unflag</button> ' +
-        '<button class="btn btn-ghost btn-sm" onclick="archiveFlaggedCompany(\'' + dSafe + '\')" style="font-size:11px;color:var(--text2);border-color:var(--border)">Archive</button>' +
+        '<button class="btn btn-sm btn-danger" onclick="blockFlaggedCompany(\'' + dSafe + '\')" style="font-size:11px">Block</button>' +
       '</td>' +
     '</tr>';
   }).join('');
 
+  // Sync select-all checkbox state
+  const selectAll = document.getElementById('flaggedSelectAll');
+  if (selectAll && items.length > 0) {
+    const allChecked = items.every(i => selectedFlaggedDomains.has(i.domain));
+    const someChecked = items.some(i => selectedFlaggedDomains.has(i.domain));
+    selectAll.checked = allChecked;
+    selectAll.indeterminate = someChecked && !allChecked;
+  }
+
   clearSelection();
+  updateFlaggedBulkBar();
   updateViewTitleCount(items.length);
 }
 
 function unflagCompany(domain) {
   flaggedCompanies.delete(domain);
+  selectedFlaggedDomains.delete(domain);
   saveFlaggedCompanies();
   updateFlaggedCount();
   buildCompaniesFromDomainMap();
@@ -3457,19 +3498,110 @@ function unflagCompany(domain) {
   showFlaggedView();
 }
 
-function archiveFlaggedCompany(domain) {
+function blockFlaggedCompany(domain) {
+  if (!confirm('Block "' + domain + '" from your system? This domain will be permanently hidden.')) return;
   flaggedCompanies.delete(domain);
-  archivedCompanies.add(domain);
-  starredCompanies.delete(domain);
+  selectedFlaggedDomains.delete(domain);
+  blockedDomains.add(domain.toLowerCase());
   saveFlaggedCompanies();
-  saveArchivedCompanies();
-  saveStarredCompanies();
+  saveBlockedDomains();
   updateFlaggedCount();
-  updateArchivedCount();
-  updateProposalCount();
+  updateBlockedCount();
   buildCompaniesFromDomainMap();
   updateStats();
   showFlaggedView();
+}
+
+// ── Flagged view multi-select ──
+function toggleFlaggedSelect(domain, checked) {
+  if (checked) selectedFlaggedDomains.add(domain);
+  else selectedFlaggedDomains.delete(domain);
+  // Sync select-all checkbox
+  const allItems = document.querySelectorAll('input[data-flagged-domain]');
+  const selectAll = document.getElementById('flaggedSelectAll');
+  if (selectAll && allItems.length > 0) {
+    const allChecked = [...allItems].every(cb => cb.checked);
+    const someChecked = [...allItems].some(cb => cb.checked);
+    selectAll.checked = allChecked;
+    selectAll.indeterminate = someChecked && !allChecked;
+  }
+  updateFlaggedBulkBar();
+}
+
+function toggleFlaggedSelectAll(checked) {
+  const allItems = document.querySelectorAll('input[data-flagged-domain]');
+  allItems.forEach(cb => {
+    cb.checked = checked;
+    const domain = cb.getAttribute('data-flagged-domain');
+    if (checked) selectedFlaggedDomains.add(domain);
+    else selectedFlaggedDomains.delete(domain);
+  });
+  updateFlaggedBulkBar();
+}
+
+function updateFlaggedBulkBar() {
+  const bar = document.getElementById('flaggedBulkBar');
+  if (!bar) return;
+  if (selectedFlaggedDomains.size > 0) {
+    bar.classList.add('active');
+    document.getElementById('flaggedBulkCount').textContent = selectedFlaggedDomains.size + ' selected';
+  } else {
+    bar.classList.remove('active');
+  }
+}
+
+function bulkTestFlaggedURLs() {
+  const domains = [...selectedFlaggedDomains];
+  if (domains.length === 0) return;
+  if (domains.length > 10 && !confirm('Open ' + domains.length + ' URLs in new tabs?')) return;
+  domains.forEach(d => window.open('https://' + d, '_blank'));
+}
+
+function bulkUnflagSelected() {
+  const domains = [...selectedFlaggedDomains];
+  if (domains.length === 0) return;
+  const msg = domains.length === 1
+    ? 'Unflag "' + domains[0] + '"? It will return to your main company list.'
+    : 'Unflag ' + domains.length + ' companies? They will return to your main company list.';
+  if (!confirm(msg)) return;
+  for (const d of domains) {
+    flaggedCompanies.delete(d);
+  }
+  selectedFlaggedDomains.clear();
+  saveFlaggedCompanies();
+  updateFlaggedCount();
+  buildCompaniesFromDomainMap();
+  updateStats();
+  showFlaggedView();
+}
+
+function bulkBlockFlagged() {
+  const domains = [...selectedFlaggedDomains];
+  if (domains.length === 0) return;
+  const msg = domains.length === 1
+    ? 'Block "' + domains[0] + '" from your system?'
+    : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.slice(0, 20).join(', ') + (domains.length > 20 ? '\n...and ' + (domains.length - 20) + ' more' : '');
+  if (!confirm(msg)) return;
+  for (const d of domains) {
+    flaggedCompanies.delete(d);
+    blockedDomains.add(d.toLowerCase());
+  }
+  selectedFlaggedDomains.clear();
+  saveFlaggedCompanies();
+  saveBlockedDomains();
+  updateFlaggedCount();
+  updateBlockedCount();
+  buildCompaniesFromDomainMap();
+  updateStats();
+  showFlaggedView();
+}
+
+function clearFlaggedSelection() {
+  selectedFlaggedDomains.clear();
+  const selectAll = document.getElementById('flaggedSelectAll');
+  if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+  document.querySelectorAll('input[data-flagged-domain]').forEach(cb => cb.checked = false);
+  updateFlaggedBulkBar();
 }
 
 // ──────────────────────────────────────────────
