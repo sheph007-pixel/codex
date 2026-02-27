@@ -4374,13 +4374,6 @@ function showCompanyPanel(id) {
   const sorted = [...contacts].sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
   const primaryEmail = starredContacts[c.domain] || (sorted[0] ? sorted[0].email : '');
 
-  // AI insight
-  let insight = '';
-  if (c.score >= 75) insight = 'High engagement. ' + (c.sent + c.received) + ' emails exchanged — consider scheduling a call.';
-  else if (c.score >= 50) insight = 'Active relationship. ' + (c.received > c.sent ? 'Good responsiveness from them.' : 'You send more than they reply — try a new angle.');
-  else if (c.score >= 30) insight = 'Early stage — only ' + (c.sent + c.received) + ' emails. Increase outreach to build momentum.';
-  else insight = 'Going cold — last activity ' + c.lastActivity + '. Re-engage with a personalized message.';
-
   const circumference = 2 * Math.PI * 12;
   const offset = circumference - (c.score / 100) * circumference;
   const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
@@ -4388,10 +4381,20 @@ function showCompanyPanel(id) {
   // Topbar
   document.getElementById('dpTopbarTitle').textContent = c.name;
 
-  // Left head: company info
+  // Left head: company info with proposal star
+  var isStarredH = starredCompanies.has(c.domain);
+  var dSafeH = c.domain.replace(/'/g, "\\'");
   let headHtml = '<div class="dp-company-head">' +
     '<div class="dp-co-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name, 44) + '</div>' +
-    '<div class="dp-co-info"><h2>' + esc(c.name) + '</h2><div class="dp-domain">' + esc(c.domain) + ' <a href="' + linkedInCompanyURL(c.domain) + '" target="_blank" class="linkedin-link" title="Find on LinkedIn">' + linkedInIconSVG() + '</a></div></div>' +
+    '<div class="dp-co-info"><div style="display:flex;align-items:center;gap:6px"><h2 style="margin:0">' + esc(c.name) + '</h2>' +
+      '<button class="dp-star' + (isStarredH ? ' active' : '') + '" onclick="event.stopPropagation();toggleCompanyStar(\'' + dSafeH + '\');showCompanyPanel(' + c.id + ')" title="' + (isStarredH ? 'Remove from Proposals' : 'Add to Proposals') + '" style="font-size:18px">&#9733;</button></div>' +
+      '<div class="dp-domain">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="font-size:12px">Website: <a href="https://' + esc(c.domain) + '" target="_blank" style="color:var(--accent)">' + esc(c.domain) + '</a></span>' +
+          '<span style="font-size:12px">LinkedIn: <a href="' + linkedInCompanyURL(c.domain) + '" target="_blank" class="linkedin-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">' + linkedInIconSVG() + ' Profile</a></span>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
   '</div>';
 
   var currentType = getCompanyType(c.domain);
@@ -4413,12 +4416,6 @@ function showCompanyPanel(id) {
     '<div class="dp-mini-stat"><span class="label">Total</span><div class="value">' + (c.sent + c.received) + '</div></div>' +
   '</div>';
 
-  headHtml += '<div class="ai-insight" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><div><div class="label">AI Insight</div><p style="margin:0">' + esc(insight) + '</p></div></div>';
-
-  // Company website link
-  headHtml += '<div style="margin-top:10px"><a href="https://' + esc(c.domain) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;gap:6px">' +
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
-    esc(c.domain) + '</a></div>';
 
   document.getElementById('dpLeftHead').innerHTML = headHtml;
 
@@ -4450,8 +4447,6 @@ function showCompanyPanel(id) {
   var isArchivedF = archivedCompanies.has(c.domain);
   document.getElementById('dpLeftFoot').innerHTML =
     '<div style="display:flex;flex-direction:column;gap:6px">' +
-    '<button class="btn btn-ghost btn-sm" onclick="toggleCompanyStar(\'' + dSafeF + '\');showCompanyPanel(' + c.id + ')" style="color:#f5a623;border-color:#f5a623;font-size:11px;width:100%">' +
-    '<svg width="12" height="12" viewBox="0 0 24 24" fill="' + (isStarredF ? '#f5a623' : 'none') + '" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> ' + (isStarredF ? 'Remove from Proposals' : 'Add to Proposals') + '</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Archive ' + esc(c.domain) + '?\'))archiveCompanyFromDetail(\'' + dSafeF + '\')" style="color:var(--text2);border-color:var(--border);font-size:11px;width:100%">' +
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> Archive company</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Block ' + esc(c.domain) + '?\'))blockDomainFromDetail(\'' + dSafeF + '\')" style="color:var(--red);border-color:var(--red);font-size:11px;width:100%">' +
@@ -4507,15 +4502,7 @@ function selectContact(email, domain, companyId) {
     '<div class="dp-ct-head-info">' +
       '<h2>' + esc(ct.name) + '</h2>' +
       '<div class="dp-ct-head-email">' + esc(ct.email) + '</div>' +
-      '<div style="display:flex;align-items:center;gap:8px;margin-top:3px">' +
-        '<span class="contact-title" contenteditable="true" style="min-width:60px;padding:1px 4px;border:1px solid transparent;border-radius:3px;cursor:text;font-size:11px;color:var(--text2)" ' +
-          'onblur="setContactTitle(\'' + titleESafe + '\',this.textContent);this.style.borderColor=\'transparent\'" ' +
-          'onfocus="this.style.borderColor=\'var(--border)\'" ' +
-          'data-placeholder="Add title...">' + esc(ctTitle) + '</span>' +
-        '<a href="' + ctLinkedIn + '" target="_blank" class="linkedin-link" title="LinkedIn profile">' + linkedInIconSVG() + ' LinkedIn</a>' +
-      '</div>' +
     '</div>' +
-    '<button class="dp-star' + (isPrimary ? ' active' : '') + '" onclick="toggleStarInPanel(\'' + domain.replace(/'/g, "\\'") + '\',\'' + email.toLowerCase().replace(/'/g, "\\'") + '\')" style="font-size:20px">&#9733;</button>' +
   '</div>';
   headHtml += '<div class="dp-ct-actions">' +
     '<button class="btn btn-primary btn-sm" onclick="openCompose(\'' + eSafe + '\',\'' + esc(ct.name) + '\',\'\',\'\')">' +
