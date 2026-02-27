@@ -4195,10 +4195,14 @@ function formatDateGroup(date) {
 // ──────────────────────────────────────────────
 let currentViewerMsgId = null;
 let currentViewerWebLink = null;
+let currentViewerFromEmail = '';
+let currentViewerFromName = '';
 
 async function openEmailViewer(messageId) {
   currentViewerMsgId = messageId;
   currentViewerWebLink = null;
+  currentViewerFromEmail = '';
+  currentViewerFromName = '';
   const overlay = document.getElementById('emailViewerOverlay');
   const loading = document.getElementById('evLoading');
   overlay.classList.add('active');
@@ -4226,6 +4230,8 @@ async function openEmailViewer(messageId) {
     // Sender avatar + name
     const fromName = msg.from?.emailAddress?.name || '';
     const fromAddr = msg.from?.emailAddress?.address || '';
+    currentViewerFromEmail = fromAddr;
+    currentViewerFromName = fromName;
     const initials = fromName ? fromName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : fromAddr.substring(0, 1).toUpperCase();
     document.getElementById('evAvatar').textContent = initials;
     document.getElementById('evFrom').innerHTML = esc(fromName || fromAddr) + (fromName ? ' <span>' + esc(fromAddr) + '</span>' : '');
@@ -4304,15 +4310,21 @@ function closeEmailViewer() {
   document.getElementById('emailViewerOverlay').classList.remove('active');
   currentViewerMsgId = null;
   currentViewerWebLink = null;
+  currentViewerFromEmail = '';
+  currentViewerFromName = '';
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && currentViewerMsgId) closeEmailViewer(); });
 
 function replyFromViewer() {
   if (!currentViewerMsgId) return;
   const subject = document.getElementById('evSubject').textContent || '';
-  const contactEmail = currentContactOverlay ? currentContactOverlay.email : '';
+  const contactEmail = currentContactOverlay ? currentContactOverlay.email : currentViewerFromEmail;
+  const msgId = currentViewerMsgId;
+  const fromName = currentViewerFromName;
   closeEmailViewer();
-  openReply(currentViewerMsgId, contactEmail, subject);
+  var reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
+  var ctName = currentContactOverlay ? currentContactOverlay.contact.name : fromName;
+  openCompose(contactEmail, ctName, reSubject, msgId);
 }
 
 function openInOutlook() {
