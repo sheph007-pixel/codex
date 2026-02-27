@@ -157,8 +157,20 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .bulk-bar .btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,118,117,.2)}
 .bulk-bar .btn-danger:hover{background:rgba(255,118,117,.2)}
 
-.flagged-filter-bar{padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;display:none}
+.flagged-filter-bar{padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px}
 .flagged-filter-bar .ff-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.flagged-scan-bar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px}
+.flagged-scan-bar .fsb-left{display:flex;align-items:center;gap:12px}
+.flagged-scan-bar .fsb-left svg{width:20px;height:20px;color:var(--orange);flex-shrink:0}
+.flagged-scan-bar .fsb-title{font-size:13px;font-weight:600;color:var(--text)}
+.flagged-scan-bar .fsb-subtitle{font-size:11px;color:var(--text2)}
+.flagged-scan-bar .fsb-right{display:flex;align-items:center;gap:12px}
+.flagged-scan-bar .fsb-timestamp{font-size:12px;color:var(--text2);text-align:right}
+.flagged-scan-bar .fsb-timestamp b{color:var(--text);font-weight:600}
+.flagged-scan-bar .fsb-scan-btn{padding:8px 18px;font-size:13px;font-weight:600;border-radius:8px;border:none;cursor:pointer;background:var(--accent);color:#fff;display:inline-flex;align-items:center;gap:8px;transition:.15s;font-family:inherit}
+.flagged-scan-bar .fsb-scan-btn:hover{background:#1557b0}
+.flagged-scan-bar .fsb-scan-btn:disabled{opacity:.6;cursor:not-allowed}
+.flagged-scan-bar .fsb-scan-btn svg{width:14px;height:14px}
 .flagged-filter-bar .ff-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);outline:none;transition:border .15s}
 .flagged-filter-bar .ff-input:focus{border-color:var(--accent)}
 .flagged-filter-bar .ff-search{width:180px}
@@ -3097,10 +3109,12 @@ function renderTable() {
   // Restore normal table header (in case we're returning from flagged/archived view)
   renderTableHeader();
 
-  // Hide flagged bulk bar and filter bar when not in flagged view
+  // Hide flagged bulk bar, scan bar, and filter bar when not in flagged view
   selectedFlaggedDomains.clear();
   const fBar = document.getElementById('flaggedBulkBar');
   if (fBar) fBar.classList.remove('active');
+  const fScanBar = document.getElementById('flaggedScanBar');
+  if (fScanBar) fScanBar.style.display = 'none';
   const ffBar = document.getElementById('flaggedFilterBar');
   if (ffBar) ffBar.style.display = 'none';
 
@@ -3635,16 +3649,46 @@ function showFlaggedView() {
     '<th style="text-align:right">Actions</th>' +
   '</tr>';
 
+  // Render scan bar (prominent button + timestamp)
+  var scanBar = document.getElementById('flaggedScanBar');
+  if (!scanBar) {
+    scanBar = document.createElement('div');
+    scanBar.id = 'flaggedScanBar';
+    scanBar.className = 'flagged-scan-bar';
+    var tableEl = document.getElementById('tableHead').closest('table') || document.getElementById('tableHead').parentElement;
+    tableEl.parentElement.insertBefore(scanBar, tableEl);
+  }
+  scanBar.style.display = 'flex';
+  var scanTs = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
+  var scanTsHtml = '';
+  if (scanTs) {
+    var scanDate = new Date(scanTs);
+    var scanAgo = _formatScanAgo(scanTs);
+    scanTsHtml = '<div class="fsb-timestamp"><b>Last scanned:</b> ' + scanAgo + '<br><span style="font-size:10px;opacity:.7">' + scanDate.toLocaleString() + '</span></div>';
+  } else {
+    scanTsHtml = '<div class="fsb-timestamp" style="color:var(--orange)"><b>Never scanned</b><br><span style="font-size:10px">Run a scan to detect broken domains</span></div>';
+  }
+  scanBar.innerHTML =
+    '<div class="fsb-left">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
+      '<div><div class="fsb-title">Domain Scanner</div><div class="fsb-subtitle">Checks all company domains for broken or inactive websites · Runs automatically weekly</div></div>' +
+    '</div>' +
+    '<div class="fsb-right">' +
+      scanTsHtml +
+      '<button class="fsb-scan-btn" id="fullRescanBtn" onclick="fullDomainRescan()" title="Scan all company domains to flag any that are broken or inactive">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Scan Domains' +
+      '</button>' +
+    '</div>';
+
   // Render filter bar
   var filterBar = document.getElementById('flaggedFilterBar');
   if (!filterBar) {
     filterBar = document.createElement('div');
     filterBar.id = 'flaggedFilterBar';
     filterBar.className = 'flagged-filter-bar';
-    var tableEl = document.getElementById('tableHead').closest('table') || document.getElementById('tableHead').parentElement;
-    tableEl.parentElement.insertBefore(filterBar, tableEl);
+    scanBar.parentElement.insertBefore(filterBar, scanBar.nextSibling);
   }
-  filterBar.style.display = '';
+  filterBar.style.display = 'block';
   var hasFilters = flaggedFilters.search || flaggedFilters.minEmails > 0 || flaggedFilters.maxDays !== '' || flaggedFilters.minDays !== '';
   filterBar.innerHTML =
     '<div class="ff-row">' +
@@ -3653,12 +3697,8 @@ function showFlaggedView() {
       '<div class="ff-group"><label>Days since (min)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.minDays !== '' ? flaggedFilters.minDays : '') + '" onchange="updateFlaggedFilter(\'minDays\',this.value)"></div>' +
       '<div class="ff-group"><label>Days since (max)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.maxDays !== '' ? flaggedFilters.maxDays : '') + '" onchange="updateFlaggedFilter(\'maxDays\',this.value)"></div>' +
       (hasFilters ? '<button class="btn btn-ghost btn-sm ff-reset" onclick="resetFlaggedFilters()">Clear filters</button>' : '') +
-      '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">' +
-        '<span id="lastScanLabel" style="font-size:11px;color:var(--text2)"></span>' +
-        '<button class="btn btn-ghost btn-sm" id="fullRescanBtn" onclick="fullDomainRescan()" title="Rescan all company domains" style="font-size:11px;color:var(--accent);border-color:var(--accent)">' +
-          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Rescan Domains' +
-        '</button>' +
-        '<button class="btn btn-ghost btn-sm" id="recheckAllBtn" onclick="recheckAllFlagged()" style="font-size:11px;color:var(--accent);border-color:var(--accent)">Recheck Flagged</button>' +
+      '<div style="margin-left:auto">' +
+        '<button class="btn btn-ghost btn-sm" id="recheckAllBtn" onclick="recheckAllFlagged()" style="font-size:11px;color:var(--accent);border-color:var(--accent)">Recheck All Flagged</button>' +
       '</div>' +
     '</div>';
 
@@ -4082,38 +4122,37 @@ function scheduleDomainScan() {
   }
 
   const lastScan = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
-  const ONE_DAY = 24 * 60 * 60 * 1000;
+  const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
 
-  if (!lastScan || (now - lastScan) >= ONE_DAY) {
+  if (!lastScan || (now - lastScan) >= ONE_WEEK) {
     // Run after a short delay so UI loads first
     setTimeout(scanDomainValidity, 5000);
   } else {
-    // Schedule for when 24h have passed
-    const remaining = ONE_DAY - (now - lastScan);
-    setTimeout(scanDomainValidity, remaining);
+    // Schedule for when 7 days have passed
+    const remaining = ONE_WEEK - (now - lastScan);
+    setTimeout(scanDomainValidity, Math.min(remaining, ONE_WEEK));
   }
 }
 
-// Format a timestamp into a readable "Last scan: ..." label
-function updateLastScanLabel() {
-  var label = document.getElementById('lastScanLabel');
-  if (!label) return;
-  var ts = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
-  if (!ts) { label.textContent = ''; return; }
-  var d = new Date(ts);
-  var now = new Date();
-  var diff = now - d;
+// Format scan timestamp into relative string
+function _formatScanAgo(ts) {
+  if (!ts) return '';
+  var diff = Date.now() - ts;
   var mins = Math.floor(diff / 60000);
   var hrs = Math.floor(diff / 3600000);
   var days = Math.floor(diff / 86400000);
-  var ago;
-  if (mins < 1) ago = 'just now';
-  else if (mins < 60) ago = mins + 'm ago';
-  else if (hrs < 24) ago = hrs + 'h ago';
-  else ago = days + 'd ago';
-  label.textContent = 'Last scan: ' + ago;
-  label.title = d.toLocaleString();
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  if (hrs < 24) return hrs + 'h ago';
+  return days + 'd ago';
+}
+
+// Update the scan bar timestamp (refreshes when flagged view is shown)
+function updateLastScanLabel() {
+  // Update scan bar if it exists
+  var scanBar = document.getElementById('flaggedScanBar');
+  if (scanBar && showingFlagged) showFlaggedView();
 }
 
 // Full rescan: clears all flagged data and rescans every company domain from scratch
@@ -4149,12 +4188,12 @@ async function fullDomainRescan() {
   // Restore button with feedback
   if (result === 'canary_failed') {
     _setRescanBtn('Network error', false, false);
-    setTimeout(function() { _setRescanBtn('Rescan Domains', false, false); }, 3000);
+    setTimeout(function() { _setRescanBtn('Scan Domains', false, false); }, 3000);
   } else if (result === 'aborted_high_rate') {
     _setRescanBtn('Aborted — network issue', false, false);
-    setTimeout(function() { _setRescanBtn('Rescan Domains', false, false); }, 3000);
+    setTimeout(function() { _setRescanBtn('Scan Domains', false, false); }, 3000);
   } else {
-    _setRescanBtn('Rescan Domains', false, false);
+    _setRescanBtn('Scan Domains', false, false);
   }
 
   // Final refresh
