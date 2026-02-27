@@ -409,44 +409,51 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .crm-content{display:none;flex-direction:column;gap:20px;flex:1}
 .crm-content.active{display:flex}
 
-/* ── INBOX VIEW ── */
-.inbox-view{display:none;flex-direction:column;flex:1;overflow:hidden}
+/* ── INBOX VIEW (Outlook-style) ── */
+.inbox-view{display:none;flex-direction:column;flex:1;overflow:hidden;background:var(--surface);border-radius:12px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(60,64,67,.08)}
 .inbox-view.active{display:flex}
-.inbox-topbar{display:flex;align-items:center;gap:14px;padding:0 0 16px;flex-shrink:0}
-.inbox-topbar h2{font-size:20px;font-weight:700;color:var(--text);flex:1;margin:0}
-.inbox-topbar .inbox-count{font-size:13px;font-weight:500;color:var(--text2)}
-.inbox-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;margin-bottom:0}
-.inbox-tab{padding:10px 18px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
+.inbox-toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--surface)}
+.inbox-toolbar h2{font-size:16px;font-weight:600;color:var(--text);margin:0;margin-right:auto}
+.inbox-toolbar .inbox-count-label{font-size:12px;color:var(--text2);margin-right:8px}
+.inbox-tb-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;color:var(--text2);cursor:pointer;transition:.15s;font-family:inherit}
+.inbox-tb-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--text2)}
+.inbox-tb-btn.danger:hover{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+.inbox-tb-btn svg{width:14px;height:14px;flex-shrink:0}
+.inbox-tb-divider{width:1px;height:24px;background:var(--border)}
+.inbox-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;padding:0 16px;background:var(--surface)}
+.inbox-tab{padding:9px 16px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;transition:.15s;font-family:inherit}
 .inbox-tab:hover{color:var(--text)}
-.inbox-tab.active{color:var(--accent2);border-bottom-color:var(--accent)}
-.inbox-tab .tab-count{background:var(--surface2);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:6px}
-.inbox-list{flex:1;overflow-y:auto;padding:0}
-.inbox-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text2);gap:12px;padding:40px}
-.inbox-empty svg{width:48px;height:48px;opacity:.4}
-.inbox-empty p{font-size:14px}
-.inbox-date-group{padding:0}
-.inbox-date-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text2);padding:14px 16px 6px;position:sticky;top:0;background:var(--bg);z-index:1}
-.inbox-item{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:.12s;position:relative}
-.inbox-item:hover{background:var(--surface2)}
-.inbox-item.unread{background:rgba(26,115,232,.03)}
-.inbox-item.unread .inbox-item-subject{font-weight:700}
-.inbox-item.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
-.inbox-item.done{opacity:.5}
-.inbox-item-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:600;color:#fff;flex-shrink:0}
-.inbox-item-body{flex:1;min-width:0}
-.inbox-item-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
-.inbox-item-sender{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.inbox-item-company{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.inbox-item-subject{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
-.inbox-item-preview{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.inbox-item-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;min-width:80px}
-.inbox-item-time{font-size:11px;color:var(--text2);white-space:nowrap}
-.inbox-item-actions{display:flex;gap:4px;opacity:0;transition:.15s}
-.inbox-item:hover .inbox-item-actions{opacity:1}
-.inbox-action-btn{background:none;border:1px solid var(--border);border-radius:6px;width:28px;height:28px;display:grid;place-items:center;cursor:pointer;color:var(--text2);transition:.15s}
-.inbox-action-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-.inbox-action-btn.done-btn:hover{background:var(--green);border-color:var(--green)}
-.inbox-badge-new{background:var(--green);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
+.inbox-tab.active{color:var(--accent2);border-bottom-color:var(--accent);font-weight:600}
+.inbox-tab .tab-badge{background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:5px}
+.inbox-list{flex:1;overflow-y:auto}
+.inbox-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text2);gap:10px;padding:60px 40px}
+.inbox-empty svg{width:40px;height:40px;opacity:.3}
+.inbox-empty p{font-size:14px;font-weight:500}
+.inbox-empty span{font-size:12px;max-width:280px;text-align:center;line-height:1.5}
+.inbox-date-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);padding:12px 16px 4px;position:sticky;top:0;background:var(--surface);z-index:1;border-bottom:1px solid var(--border)}
+.inbox-row{display:flex;align-items:center;gap:0;padding:0;border-bottom:1px solid rgba(218,220,224,.5);cursor:pointer;transition:background .1s;position:relative;min-height:54px}
+.inbox-row:hover{background:var(--surface2)}
+.inbox-row.selected{background:rgba(26,115,232,.06)}
+.inbox-row.unread{font-weight:600}
+.inbox-row.unread::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:3px;background:var(--accent);border-radius:0 2px 2px 0}
+.inbox-row .inbox-check{width:40px;display:grid;place-items:center;flex-shrink:0;padding:0 4px 0 12px}
+.inbox-row .inbox-check input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
+.inbox-row-avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;color:#fff;flex-shrink:0;margin-right:10px}
+.inbox-row-from{width:180px;min-width:120px;padding:8px 8px 8px 0;font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.inbox-row-from .from-company{font-size:11px;color:var(--text2);font-weight:400;display:block;margin-top:1px}
+.inbox-row-content{flex:1;min-width:0;padding:8px 12px;display:flex;flex-direction:column;gap:1px}
+.inbox-row-subject{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inbox-row-preview{font-size:12px;color:var(--text2);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inbox-row-meta{width:90px;flex-shrink:0;padding:8px 12px 8px 0;text-align:right;font-size:11px;color:var(--text2)}
+.inbox-row-time{white-space:nowrap}
+.inbox-row-actions{display:none;gap:2px;margin-top:4px}
+.inbox-row:hover .inbox-row-actions{display:flex;justify-content:flex-end}
+.inbox-row:hover .inbox-row-time{display:none}
+.inbox-act{background:none;border:none;width:26px;height:26px;border-radius:6px;display:grid;place-items:center;cursor:pointer;color:var(--text2);transition:.12s}
+.inbox-act:hover{background:var(--surface2);color:var(--text)}
+.inbox-act.act-delete:hover{color:var(--red)}
+.inbox-act.act-archive:hover{color:var(--green)}
+.inbox-badge-new{background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
 .sidebar-item.inbox-item-nav{border:1px solid transparent;margin-bottom:4px}
 .sidebar-item.inbox-item-nav.active{background:linear-gradient(135deg,rgba(26,115,232,.08),rgba(26,115,232,.04));border-color:rgba(26,115,232,.15)}
 
@@ -699,24 +706,31 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 
     <!-- INBOX VIEW -->
     <div class="inbox-view" id="inboxView">
-      <div class="inbox-topbar">
+      <div class="inbox-toolbar">
         <h2>Inbox</h2>
-        <span class="inbox-count" id="inboxTopCount"></span>
-        <button class="btn btn-ghost btn-sm" onclick="refreshInbox()" id="inboxRefreshBtn">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-          Refresh
+        <span class="inbox-count-label" id="inboxTopCount"></span>
+        <button class="inbox-tb-btn" onclick="inboxArchiveSelected()" id="inboxArchiveBtn" style="display:none" title="Archive selected">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+          Archive
+        </button>
+        <button class="inbox-tb-btn danger" onclick="inboxDeleteSelected()" id="inboxDeleteBtn" style="display:none" title="Delete selected">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          Delete
+        </button>
+        <span class="inbox-tb-divider"></span>
+        <button class="inbox-tb-btn" onclick="refreshInbox()" title="Refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
         </button>
       </div>
       <div class="inbox-tabs">
-        <button class="inbox-tab active" data-tab="all" onclick="switchInboxTab('all',this)">All <span class="tab-count" id="inboxTabAll">0</span></button>
-        <button class="inbox-tab" data-tab="unread" onclick="switchInboxTab('unread',this)">New <span class="tab-count" id="inboxTabNew">0</span></button>
-        <button class="inbox-tab" data-tab="done" onclick="switchInboxTab('done',this)">Done <span class="tab-count" id="inboxTabDone">0</span></button>
+        <button class="inbox-tab active" onclick="switchInboxTab('all',this)">Focused <span class="tab-badge" id="inboxTabAll" style="display:none">0</span></button>
+        <button class="inbox-tab" onclick="switchInboxTab('unread',this)">Unread <span class="tab-badge" id="inboxTabNew" style="display:none">0</span></button>
       </div>
       <div class="inbox-list" id="inboxList">
-        <div class="inbox-empty" id="inboxEmpty">
+        <div class="inbox-empty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
-          <p>Your inbox is empty</p>
-          <span style="font-size:12px">Received emails from your CRM leads will appear here</span>
+          <p>Your inbox is clear</p>
+          <span>Emails from leads in your CRM will show here — only active emails from your Outlook inbox</span>
         </div>
       </div>
     </div>
@@ -3537,30 +3551,20 @@ function exportCSV() {
 }
 
 // ──────────────────────────────────────────────
-// INBOX — Sales-focused inbound email hub
+// INBOX — Outlook-style with real delete/archive
 // ──────────────────────────────────────────────
 let inboxEmails = [];
-let inboxDoneIds = new Set();
+let inboxSelectedIds = new Set();
 let inboxCurrentTab = 'all';
 let inboxLoading = false;
 
-function loadInboxDone() {
-  try { const d = localStorage.getItem('kennion_inbox_done'); if (d) inboxDoneIds = new Set(JSON.parse(d)); } catch(e) {}
-}
-function saveInboxDone() {
-  try { localStorage.setItem('kennion_inbox_done', JSON.stringify([...inboxDoneIds])); } catch(e) {}
-}
-
 function showInbox() {
-  // Switch view
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
   const dp = document.getElementById('detailPage');
   if (dp) dp.classList.remove('active');
-  // Update sidebar active state
   document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
   document.getElementById('inboxNavItem').classList.add('active');
-  // Load inbox if not loaded
   if (!inboxEmails.length && !inboxLoading) refreshInbox();
   else renderInbox();
 }
@@ -3572,6 +3576,7 @@ function hideInbox() {
 
 function switchInboxTab(tab, btn) {
   inboxCurrentTab = tab;
+  inboxSelectedIds.clear();
   document.querySelectorAll('.inbox-tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
   renderInbox();
@@ -3582,17 +3587,14 @@ async function refreshInbox() {
   if (!currentAccount) return;
   inboxLoading = true;
   const list = document.getElementById('inboxList');
-  list.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:40px;color:var(--text2)"><div class="scan-spinner"></div> Loading inbox...</div>';
+  list.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:60px;color:var(--text2)"><div class="scan-spinner"></div> Loading inbox...</div>';
 
   try {
     const token = await getAccessToken();
     const headers = graphHeaders(token);
     const allEmails = [];
-    // Fetch recent received emails (last 30 days, up to 200)
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30);
-    const filterDate = cutoff.toISOString();
-    let url = `https://graph.microsoft.com/v1.0/me/messages?$top=200&$orderby=receivedDateTime desc&$filter=receivedDateTime ge ${filterDate}&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,webLink,conversationId`;
+    // Fetch ONLY from Inbox folder (active emails, not archived/deleted)
+    let url = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=100&$orderby=receivedDateTime desc&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,webLink,conversationId';
     let pages = 0;
     while (url && pages < 3) {
       const resp = await fetch(url, { headers });
@@ -3609,12 +3611,11 @@ async function refreshInbox() {
     inboxEmails = [];
     for (const msg of allEmails) {
       const fromAddr = (msg.from?.emailAddress?.address || '').toLowerCase();
-      if (fromAddr === myLower) continue; // skip sent
+      if (fromAddr === myLower) continue;
       const domain = getDomain(fromAddr);
-      if (!domain || !crmDomains.has(domain)) continue; // only CRM leads
+      if (!domain || !crmDomains.has(domain)) continue;
       if (isBlockedDomain(domain)) continue;
 
-      // Find the company
       const company = companies.find(c => c.domain === domain);
       inboxEmails.push({
         id: msg.id,
@@ -3628,15 +3629,15 @@ async function refreshInbox() {
         preview: msg.bodyPreview || '',
         isRead: msg.isRead,
         webLink: msg.webLink || '',
-        conversationId: msg.conversationId || '',
-        done: inboxDoneIds.has(msg.id)
+        conversationId: msg.conversationId || ''
       });
     }
+    inboxSelectedIds.clear();
     renderInbox();
     updateInboxBadge();
   } catch(e) {
     console.error('Inbox load error:', e);
-    list.innerHTML = '<div class="inbox-empty"><p>Could not load inbox: ' + esc(e.message) + '</p></div>';
+    list.innerHTML = '<div class="inbox-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><p>Could not load inbox</p><span>' + esc(e.message) + '</span></div>';
   }
   inboxLoading = false;
 }
@@ -3645,24 +3646,28 @@ function renderInbox() {
   const list = document.getElementById('inboxList');
   let items = [...inboxEmails];
 
-  // Filter by tab
-  if (inboxCurrentTab === 'unread') items = items.filter(e => !e.done);
-  else if (inboxCurrentTab === 'done') items = items.filter(e => e.done);
+  if (inboxCurrentTab === 'unread') items = items.filter(e => !e.isRead);
 
-  // Update tab counts
-  const newCount = inboxEmails.filter(e => !e.done).length;
-  const doneCount = inboxEmails.filter(e => e.done).length;
-  document.getElementById('inboxTabAll').textContent = inboxEmails.length;
-  document.getElementById('inboxTabNew').textContent = newCount;
-  document.getElementById('inboxTabDone').textContent = doneCount;
-  document.getElementById('inboxTopCount').textContent = newCount + ' new emails';
+  // Update badges
+  const unreadCount = inboxEmails.filter(e => !e.isRead).length;
+  const allBadge = document.getElementById('inboxTabAll');
+  const newBadge = document.getElementById('inboxTabNew');
+  allBadge.textContent = inboxEmails.length;
+  allBadge.style.display = inboxEmails.length ? '' : 'none';
+  newBadge.textContent = unreadCount;
+  newBadge.style.display = unreadCount ? '' : 'none';
+  document.getElementById('inboxTopCount').textContent = inboxEmails.length + ' emails from leads';
+
+  // Show/hide bulk action buttons
+  const hasSelection = inboxSelectedIds.size > 0;
+  document.getElementById('inboxArchiveBtn').style.display = hasSelection ? '' : 'none';
+  document.getElementById('inboxDeleteBtn').style.display = hasSelection ? '' : 'none';
 
   if (!items.length) {
-    const msgs = { all: 'Your inbox is empty', unread: 'No new emails — you\'re all caught up!', done: 'No done items yet' };
     list.innerHTML = `<div class="inbox-empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
-      <p>${msgs[inboxCurrentTab] || msgs.all}</p>
-      <span style="font-size:12px">Emails from your CRM leads appear here automatically</span>
+      <p>${inboxCurrentTab === 'unread' ? 'No unread emails' : 'Inbox is clear'}</p>
+      <span>${inboxCurrentTab === 'unread' ? 'All caught up!' : 'Only active emails in your Outlook inbox from CRM leads appear here'}</span>
     </div>`;
     return;
   }
@@ -3686,60 +3691,134 @@ function renderInbox() {
 
   let html = '';
   for (const [label, groupItems] of Object.entries(groups)) {
-    html += `<div class="inbox-date-group"><div class="inbox-date-label">${esc(label)}</div>`;
+    html += `<div class="inbox-date-label">${esc(label)}</div>`;
     for (const item of groupItems) {
       const initials = item.from.split(/\s+/).map(w => w[0]).join('').substring(0, 2).toUpperCase();
       const colorIdx = Math.abs(item.fromEmail.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0)) % COLORS.length;
-      const time = item.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const unreadClass = !item.done && !item.isRead ? ' unread' : '';
-      const doneClass = item.done ? ' done' : '';
-      html += `<div class="inbox-item${unreadClass}${doneClass}" onclick="openEmailViewer('${item.id.replace(/'/g, "\\'")}')">
-        <div class="inbox-item-avatar" style="background:${COLORS[colorIdx]}">${initials}</div>
-        <div class="inbox-item-body">
-          <div class="inbox-item-top">
-            <span class="inbox-item-sender">${esc(item.from)}</span>
-            <span class="inbox-item-company">${esc(item.companyName)}</span>
-          </div>
-          <div class="inbox-item-subject">${esc(item.subject)}</div>
-          <div class="inbox-item-preview">${esc(item.preview.substring(0, 120))}</div>
+      const isToday = new Date(item.date).setHours(0,0,0,0) === today.getTime();
+      const timeStr = isToday
+        ? item.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : item.date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      const unread = !item.isRead ? ' unread' : '';
+      const selected = inboxSelectedIds.has(item.id) ? ' selected' : '';
+      const checked = inboxSelectedIds.has(item.id) ? ' checked' : '';
+      const eid = item.id.replace(/'/g, "\\'");
+      html += `<div class="inbox-row${unread}${selected}" data-id="${esc(item.id)}">
+        <div class="inbox-check"><input type="checkbox"${checked} onclick="event.stopPropagation();inboxToggleSelect('${eid}',this.checked)"></div>
+        <div class="inbox-row-avatar" style="background:${COLORS[colorIdx]}">${initials}</div>
+        <div class="inbox-row-from" onclick="openEmailViewer('${eid}')">
+          ${esc(item.from)}
+          <span class="from-company">${esc(item.companyName)}</span>
         </div>
-        <div class="inbox-item-meta">
-          <span class="inbox-item-time">${time}</span>
-          <div class="inbox-item-actions">
-            <button class="inbox-action-btn done-btn" onclick="event.stopPropagation();markInboxDone('${item.id.replace(/'/g, "\\'")}')" title="${item.done ? 'Undo' : 'Mark as Done'}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        <div class="inbox-row-content" onclick="openEmailViewer('${eid}')">
+          <div class="inbox-row-subject">${esc(item.subject)}</div>
+          <div class="inbox-row-preview">${esc(item.preview.substring(0, 140))}</div>
+        </div>
+        <div class="inbox-row-meta">
+          <div class="inbox-row-time">${timeStr}</div>
+          <div class="inbox-row-actions">
+            <button class="inbox-act act-archive" onclick="event.stopPropagation();inboxArchiveOne('${eid}')" title="Archive">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
             </button>
-            <button class="inbox-action-btn" onclick="event.stopPropagation();openCompose('${item.fromEmail.replace(/'/g, "\\'")}','${esc(item.from).replace(/'/g, "\\'")}','Re: ${esc(item.subject).replace(/'/g, "\\'")}')" title="Reply">
+            <button class="inbox-act act-delete" onclick="event.stopPropagation();inboxDeleteOne('${eid}')" title="Delete">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            </button>
+            <button class="inbox-act" onclick="event.stopPropagation();openCompose('${item.fromEmail.replace(/'/g, "\\'")}','${esc(item.from).replace(/'/g, "\\'")}','Re: ${esc(item.subject).replace(/'/g, "\\'")}')" title="Reply">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg>
             </button>
-            ${item.companyId ? `<button class="inbox-action-btn" onclick="event.stopPropagation();hideInbox();showCompanyPanel(${item.companyId})" title="View Company">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            </button>` : ''}
           </div>
         </div>
       </div>`;
     }
-    html += '</div>';
   }
   list.innerHTML = html;
 }
 
-function markInboxDone(msgId) {
-  if (inboxDoneIds.has(msgId)) {
-    inboxDoneIds.delete(msgId);
-  } else {
-    inboxDoneIds.add(msgId);
-  }
-  // Update local state
-  const item = inboxEmails.find(e => e.id === msgId);
-  if (item) item.done = inboxDoneIds.has(msgId);
-  saveInboxDone();
+// Selection
+function inboxToggleSelect(msgId, checked) {
+  if (checked) inboxSelectedIds.add(msgId);
+  else inboxSelectedIds.delete(msgId);
   renderInbox();
-  updateInboxBadge();
+}
+
+// Archive — moves to Archive folder in Outlook
+async function inboxArchiveOne(msgId) {
+  const row = document.querySelector(`.inbox-row[data-id="${CSS.escape(msgId)}"]`);
+  if (row) { row.style.opacity = '.3'; row.style.pointerEvents = 'none'; }
+  try {
+    const token = await getAccessToken();
+    await fetch('https://graph.microsoft.com/v1.0/me/messages/' + msgId + '/move', {
+      method: 'POST', headers: graphHeaders(token),
+      body: JSON.stringify({ destinationId: 'archive' })
+    });
+    inboxEmails = inboxEmails.filter(e => e.id !== msgId);
+    inboxSelectedIds.delete(msgId);
+    renderInbox();
+    updateInboxBadge();
+  } catch(e) {
+    console.error('Archive failed:', e);
+    if (row) { row.style.opacity = ''; row.style.pointerEvents = ''; }
+  }
+}
+
+async function inboxArchiveSelected() {
+  const ids = [...inboxSelectedIds];
+  if (!ids.length) return;
+  try {
+    const token = await getAccessToken();
+    const headers = graphHeaders(token);
+    await Promise.all(ids.map(id =>
+      fetch('https://graph.microsoft.com/v1.0/me/messages/' + id + '/move', {
+        method: 'POST', headers,
+        body: JSON.stringify({ destinationId: 'archive' })
+      })
+    ));
+    inboxEmails = inboxEmails.filter(e => !inboxSelectedIds.has(e.id));
+    inboxSelectedIds.clear();
+    renderInbox();
+    updateInboxBadge();
+  } catch(e) { console.error('Bulk archive failed:', e); }
+}
+
+// Delete — permanently deletes in Outlook
+async function inboxDeleteOne(msgId) {
+  const row = document.querySelector(`.inbox-row[data-id="${CSS.escape(msgId)}"]`);
+  if (row) { row.style.opacity = '.3'; row.style.pointerEvents = 'none'; }
+  try {
+    const token = await getAccessToken();
+    await fetch('https://graph.microsoft.com/v1.0/me/messages/' + msgId, {
+      method: 'DELETE', headers: graphHeaders(token)
+    });
+    inboxEmails = inboxEmails.filter(e => e.id !== msgId);
+    inboxSelectedIds.delete(msgId);
+    renderInbox();
+    updateInboxBadge();
+  } catch(e) {
+    console.error('Delete failed:', e);
+    if (row) { row.style.opacity = ''; row.style.pointerEvents = ''; }
+  }
+}
+
+async function inboxDeleteSelected() {
+  const ids = [...inboxSelectedIds];
+  if (!ids.length) return;
+  try {
+    const token = await getAccessToken();
+    const headers = graphHeaders(token);
+    await Promise.all(ids.map(id =>
+      fetch('https://graph.microsoft.com/v1.0/me/messages/' + id, {
+        method: 'DELETE', headers
+      })
+    ));
+    inboxEmails = inboxEmails.filter(e => !inboxSelectedIds.has(e.id));
+    inboxSelectedIds.clear();
+    renderInbox();
+    updateInboxBadge();
+  } catch(e) { console.error('Bulk delete failed:', e); }
 }
 
 function updateInboxBadge() {
-  const count = inboxEmails.filter(e => !e.done).length;
+  const count = inboxEmails.filter(e => !e.isRead).length;
   const badge = document.getElementById('inboxCount');
   if (count > 0) {
     badge.textContent = count > 99 ? '99+' : count;
@@ -4105,7 +4184,6 @@ function esc(text) {
   loadBlockedDomains();
   loadCompanyNameCache();
   loadStarredContacts();
-  loadInboxDone();
   loadCompanyTypes();
   loadColumnConfig();
   loadCustomColumnData();
