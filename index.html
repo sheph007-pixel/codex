@@ -3519,7 +3519,18 @@ function showFlaggedView() {
     const totalEmails = totalSent + totalRecv;
     const contactCount = data ? Object.keys(data.contacts).length : 0;
     const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
-    return { domain, data, daysSince, totalSent, totalRecv, totalEmails, contactCount, name };
+    // Primary contact: the one with most total emails
+    let primaryContact = null;
+    if (data && data.contacts) {
+      let maxEmails = 0;
+      for (var ce of Object.values(data.contacts)) {
+        var ct = (ce.sentIds ? ce.sentIds.size : 0) + (ce.receivedIds ? ce.receivedIds.size : 0);
+        if (ct > maxEmails) { maxEmails = ct; primaryContact = ce; }
+      }
+    }
+    const primaryName = primaryContact ? (primaryContact.name || primaryContact.email) : '—';
+    const primaryEmail = primaryContact ? primaryContact.email : '';
+    return { domain, data, daysSince, totalSent, totalRecv, totalEmails, contactCount, name, primaryName, primaryEmail };
   });
 
   // Apply filters
@@ -3534,7 +3545,10 @@ function showFlaggedView() {
   items.sort((a, b) => {
     let va, vb;
     if (key === 'company') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
-    else if (key === 'emails') { va = a.totalEmails; vb = b.totalEmails; }
+    else if (key === 'contact') { va = a.primaryName.toLowerCase(); vb = b.primaryName.toLowerCase(); }
+    else if (key === 'totalEmails') { va = a.totalEmails; vb = b.totalEmails; }
+    else if (key === 'sent') { va = a.totalSent; vb = b.totalSent; }
+    else if (key === 'received') { va = a.totalRecv; vb = b.totalRecv; }
     else if (key === 'daysSince') { va = a.daysSince; vb = b.daysSince; }
     else { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
     if (va < vb) return asc ? -1 : 1;
@@ -3549,7 +3563,10 @@ function showFlaggedView() {
   document.getElementById('tableHead').innerHTML = '<tr>' +
     '<th class="col-check"><input type="checkbox" class="row-checkbox" id="flaggedSelectAll" onchange="toggleFlaggedSelectAll(this.checked)"></th>' +
     '<th onclick="sortFlaggedTable(\'company\')" style="cursor:pointer">Company' + arrow('company') + '</th>' +
-    '<th onclick="sortFlaggedTable(\'emails\')" style="cursor:pointer">Email Activity' + arrow('emails') + '</th>' +
+    '<th onclick="sortFlaggedTable(\'contact\')" style="cursor:pointer">Primary Contact' + arrow('contact') + '</th>' +
+    '<th onclick="sortFlaggedTable(\'totalEmails\')" style="cursor:pointer">Total Emails' + arrow('totalEmails') + '</th>' +
+    '<th onclick="sortFlaggedTable(\'sent\')" style="cursor:pointer">Sent' + arrow('sent') + '</th>' +
+    '<th onclick="sortFlaggedTable(\'received\')" style="cursor:pointer">Received' + arrow('received') + '</th>' +
     '<th onclick="sortFlaggedTable(\'daysSince\')" style="cursor:pointer">Days Since Contact' + arrow('daysSince') + '</th>' +
     '<th>Reason</th>' +
     '<th style="text-align:right">Actions</th>' +
@@ -3579,7 +3596,7 @@ function showFlaggedView() {
   const tbody = document.getElementById('tableBody');
 
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text2)">' + (hasFilters ? 'No companies match your filters.' : 'No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">' + (hasFilters ? 'No companies match your filters.' : 'No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.') + '</td></tr>';
     updateViewTitleCount(0);
     selectedFlaggedDomains.clear();
     updateFlaggedBulkBar();
@@ -3597,7 +3614,10 @@ function showFlaggedView() {
     return '<tr>' +
       '<td class="col-check"><input type="checkbox" class="row-checkbox" data-flagged-domain="' + esc(domain) + '"' + isChecked + ' onchange="toggleFlaggedSelect(\'' + dSafe + '\', this.checked)"></td>' +
       '<td><div class="company-cell"' + companyClick + '><div class="company-logo" style="background:#e8710a">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(item.name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
-      '<td style="color:var(--text2);font-size:12px">' + item.totalSent + ' sent, ' + item.totalRecv + ' received, ' + item.contactCount + ' contact' + (item.contactCount !== 1 ? 's' : '') + '</td>' +
+      '<td style="font-size:12px;color:var(--text2)">' + (item.primaryEmail ? '<div>' + esc(item.primaryName) + '</div><div style="font-size:11px;opacity:.7">' + esc(item.primaryEmail) + '</div>' : '<span style="opacity:.4">—</span>') + '</td>' +
+      '<td style="font-size:12px;font-weight:600">' + item.totalEmails + '</td>' +
+      '<td style="font-size:12px;color:var(--text2)">' + item.totalSent + '</td>' +
+      '<td style="font-size:12px;color:var(--text2)">' + item.totalRecv + '</td>' +
       '<td style="font-size:12px;font-weight:600;color:' + daysColor + '">' + daysLabel + '</td>' +
       '<td style="color:#e8710a;font-size:11px;font-weight:600">Domain unreachable</td>' +
       '<td style="text-align:right;white-space:nowrap">' +
