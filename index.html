@@ -982,6 +982,12 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     </div>
 
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+      <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Email Signature</label>
+      <p class="help-text" style="margin-top:0;margin-bottom:8px">This signature will be automatically appended to all outgoing emails (new messages and replies).</p>
+      <textarea id="signatureInput" rows="4" placeholder="e.g.&#10;Best regards,&#10;John Smith&#10;Kennion Group | (555) 123-4567" style="width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box"></textarea>
+    </div>
+
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Data Management</label>
       <button class="btn btn-ghost" onclick="fullRescan()" style="color:var(--red);border-color:var(--red);font-size:12px">Reset &amp; Full Re-scan</button>
       <p class="help-text" style="margin-top:4px">Clears all cached data and re-scans every email from scratch.</p>
@@ -1903,6 +1909,7 @@ function gatherSyncPayload() {
     custom_column_data: customColumnData,
     company_names: companyNameCache,
     client_id: getClientId(),
+    email_signature: getEmailSignature(),
   };
 
   // Collect IndexedDB domain data (already in memory)
@@ -2027,6 +2034,9 @@ function applyCloudData(data) {
   }
   if (s.client_id) {
     localStorage.setItem('relateflow_client_id', s.client_id);
+  }
+  if (s.email_signature) {
+    saveEmailSignature(s.email_signature);
   }
 
   // Restore domain/contact data
@@ -4285,13 +4295,7 @@ async function openEmailViewer(messageId) {
     const bodyType = msg.body?.contentType || 'text';
     currentViewerBodyHtml = bodyContent;
     // Extract plain text from HTML for quoted reply
-    if (bodyType === 'html') {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = bodyContent;
-      currentViewerBodyText = tmp.innerText || tmp.textContent || '';
-    } else {
-      currentViewerBodyText = bodyContent;
-    }
+    currentViewerBodyText = bodyType === 'html' ? htmlToPlainText(bodyContent) : bodyContent;
     const frame = document.getElementById('evBodyFrame');
     const baseStyle = 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:#222;padding:24px 28px;margin:0;line-height:1.6;word-break:break-word}img{max-width:100%;height:auto}a{color:#1a73e8}pre,code{white-space:pre-wrap;word-break:break-all}blockquote{border-left:3px solid #ddd;margin:8px 0;padding:4px 12px;color:#555}';
     if (bodyType === 'html') {
@@ -4386,6 +4390,22 @@ function openInOutlook() {
 // ──────────────────────────────────────────────
 // EMAIL COMPOSE & REPLY (via Graph API sendMail)
 // ──────────────────────────────────────────────
+function htmlToPlainText(html) {
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  // Remove style, script, and head tags so their content isn't included
+  tmp.querySelectorAll('style, script, head, link, meta').forEach(function(el) { el.remove(); });
+  // Convert <br> and block elements to newlines
+  tmp.querySelectorAll('br').forEach(function(el) { el.replaceWith('\n'); });
+  tmp.querySelectorAll('p, div, tr, li, h1, h2, h3, h4, h5, h6').forEach(function(el) {
+    el.prepend('\n');
+  });
+  var text = tmp.innerText || tmp.textContent || '';
+  // Clean up excessive blank lines
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+}
+
 let composeReplyToId = null;
 
 // ── Outlook-style compose popup ──
@@ -4439,14 +4459,7 @@ async function openReply(messageId, toEmail, subject) {
       var bodyContent = msg.body?.content || '';
       var bodyType = msg.body?.contentType || 'text';
       originalHtml = bodyContent;
-      var bodyText;
-      if (bodyType === 'html') {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = bodyContent;
-        bodyText = tmp.innerText || tmp.textContent || '';
-      } else {
-        bodyText = bodyContent;
-      }
+      var bodyText = bodyType === 'html' ? htmlToPlainText(bodyContent) : bodyContent;
       var quoteHeader = '\n\nOn ' + dateStr + ', ' + senderLabel + ' wrote:\n';
       var quotedLines = bodyText.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
       quotedBody = quoteHeader + quotedLines;
@@ -4525,17 +4538,22 @@ async function sendComposedEmail() {
     var headers = graphHeaders(token);
     var resp;
 
+    // Append email signature if set
+    var sig = getEmailSignature();
+    var sigHtml = sig ? '<br><br>' + sig.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : '';
+    var sigText = sig ? '\n\n' + sig : '';
+
     if (composeReplyToId) {
       // Use Graph API reply endpoint for proper email threading
       // Convert reply text to HTML for clean formatting
-      var replyHtml = replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      var replyHtml = replyText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + sigHtml;
       resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeReplyToId + '/reply', {
         method: 'POST', headers: headers,
         body: JSON.stringify({ comment: replyHtml })
       });
     } else {
       // New email — use sendMail
-      var message = { subject: subject, body: { contentType: 'Text', content: fullBody }, toRecipients: [{ emailAddress: { address: toEmail } }] };
+      var message = { subject: subject, body: { contentType: 'Text', content: fullBody + sigText }, toRecipients: [{ emailAddress: { address: toEmail } }] };
       resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: headers, body: JSON.stringify({ message: message, saveToSentItems: true }) });
     }
     if (!resp.ok) { var err = await resp.text(); throw new Error('Send failed: ' + resp.status + ' — ' + err); }
@@ -4561,14 +4579,25 @@ async function sendComposedEmail() {
 // ──────────────────────────────────────────────
 // SETTINGS
 // ──────────────────────────────────────────────
+function getEmailSignature() {
+  return localStorage.getItem('kennion_email_signature') || '';
+}
+
+function saveEmailSignature(sig) {
+  localStorage.setItem('kennion_email_signature', sig);
+}
+
 function openSettings() {
   document.getElementById('settingsModal').classList.add('active');
   document.getElementById('clientIdInput').value = getClientId();
   document.getElementById('redirectDisplay').textContent = window.location.origin + window.location.pathname;
+  document.getElementById('signatureInput').value = getEmailSignature();
   renderBlockedDomainsList();
 }
 
 function closeSettings() {
+  // Always save signature even on cancel (it's independent of Azure config)
+  saveEmailSignature(document.getElementById('signatureInput').value);
   document.getElementById('settingsModal').classList.remove('active');
 }
 
@@ -4579,6 +4608,7 @@ async function saveSettings() {
     if (!confirm('That doesn\'t look like a standard Azure Client ID (should be a UUID). Save anyway?')) return;
   }
   localStorage.setItem('relateflow_client_id', clientId);
+  saveEmailSignature(document.getElementById('signatureInput').value);
   closeSettings();
   msalInstance = null;
   await initMSAL();
