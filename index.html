@@ -156,6 +156,16 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .bulk-bar .btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(255,118,117,.2)}
 .bulk-bar .btn-danger:hover{background:rgba(255,118,117,.2)}
 
+.flagged-filter-bar{padding:10px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;display:none}
+.flagged-filter-bar .ff-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.flagged-filter-bar .ff-input{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);outline:none;transition:border .15s}
+.flagged-filter-bar .ff-input:focus{border-color:var(--accent)}
+.flagged-filter-bar .ff-search{width:180px}
+.flagged-filter-bar .ff-num{width:80px}
+.flagged-filter-bar .ff-group{display:flex;align-items:center;gap:6px}
+.flagged-filter-bar .ff-group label{font-size:11px;color:var(--text2);white-space:nowrap;font-weight:600}
+.flagged-filter-bar .ff-reset{font-size:11px;color:var(--red);border-color:var(--red)}
+
 .company-cell{display:flex;align-items:center;gap:10px}
 .row-star{background:none;border:none;cursor:pointer;font-size:16px;color:var(--border);padding:0 2px;transition:.15s;flex-shrink:0;line-height:1}
 .row-star:hover{color:#f5a623}
@@ -3042,10 +3052,12 @@ function renderTable() {
   // Restore normal table header (in case we're returning from flagged/archived view)
   renderTableHeader();
 
-  // Hide flagged bulk bar when not in flagged view
+  // Hide flagged bulk bar and filter bar when not in flagged view
   selectedFlaggedDomains.clear();
   const fBar = document.getElementById('flaggedBulkBar');
   if (fBar) fBar.classList.remove('active');
+  const ffBar = document.getElementById('flaggedFilterBar');
+  if (ffBar) ffBar.style.display = 'none';
 
   let data = [...companies];
 
@@ -3402,6 +3414,80 @@ function updateFlaggedCount() {
 }
 
 let selectedFlaggedDomains = new Set();
+let flaggedSort = { key: 'daysSince', asc: true };
+let flaggedFilters = { search: '', minEmails: 0, maxDays: '', minDays: '' };
+
+function sortFlaggedTable(key) {
+  if (flaggedSort.key === key) flaggedSort.asc = !flaggedSort.asc;
+  else { flaggedSort.key = key; flaggedSort.asc = key === 'company'; }
+  showFlaggedView();
+}
+
+let _flaggedFilterTimer = null;
+function updateFlaggedFilter(field, value) {
+  if (field === 'minEmails') flaggedFilters.minEmails = parseInt(value) || 0;
+  else if (field === 'maxDays') flaggedFilters.maxDays = value === '' ? '' : parseInt(value) || 0;
+  else if (field === 'minDays') flaggedFilters.minDays = value === '' ? '' : parseInt(value) || 0;
+  else flaggedFilters[field] = value;
+  clearTimeout(_flaggedFilterTimer);
+  _flaggedFilterTimer = setTimeout(function() {
+    showFlaggedView();
+    // Restore focus to search input if that was what triggered the update
+    if (field === 'search') {
+      var searchEl = document.querySelector('.ff-search');
+      if (searchEl) { searchEl.focus(); searchEl.setSelectionRange(searchEl.value.length, searchEl.value.length); }
+    }
+  }, field === 'search' ? 250 : 0);
+}
+
+function resetFlaggedFilters() {
+  flaggedFilters = { search: '', minEmails: 0, maxDays: '', minDays: '' };
+  showFlaggedView();
+}
+
+function openFlaggedDetail(domain) {
+  const data = domainMap[domain];
+  if (!data) return;
+  const contactArr = Object.values(data.contacts);
+  for (const ct of contactArr) { ct.sent = ct.sentIds.size; ct.received = ct.receivedIds.size; }
+  contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
+  const primary = contactArr[0] || { name: 'Unknown', email: '' };
+  const uniqueSent = data.sentIds.size;
+  const uniqueReceived = data.receivedIds.size;
+  const domainSent = contactArr.reduce((s, ct) => s + ct.sent, 0);
+  const domainReceived = contactArr.reduce((s, ct) => s + ct.received, 0);
+  const totalEmails = uniqueSent + uniqueReceived;
+  const now = Date.now();
+  const DAY = 86400000;
+  const hasTwoWay = uniqueSent > 0 && uniqueReceived > 0;
+  const daysSinceAny = data.lastDate ? (now - data.lastDate.getTime()) / DAY : 9999;
+  const daysSinceRecv = data.lastReceivedDate ? (now - data.lastReceivedDate.getTime()) / DAY : 9999;
+  let score = Math.min(99, Math.round(
+    Math.min(totalEmails * 1.2, 35) +
+    (hasTwoWay ? 12 + Math.min(Math.min(uniqueSent, uniqueReceived) * 2, 8) : 0) +
+    (daysSinceAny < 7 ? 25 : daysSinceAny < 30 ? 18 : daysSinceAny < 90 ? 10 : daysSinceAny < 180 ? 5 : 0) +
+    Math.min(contactArr.length * 3, 10) +
+    (hasTwoWay ? Math.min(Math.round(Math.min(uniqueReceived / uniqueSent, 1) * 9), 9) : 0)
+  ));
+  let status = 'Cold';
+  if (hasTwoWay && daysSinceRecv <= 30 && daysSinceAny <= 30) status = 'Hot';
+  else if (hasTwoWay && daysSinceRecv <= 180) status = 'Warm';
+  const companyName = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
+  const tempId = 99999;
+  const tempCompany = {
+    id: tempId, name: companyName, domain: domain,
+    contact: primary.name, contactEmail: primary.email,
+    sent: domainSent, received: domainReceived,
+    status: status, score: score, lastDate: data.lastDate,
+    lastActivity: data.lastDate ? timeAgo(data.lastDate) : 'unknown',
+    allContacts: contactArr,
+  };
+  // Temporarily add to companies array for the detail panel
+  const existing = companies.findIndex(c => c.id === tempId);
+  if (existing >= 0) companies.splice(existing, 1);
+  companies.push(tempCompany);
+  showCompanyPanel(tempId);
+}
 
 function showFlaggedView() {
   showingProposals = false;
@@ -3418,28 +3504,76 @@ function showFlaggedView() {
   const now = Date.now();
   const DAY = 86400000;
 
-  // Build flagged items with days-since-contact, sort by most recent first
-  const items = [...flaggedCompanies].map(domain => {
+  // Build flagged items with computed fields
+  let items = [...flaggedCompanies].map(domain => {
     const data = domainMap[domain];
     const lastDate = data ? data.lastDate : null;
     const daysSince = lastDate ? Math.floor((now - lastDate.getTime()) / DAY) : 9999;
-    return { domain, data, daysSince };
-  }).sort((a, b) => a.daysSince - b.daysSince);
+    const totalSent = data ? data.sentIds.size : 0;
+    const totalRecv = data ? data.receivedIds.size : 0;
+    const totalEmails = totalSent + totalRecv;
+    const contactCount = data ? Object.keys(data.contacts).length : 0;
+    const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
+    return { domain, data, daysSince, totalSent, totalRecv, totalEmails, contactCount, name };
+  });
 
-  // Header with select-all checkbox
+  // Apply filters
+  const q = flaggedFilters.search.toLowerCase();
+  if (q) items = items.filter(i => i.name.toLowerCase().includes(q) || i.domain.toLowerCase().includes(q));
+  if (flaggedFilters.minEmails > 0) items = items.filter(i => i.totalEmails >= flaggedFilters.minEmails);
+  if (flaggedFilters.maxDays !== '') items = items.filter(i => i.daysSince <= flaggedFilters.maxDays);
+  if (flaggedFilters.minDays !== '') items = items.filter(i => i.daysSince >= flaggedFilters.minDays);
+
+  // Apply sort
+  const { key, asc } = flaggedSort;
+  items.sort((a, b) => {
+    let va, vb;
+    if (key === 'company') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
+    else if (key === 'emails') { va = a.totalEmails; vb = b.totalEmails; }
+    else if (key === 'daysSince') { va = a.daysSince; vb = b.daysSince; }
+    else { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
+    if (va < vb) return asc ? -1 : 1;
+    if (va > vb) return asc ? 1 : -1;
+    return 0;
+  });
+
+  // Sort arrow helper
+  const arrow = function(k) { return flaggedSort.key === k ? (flaggedSort.asc ? ' &#9650;' : ' &#9660;') : ''; };
+
+  // Header with select-all checkbox + sortable columns
   document.getElementById('tableHead').innerHTML = '<tr>' +
     '<th class="col-check"><input type="checkbox" class="row-checkbox" id="flaggedSelectAll" onchange="toggleFlaggedSelectAll(this.checked)"></th>' +
-    '<th>Company</th>' +
-    '<th>Email Activity</th>' +
-    '<th>Days Since Contact</th>' +
+    '<th onclick="sortFlaggedTable(\'company\')" style="cursor:pointer">Company' + arrow('company') + '</th>' +
+    '<th onclick="sortFlaggedTable(\'emails\')" style="cursor:pointer">Email Activity' + arrow('emails') + '</th>' +
+    '<th onclick="sortFlaggedTable(\'daysSince\')" style="cursor:pointer">Days Since Contact' + arrow('daysSince') + '</th>' +
     '<th>Reason</th>' +
     '<th style="text-align:right">Actions</th>' +
   '</tr>';
 
+  // Render filter bar
+  var filterBar = document.getElementById('flaggedFilterBar');
+  if (!filterBar) {
+    filterBar = document.createElement('div');
+    filterBar.id = 'flaggedFilterBar';
+    filterBar.className = 'flagged-filter-bar';
+    var tableEl = document.getElementById('tableHead').closest('table') || document.getElementById('tableHead').parentElement;
+    tableEl.parentElement.insertBefore(filterBar, tableEl);
+  }
+  filterBar.style.display = '';
+  var hasFilters = flaggedFilters.search || flaggedFilters.minEmails > 0 || flaggedFilters.maxDays !== '' || flaggedFilters.minDays !== '';
+  filterBar.innerHTML =
+    '<div class="ff-row">' +
+      '<input type="text" class="ff-input ff-search" placeholder="Search company..." value="' + esc(flaggedFilters.search) + '" oninput="updateFlaggedFilter(\'search\',this.value)">' +
+      '<div class="ff-group"><label>Min emails</label><input type="number" class="ff-input ff-num" min="0" placeholder="0" value="' + (flaggedFilters.minEmails || '') + '" onchange="updateFlaggedFilter(\'minEmails\',this.value)"></div>' +
+      '<div class="ff-group"><label>Days since (min)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.minDays !== '' ? flaggedFilters.minDays : '') + '" onchange="updateFlaggedFilter(\'minDays\',this.value)"></div>' +
+      '<div class="ff-group"><label>Days since (max)</label><input type="number" class="ff-input ff-num" min="0" placeholder="Any" value="' + (flaggedFilters.maxDays !== '' ? flaggedFilters.maxDays : '') + '" onchange="updateFlaggedFilter(\'maxDays\',this.value)"></div>' +
+      (hasFilters ? '<button class="btn btn-ghost btn-sm ff-reset" onclick="resetFlaggedFilters()">Clear filters</button>' : '') +
+    '</div>';
+
   const tbody = document.getElementById('tableBody');
 
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text2)">No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text2)">' + (hasFilters ? 'No companies match your filters.' : 'No flagged companies. Domains that appear invalid or unreachable will be flagged here automatically.') + '</td></tr>';
     updateViewTitleCount(0);
     selectedFlaggedDomains.clear();
     updateFlaggedBulkBar();
@@ -3448,22 +3582,16 @@ function showFlaggedView() {
 
   tbody.innerHTML = items.map(item => {
     const domain = item.domain;
-    const data = item.data;
-    const totalSent = data ? data.sentIds.size : 0;
-    const totalRecv = data ? data.receivedIds.size : 0;
-    const contactCount = data ? Object.keys(data.contacts).length : 0;
-    const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
     const dSafe = domain.replace(/'/g, "\\'");
-    const company = companies.find(c => c.domain === domain);
-    const companyClick = company ? ' onclick="openDetail(' + company.id + ')" style="cursor:pointer;opacity:.8"' : ' style="opacity:.8"';
+    const companyClick = ' onclick="openFlaggedDetail(\'' + dSafe + '\')" style="cursor:pointer"';
     const daysLabel = item.daysSince < 9999 ? item.daysSince + 'd ago' : 'N/A';
     const daysColor = item.daysSince <= 7 ? 'var(--green)' : item.daysSince <= 30 ? 'var(--orange)' : 'var(--red)';
     const isChecked = selectedFlaggedDomains.has(domain) ? ' checked' : '';
 
     return '<tr>' +
       '<td class="col-check"><input type="checkbox" class="row-checkbox" data-flagged-domain="' + esc(domain) + '"' + isChecked + ' onchange="toggleFlaggedSelect(\'' + dSafe + '\', this.checked)"></td>' +
-      '<td><div class="company-cell"' + companyClick + '><div class="company-logo" style="background:#e8710a;opacity:.8">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.8">' + esc(name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
-      '<td style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
+      '<td><div class="company-cell"' + companyClick + '><div class="company-logo" style="background:#e8710a">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(item.name) + '</span><span class="company-domain">' + esc(domain) + '</span></div></div></td>' +
+      '<td style="color:var(--text2);font-size:12px">' + item.totalSent + ' sent, ' + item.totalRecv + ' received, ' + item.contactCount + ' contact' + (item.contactCount !== 1 ? 's' : '') + '</td>' +
       '<td style="font-size:12px;font-weight:600;color:' + daysColor + '">' + daysLabel + '</td>' +
       '<td style="color:#e8710a;font-size:11px;font-weight:600">Domain unreachable</td>' +
       '<td style="text-align:right;white-space:nowrap">' +
