@@ -2435,7 +2435,13 @@ async function initMSAL() {
     if (typeof msalInstance.initialize === 'function') {
       await msalInstance.initialize();
     }
-    try { await msalInstance.handleRedirectPromise(); } catch(e) { console.warn('Redirect handle:', e); }
+    try {
+      var redirectResp = await msalInstance.handleRedirectPromise();
+      if (redirectResp && redirectResp.account) {
+        currentAccount = redirectResp.account;
+        userEmail = currentAccount.username;
+      }
+    } catch(e) { console.warn('Redirect handle:', e); }
     return msalInstance;
   } catch(e) {
     console.error('MSAL init error:', e);
@@ -2455,7 +2461,7 @@ async function signIn() {
 
   try {
     const resp = await msalInstance.loginPopup({
-      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read'],
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'],
       prompt: 'select_account'
     });
     currentAccount = resp.account;
@@ -2467,7 +2473,7 @@ async function signIn() {
     // If popup blocked, try redirect
     if (e.errorCode === 'popup_window_error' || e.errorCode === 'empty_window_error') {
       alert('Popup was blocked by your browser. Trying redirect login instead...');
-      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read'] });
+      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'] });
       return;
     }
     alert('Sign-in failed: ' + (e.errorCode || '') + ' — ' + (e.message || e));
@@ -2494,18 +2500,28 @@ function signOut() {
 
 async function getAccessToken() {
   if (!msalInstance || !currentAccount) throw new Error('Not signed in');
+  var tokenScopes = ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'];
   try {
     const resp = await msalInstance.acquireTokenSilent({
-      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read'],
+      scopes: tokenScopes,
       account: currentAccount
     });
     return resp.accessToken;
   } catch(e) {
-    const resp = await msalInstance.acquireTokenPopup({
-      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read']
-    });
-    currentAccount = resp.account;
-    return resp.accessToken;
+    // Silent failed — try popup, fall back to redirect if popup blocked
+    try {
+      const resp = await msalInstance.acquireTokenPopup({ scopes: tokenScopes });
+      currentAccount = resp.account;
+      return resp.accessToken;
+    } catch(popupErr) {
+      if (popupErr.errorCode === 'popup_window_error' || popupErr.errorCode === 'empty_window_error') {
+        // Popup blocked — use redirect instead
+        await msalInstance.acquireTokenRedirect({ scopes: tokenScopes });
+        // Page will redirect, so this line won't execute
+        return null;
+      }
+      throw popupErr;
+    }
   }
 }
 
@@ -5956,7 +5972,9 @@ async function fetchOutlookSignature() {
   // If user already has a custom signature saved, don't overwrite
   if (getEmailSignature()) return;
   try {
-    var token = await getAccessToken();
+    // Use main token — MailboxSettings.Read may or may not be consented
+    var token;
+    try { token = await getAccessToken(); } catch(e) { return; }
     var sigHtml = '';
     // Try beta endpoint first (has signatureSettings)
     try {
