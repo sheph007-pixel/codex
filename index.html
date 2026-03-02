@@ -1009,11 +1009,13 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="manualCloudSave()" id="cloudSaveBtn" style="font-size:12px">Save to Cloud Now</button>
         <button class="btn btn-ghost btn-sm" onclick="manualCloudRestore()" style="font-size:12px">Restore from Cloud</button>
+        <button class="btn btn-ghost btn-sm" onclick="showCloudVersionHistory()" style="font-size:12px">Recover Previous Version</button>
         <button class="btn btn-ghost btn-sm" onclick="exportBackup()" style="font-size:12px">Export Backup File</button>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('importBackupInput').click()" style="font-size:12px">Import Backup File</button>
         <input type="file" id="importBackupInput" accept=".json" style="display:none" onchange="importBackup(event)">
       </div>
       <p class="help-text" id="cloudSyncStatus" style="margin-top:6px"></p>
+      <div id="cloudVersionList" style="display:none;margin-top:8px;max-height:250px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface2)"></div>
     </div>
 
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
@@ -5443,6 +5445,127 @@ async function manualCloudRestore() {
     persistData();
     status.textContent = 'Restored from cloud! (' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)';
     status.style.color = 'var(--green)';
+  } catch(e) {
+    status.textContent = 'Restore failed: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+async function showCloudVersionHistory() {
+  const status = document.getElementById('cloudSyncStatus');
+  const listEl = document.getElementById('cloudVersionList');
+  if (!currentAccount) { status.textContent = 'Sign in first.'; return; }
+  status.textContent = 'Loading version history from OneDrive...';
+  status.style.color = 'var(--text2)';
+  listEl.style.display = 'none';
+  try {
+    const token = await getCloudToken();
+    if (!token) { status.textContent = 'Could not get cloud token.'; status.style.color = 'var(--red)'; return; }
+
+    // First get the file item ID
+    const metaResp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (metaResp.status === 404) {
+      status.textContent = 'No cloud backup file found — nothing to recover.';
+      status.style.color = 'var(--orange)';
+      return;
+    }
+    if (!metaResp.ok) { status.textContent = 'Failed to find backup file: HTTP ' + metaResp.status; status.style.color = 'var(--red)'; return; }
+    const fileMeta = await metaResp.json();
+    const fileId = fileMeta.id;
+    const fileSize = fileMeta.size;
+
+    // Get version history
+    const versResp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (!versResp.ok) { status.textContent = 'Failed to load versions: HTTP ' + versResp.status; status.style.color = 'var(--red)'; return; }
+    const versData = await versResp.json();
+    const versions = versData.value || [];
+
+    if (versions.length === 0) {
+      status.textContent = 'No previous versions found.';
+      status.style.color = 'var(--orange)';
+      return;
+    }
+
+    // Show version list
+    status.textContent = 'Found ' + versions.length + ' version(s). Click one to preview and restore:';
+    status.style.color = 'var(--text2)';
+    listEl.innerHTML = '';
+    listEl.style.display = 'block';
+
+    for (const v of versions) {
+      const dt = new Date(v.lastModifiedDateTime);
+      const dateStr = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      const sizeStr = v.size ? Math.round(v.size / 1024) + ' KB' : '';
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;';
+      row.innerHTML = '<div><strong>' + dateStr + '</strong><span style="color:var(--text2);margin-left:8px;font-size:12px">' + sizeStr + '</span></div><button class="btn btn-ghost btn-sm" style="font-size:11px" data-vid="' + v.id + '" data-fid="' + fileId + '">Restore this version</button>';
+      row.querySelector('button').addEventListener('click', async function(e) {
+        e.stopPropagation();
+        await restoreCloudVersion(fileId, v.id, dateStr);
+      });
+      // Highlight rows from before this weekend (likely the good data)
+      const friday = new Date();
+      friday.setDate(friday.getDate() - (friday.getDay() + 2) % 7); // last Friday
+      friday.setHours(23, 59, 59);
+      if (dt <= friday) {
+        row.style.background = 'rgba(76,175,80,0.1)';
+        row.style.borderLeft = '3px solid var(--green)';
+      }
+      listEl.appendChild(row);
+    }
+  } catch(e) {
+    status.textContent = 'Error loading versions: ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+async function restoreCloudVersion(fileId, versionId, dateLabel) {
+  const status = document.getElementById('cloudSyncStatus');
+  if (!confirm('Restore cloud backup from ' + dateLabel + '? This will merge that version\'s data (blocked domains, settings, contacts) into your current data.')) return;
+  status.textContent = 'Downloading version from ' + dateLabel + '...';
+  status.style.color = 'var(--text2)';
+  try {
+    const token = await getCloudToken();
+    if (!token) { status.textContent = 'Could not get cloud token.'; status.style.color = 'var(--red)'; return; }
+
+    const resp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions/' + versionId + '/content',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (!resp.ok) { status.textContent = 'Download failed: HTTP ' + resp.status; status.style.color = 'var(--red)'; return; }
+    const data = await resp.json();
+    if (!data.version || !data.settings) { status.textContent = 'Invalid backup format in this version.'; status.style.color = 'var(--red)'; return; }
+
+    const blockedBefore = blockedDomains.size;
+    const domainsBefore = Object.keys(domainMap).length;
+
+    applyCloudSettings(data);
+    applyCloudDomainData(data);
+    buildCompaniesFromDomainMap();
+    renderTableHeader();
+    renderTable();
+    updateStats();
+    updateBlockedCount();
+    updateFlaggedCount();
+    persistData();
+
+    const blockedAfter = blockedDomains.size;
+    const domainsAfter = Object.keys(domainMap).length;
+
+    status.textContent = 'Restored from ' + dateLabel + '! Blocked domains: ' + blockedBefore + ' → ' + blockedAfter + ', Domains: ' + domainsBefore + ' → ' + domainsAfter;
+    status.style.color = 'var(--green)';
+
+    // Hide the version list
+    document.getElementById('cloudVersionList').style.display = 'none';
+
+    // Save the merged data back to cloud
+    scheduleCloudSync();
   } catch(e) {
     status.textContent = 'Restore failed: ' + e.message;
     status.style.color = 'var(--red)';
