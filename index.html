@@ -2020,6 +2020,11 @@ function openDB() {
 
 async function persistData() {
   try {
+    // SAFETY: never wipe IndexedDB if domainMap is empty — prevents data loss
+    if (Object.keys(domainMap).length === 0) {
+      console.warn('persistData: skipping — domainMap is empty (would wipe stored data)');
+      return;
+    }
     const db = await openDB();
     const tx = db.transaction(['domainData', 'meta'], 'readwrite');
     const domainStore = tx.objectStore('domainData');
@@ -2980,6 +2985,8 @@ async function scanOutlookEmails(forceFullScan) {
     // Decide: full scan or delta sync
     const needsFullScan = forceFullScan || !fullScanDone;
     let totalFetched;
+    // Save a snapshot before force-clearing so we can restore if scan fails
+    const domainMapBackup = (forceFullScan && Object.keys(domainMap).length > 0) ? JSON.parse(JSON.stringify(domainMap, function(k, v) { return v instanceof Set ? { __set: Array.from(v) } : v; })) : null;
 
     if (needsFullScan) {
       if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); deltaLink = null; }
@@ -3013,6 +3020,14 @@ async function scanOutlookEmails(forceFullScan) {
     hideScanBanner();
     setSyncBadge('error', 'Sync Failed');
     console.error('Scan error:', e);
+    // Restore data if force-scan wiped it before failing
+    if (domainMapBackup && Object.keys(domainMap).length === 0) {
+      console.warn('Scan failed after force-clear — restoring previous data');
+      domainMap = JSON.parse(JSON.stringify(domainMapBackup), function(k, v) { return v && v.__set ? new Set(v.__set) : v; });
+      buildCompaniesFromDomainMap();
+      renderTable();
+      updateStats();
+    }
     // Show user-friendly message for common transient errors
     const msg = e.message || '';
     if (msg.includes('504') || msg.includes('502') || msg.includes('503') || msg.includes('timed out')) {
@@ -3122,6 +3137,7 @@ async function onSignedIn() {
   // Load cached data from IndexedDB — show instantly (no waiting for scan)
   const cached = await loadPersistedData();
   let hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
+  console.log('onSignedIn: IndexedDB cache loaded —', hasLocalData ? Object.keys(cached.domainMap).length + ' domains' : 'EMPTY (no cached data)');
 
   if (hasLocalData) {
     domainMap = cached.domainMap;
