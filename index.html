@@ -454,23 +454,31 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .blocked-tag button:hover{opacity:1}
 
 /* ── AI CHAT PANEL (inline on dashboard) ── */
-.ai-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 3px rgba(60,64,67,.12);min-height:200px;max-height:480px}
-.ai-panel-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px;background:linear-gradient(135deg,rgba(26,115,232,.07),rgba(156,39,176,.04))}
-.ai-panel-header .ai-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#1a73e8,#7c4dff);display:grid;place-items:center;flex-shrink:0}
-.ai-panel-header .ai-icon svg{width:16px;height:16px;color:#fff}
-.ai-panel-header .dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
-.ai-panel-header .ai-panel-title{flex:1}
-.ai-panel-header .ai-panel-subtitle{font-size:11px;font-weight:400;color:var(--text2)}
-.ai-panel-header .ai-clear-btn{background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;color:var(--text2);cursor:pointer;font-family:inherit;transition:.15s}
-.ai-panel-header .ai-clear-btn:hover{border-color:var(--accent);color:var(--accent)}
-.ai-panel-suggestions{display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-.ai-panel-suggestions button{background:var(--surface2);border:1px solid var(--border);border-radius:18px;padding:6px 14px;font-size:12px;color:var(--text2);cursor:pointer;font-family:inherit;transition:.15s;white-space:nowrap}
-.ai-panel-suggestions button:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
-.ai-panel-messages{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto;min-height:80px}
-.ai-msg{max-width:90%;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.6}
+/* ── FLOATING AI CHAT ── */
+.ai-fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1a73e8,#7c4dff);display:none;place-items:center;cursor:pointer;box-shadow:0 4px 16px rgba(26,115,232,.4);z-index:300;transition:transform .2s,box-shadow .2s}
+.ai-fab:hover{transform:scale(1.08);box-shadow:0 6px 24px rgba(26,115,232,.5)}
+.ai-fab svg{width:24px;height:24px;color:#fff}
+.ai-fab.visible{display:grid}
+.ai-chat-window{position:fixed;bottom:92px;right:24px;width:420px;max-width:calc(100vw - 48px);height:560px;max-height:calc(100vh - 120px);background:var(--surface);border:1px solid var(--border);border-radius:16px;display:none;flex-direction:column;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.2);z-index:301;animation:aiSlideUp .25s ease-out}
+.ai-chat-window.open{display:flex}
+@keyframes aiSlideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+.ai-chat-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px;background:linear-gradient(135deg,rgba(26,115,232,.07),rgba(156,39,176,.04));flex-shrink:0}
+.ai-chat-header .ai-icon{width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#1a73e8,#7c4dff);display:grid;place-items:center;flex-shrink:0}
+.ai-chat-header .ai-icon svg{width:16px;height:16px;color:#fff}
+.ai-chat-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+.ai-chat-title{font-size:15px;font-weight:600}
+.ai-chat-subtitle{font-size:11px;font-weight:400;color:var(--text2)}
+.ai-chat-clear,.ai-chat-close{background:none;border:none;cursor:pointer;color:var(--text2);padding:6px;border-radius:6px;display:grid;place-items:center;transition:.15s}
+.ai-chat-clear:hover,.ai-chat-close:hover{background:var(--surface2);color:var(--text)}
+.ai-chat-suggestions{display:flex;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0}
+.ai-chat-suggestions button{background:var(--surface2);border:1px solid var(--border);border-radius:18px;padding:5px 12px;font-size:11px;color:var(--text2);cursor:pointer;font-family:inherit;transition:.15s;white-space:nowrap}
+.ai-chat-suggestions button:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.ai-chat-messages{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+.ai-msg{max-width:88%;padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.6;word-break:break-word}
 .ai-msg.bot{background:var(--surface2);align-self:flex-start;border-bottom-left-radius:4px}
 .ai-msg.bot b{color:var(--accent2)}
-.ai-msg.bot .ai-result-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0 2px;font-size:12px;line-height:1.5}
+.ai-msg.bot .ai-result-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:6px 0 2px;font-size:12px;line-height:1.5;cursor:pointer;transition:.15s}
+.ai-msg.bot .ai-result-card:hover{border-color:var(--accent);background:rgba(26,115,232,.04)}
 .ai-msg.bot .ai-result-card+.ai-result-card{margin-top:4px}
 .ai-msg.bot .ai-result-label{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
 .ai-msg.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
@@ -479,11 +487,12 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .ai-typing span:nth-child(2){animation-delay:.2s}
 .ai-typing span:nth-child(3){animation-delay:.4s}
 @keyframes aiBounce{to{opacity:.3;transform:translateY(-4px)}}
-.ai-panel-input{display:flex;border-top:1px solid var(--border);padding:10px;gap:8px}
-.ai-panel-input input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:.15s}
-.ai-panel-input input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,115,232,.1)}
-.ai-panel-input button{background:linear-gradient(135deg,#1a73e8,#7c4dff);border:none;cursor:pointer;padding:0 14px;color:#fff;border-radius:8px;transition:.15s;display:grid;place-items:center}
-.ai-panel-input button:hover{opacity:.9}
+.ai-chat-input{display:flex;border-top:1px solid var(--border);padding:12px;gap:8px;flex-shrink:0;background:var(--surface)}
+.ai-chat-input input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:.15s}
+.ai-chat-input input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,115,232,.1)}
+.ai-chat-input button{background:linear-gradient(135deg,#1a73e8,#7c4dff);border:none;cursor:pointer;padding:0 14px;color:#fff;border-radius:10px;transition:.15s;display:grid;place-items:center}
+.ai-chat-input button:hover{opacity:.9}
+@media(max-width:500px){.ai-chat-window{bottom:0;right:0;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0}}
 
 .crm-content{display:none;flex-direction:column;gap:20px;flex:1}
 .crm-content.active{display:flex}
@@ -776,33 +785,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <div class="stat-card">
           <span class="stat-label">Top Contacts</span>
           <span class="stat-value" id="statContacts">0</span>
-        </div>
-      </div>
-
-      <!-- AI CHAT PANEL -->
-      <div class="ai-panel" id="aiPanel">
-        <div class="ai-panel-header">
-          <span class="ai-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:8px"><span class="ai-panel-title">Kennion AI</span><span class="dot"></span></div>
-            <div class="ai-panel-subtitle">Search companies, contacts, emails &amp; insights</div>
-          </div>
-          <button class="ai-clear-btn" onclick="clearAIChat()">Clear</button>
-        </div>
-        <div class="ai-panel-suggestions" id="aiSuggestions">
-          <button onclick="askAISuggestion('Who should I follow up with?')">Follow-ups</button>
-          <button onclick="askAISuggestion('Show me hot leads')">Hot Leads</button>
-          <button onclick="askAISuggestion('Show cold leads at risk')">At Risk</button>
-          <button onclick="askAISuggestion('Give me a pipeline summary')">Summary</button>
-          <button onclick="askAISuggestion('Search contacts at google')">Search Contacts</button>
-          <button onclick="askAISuggestion('Find companies in technology')">By Industry</button>
-        </div>
-        <div class="ai-panel-messages" id="aiMessages">
-          <div class="ai-msg bot">I can search your entire CRM — companies, contacts, emails, engagement scores, and enrichment data. Try asking me anything:<br><br>• <b>"Find contacts at Microsoft"</b><br>• <b>"Who has the highest engagement?"</b><br>• <b>"Show companies in healthcare"</b><br>• <b>"Search emails about proposal"</b><br>• <b>"Which leads went cold this month?"</b></div>
-        </div>
-        <div class="ai-panel-input">
-          <input type="text" id="aiInput" placeholder="Search your CRM... ask anything" onkeydown="if(event.key==='Enter')sendAI()">
-          <button onclick="sendAI()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
         </div>
       </div>
 
@@ -2990,6 +2972,9 @@ function showWelcome() {
   document.getElementById('settingsBtn').style.display = 'none';
   document.getElementById('settingsNavItem').style.display = 'none';
   document.getElementById('settingsView').classList.remove('active');
+  document.getElementById('aiFab').classList.remove('visible');
+  document.getElementById('aiChatWindow').classList.remove('open');
+  aiChatOpen = false;
 }
 
 async function onSignedIn() {
@@ -3011,6 +2996,7 @@ async function onSignedIn() {
   document.getElementById('userPill').style.display = 'flex';
   document.getElementById('userName').textContent = userEmail;
   document.getElementById('settingsNavItem').style.display = '';
+  document.getElementById('aiFab').classList.add('visible');
 
   // Load cached data from IndexedDB — show instantly (no waiting for scan)
   const cached = await loadPersistedData();
@@ -5288,7 +5274,10 @@ function closeEmailViewer() {
   currentViewerBodyText = '';
   currentViewerBodyHtml = '';
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && currentViewerMsgId) closeEmailViewer(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && currentViewerMsgId) closeEmailViewer();
+  if (e.key === 'Escape' && aiChatOpen) toggleAIChat();
+});
 
 function replyFromViewer() {
   if (!currentViewerMsgId) return;
@@ -6225,6 +6214,21 @@ function updateInboxBadge() {
 // ──────────────────────────────────────────────
 // AI CHAT — Full CRM Search & Intelligence
 // ──────────────────────────────────────────────
+let aiChatOpen = false;
+function toggleAIChat() {
+  aiChatOpen = !aiChatOpen;
+  const win = document.getElementById('aiChatWindow');
+  const fab = document.getElementById('aiFab');
+  if (aiChatOpen) {
+    win.classList.add('open');
+    fab.style.display = 'none';
+    setTimeout(() => document.getElementById('aiInput').focus(), 100);
+  } else {
+    win.classList.remove('open');
+    fab.style.display = 'grid';
+  }
+}
+
 function askAISuggestion(question) {
   document.getElementById('aiInput').value = question;
   sendAI();
@@ -6835,6 +6839,42 @@ document.getElementById('searchInput').oninput = function() {
   }
 })();
 </script>
+
+<!-- FLOATING AI CHAT WIDGET -->
+<div class="ai-fab" id="aiFab" onclick="toggleAIChat()" title="Kennion AI">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+</div>
+<div class="ai-chat-window" id="aiChatWindow">
+  <div class="ai-chat-header">
+    <span class="ai-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:8px"><span class="ai-chat-title">Kennion AI</span><span class="ai-chat-dot"></span></div>
+      <div class="ai-chat-subtitle">Ask anything about your CRM data</div>
+    </div>
+    <button class="ai-chat-clear" onclick="clearAIChat()" title="Clear chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+    </button>
+    <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="ai-chat-suggestions" id="aiSuggestions">
+    <button onclick="askAISuggestion('Who should I follow up with?')">Follow-ups</button>
+    <button onclick="askAISuggestion('Show me hot leads')">Hot Leads</button>
+    <button onclick="askAISuggestion('Show cold leads at risk')">At Risk</button>
+    <button onclick="askAISuggestion('Give me a pipeline summary')">Summary</button>
+    <button onclick="askAISuggestion('Search contacts at google')">Search</button>
+    <button onclick="askAISuggestion('Find companies in technology')">Industry</button>
+  </div>
+  <div class="ai-chat-messages" id="aiMessages">
+    <div class="ai-msg bot">Hi! I can search your entire CRM — companies, contacts, emails, engagement scores, and enrichment data. Try asking me anything:<br><br>• <b>"Find contacts at Microsoft"</b><br>• <b>"Who has the highest engagement?"</b><br>• <b>"Show companies in healthcare"</b><br>• <b>"Search emails about proposal"</b><br>• <b>"Which leads went cold this month?"</b></div>
+  </div>
+  <div class="ai-chat-input">
+    <input type="text" id="aiInput" placeholder="Ask anything about your CRM..." onkeydown="if(event.key==='Enter')sendAI()">
+    <button onclick="sendAI()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+  </div>
+</div>
+
 </body>
 </html>
 
