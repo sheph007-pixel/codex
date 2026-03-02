@@ -2056,7 +2056,9 @@ async function loadPersistedData() {
       new Promise((r, j) => { const q = ms.get('deltaLink'); q.onsuccess = () => r(q.result); q.onerror = j; }),
     ]);
     if (!domains || domains.length === 0) return null;
-    if (emailRec?.value && emailRec.value !== userEmail) return null;
+    if (emailRec?.value && emailRec.value !== userEmail) {
+      console.warn('IndexedDB email mismatch: stored=' + emailRec.value + ' current=' + userEmail + ' — loading data anyway');
+    }
     const map = {};
     for (const d of domains) {
       const key = d.domain.toLowerCase();
@@ -3235,17 +3237,17 @@ async function onSignedIn() {
   const hasCachedData = companies.length > 0;
   if (hasCachedData) {
     // Non-blocking: sync new emails quietly in background
-    scanOutlookEmails();
+    scanOutlookEmails().catch(function(e) { console.warn('Background scan failed:', e); });
   } else {
     // First time: must scan to have anything to show
-    await scanOutlookEmails();
+    try { await scanOutlookEmails(); } catch(e) { console.warn('Initial scan failed:', e); }
   }
 
   // Load inbox in background after data is ready
   setTimeout(() => refreshInbox(), 1000);
 
-  // Fetch Outlook signature if no custom signature is saved yet
-  fetchOutlookSignature();
+  // Fetch Outlook signature if no custom signature is saved yet (non-blocking)
+  try { fetchOutlookSignature(); } catch(e) {}
 
   // Keep data fresh automatically
   startAutoSync();
