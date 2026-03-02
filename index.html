@@ -2455,7 +2455,7 @@ async function signIn() {
 
   try {
     const resp = await msalInstance.loginPopup({
-      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'],
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read'],
       prompt: 'select_account'
     });
     currentAccount = resp.account;
@@ -2467,7 +2467,7 @@ async function signIn() {
     // If popup blocked, try redirect
     if (e.errorCode === 'popup_window_error' || e.errorCode === 'empty_window_error') {
       alert('Popup was blocked by your browser. Trying redirect login instead...');
-      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'] });
+      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read'] });
       return;
     }
     alert('Sign-in failed: ' + (e.errorCode || '') + ' — ' + (e.message || e));
@@ -2496,13 +2496,13 @@ async function getAccessToken() {
   if (!msalInstance || !currentAccount) throw new Error('Not signed in');
   try {
     const resp = await msalInstance.acquireTokenSilent({
-      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder'],
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read'],
       account: currentAccount
     });
     return resp.accessToken;
   } catch(e) {
     const resp = await msalInstance.acquireTokenPopup({
-      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder']
+      scopes: ['Mail.Read','Mail.Send','User.Read','Files.ReadWrite.AppFolder','MailboxSettings.Read']
     });
     currentAccount = resp.account;
     return resp.accessToken;
@@ -3238,6 +3238,9 @@ async function onSignedIn() {
 
   // Load inbox in background after data is ready
   setTimeout(() => refreshInbox(), 1000);
+
+  // Fetch Outlook signature if no custom signature is saved yet
+  fetchOutlookSignature();
 
   // Keep data fresh automatically
   startAutoSync();
@@ -5947,6 +5950,52 @@ function getEmailSignature() {
 
 function saveEmailSignature(sig) {
   localStorage.setItem('kennion_email_signature', sig);
+}
+
+async function fetchOutlookSignature() {
+  // If user already has a custom signature saved, don't overwrite
+  if (getEmailSignature()) return;
+  try {
+    var token = await getAccessToken();
+    var sigHtml = '';
+    // Try beta endpoint first (has signatureSettings)
+    try {
+      var resp = await fetch('https://graph.microsoft.com/beta/me/mailboxSettings/signatureSettings', {
+        headers: graphHeaders(token)
+      });
+      if (resp.ok) {
+        var sigSettings = await resp.json();
+        sigHtml = sigSettings.signatureForNewMessages || sigSettings.signatureForReplies || '';
+      }
+    } catch(e2) {}
+    // Fallback: try v1.0 mailboxSettings
+    if (!sigHtml) {
+      try {
+        var resp2 = await fetch('https://graph.microsoft.com/v1.0/me/mailboxSettings', {
+          headers: graphHeaders(token)
+        });
+        if (resp2.ok) {
+          var settings = await resp2.json();
+          if (settings.signatureSettings) {
+            sigHtml = settings.signatureSettings.signatureForNewMessages || settings.signatureSettings.signatureForReplies || '';
+          }
+        }
+      } catch(e3) {}
+    }
+    if (!sigHtml) return;
+    // Convert HTML signature to plain text
+    var plainSig = htmlToPlainText(sigHtml).trim();
+    if (!plainSig) return;
+    saveEmailSignature(plainSig);
+    console.log('Outlook signature imported successfully');
+    // Update settings textarea if visible
+    var el = document.getElementById('settingsSignatureInput');
+    if (el) el.value = plainSig;
+    var el2 = document.getElementById('signatureInput');
+    if (el2) el2.value = plainSig;
+  } catch(e) {
+    console.warn('Could not fetch Outlook signature:', e);
+  }
 }
 
 function openSettings() {
