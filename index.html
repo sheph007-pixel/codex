@@ -1165,6 +1165,41 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   </div>
 </div>
 
+<!-- FLOATING AI CHAT WIDGET -->
+<div class="ai-fab" id="aiFab" onclick="toggleAIChat()" title="Kennion AI">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+</div>
+<div class="ai-chat-window" id="aiChatWindow">
+  <div class="ai-chat-header">
+    <span class="ai-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:8px"><span class="ai-chat-title">Kennion AI</span><span class="ai-chat-dot"></span></div>
+      <div class="ai-chat-subtitle">Ask anything about your CRM data</div>
+    </div>
+    <button class="ai-chat-clear" onclick="clearAIChat()" title="Clear chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+    </button>
+    <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="ai-chat-suggestions" id="aiSuggestions">
+    <button onclick="askAISuggestion('Who should I follow up with?')">Follow-ups</button>
+    <button onclick="askAISuggestion('Show me hot leads')">Hot Leads</button>
+    <button onclick="askAISuggestion('Show cold leads at risk')">At Risk</button>
+    <button onclick="askAISuggestion('Give me a pipeline summary')">Summary</button>
+    <button onclick="askAISuggestion('Search contacts at google')">Search</button>
+    <button onclick="askAISuggestion('Find companies in technology')">Industry</button>
+  </div>
+  <div class="ai-chat-messages" id="aiMessages">
+    <div class="ai-msg bot">Hi! I can search your entire CRM — companies, contacts, emails, engagement scores, and enrichment data. Try asking me anything:<br><br>• <b>"Find contacts at Microsoft"</b><br>• <b>"Who has the highest engagement?"</b><br>• <b>"Show companies in healthcare"</b><br>• <b>"Search emails about proposal"</b><br>• <b>"Which leads went cold this month?"</b></div>
+  </div>
+  <div class="ai-chat-input">
+    <input type="text" id="aiInput" placeholder="Ask anything about your CRM..." onkeydown="if(event.key==='Enter')sendAI()">
+    <button onclick="sendAI()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+  </div>
+</div>
+
 <script>
 // ──────────────────────────────────────────────
 // CONFIG & STATE
@@ -6836,42 +6871,6 @@ document.getElementById('searchInput').oninput = function() {
   }
 })();
 </script>
-
-<!-- FLOATING AI CHAT WIDGET -->
-<div class="ai-fab" id="aiFab" onclick="toggleAIChat()" title="Kennion AI">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-</div>
-<div class="ai-chat-window" id="aiChatWindow">
-  <div class="ai-chat-header">
-    <span class="ai-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
-    <div style="flex:1">
-      <div style="display:flex;align-items:center;gap:8px"><span class="ai-chat-title">Kennion AI</span><span class="ai-chat-dot"></span></div>
-      <div class="ai-chat-subtitle">Ask anything about your CRM data</div>
-    </div>
-    <button class="ai-chat-clear" onclick="clearAIChat()" title="Clear chat">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-    </button>
-    <button class="ai-chat-close" onclick="toggleAIChat()" title="Close">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
-  </div>
-  <div class="ai-chat-suggestions" id="aiSuggestions">
-    <button onclick="askAISuggestion('Who should I follow up with?')">Follow-ups</button>
-    <button onclick="askAISuggestion('Show me hot leads')">Hot Leads</button>
-    <button onclick="askAISuggestion('Show cold leads at risk')">At Risk</button>
-    <button onclick="askAISuggestion('Give me a pipeline summary')">Summary</button>
-    <button onclick="askAISuggestion('Search contacts at google')">Search</button>
-    <button onclick="askAISuggestion('Find companies in technology')">Industry</button>
-  </div>
-  <div class="ai-chat-messages" id="aiMessages">
-    <div class="ai-msg bot">Hi! I can search your entire CRM — companies, contacts, emails, engagement scores, and enrichment data. Try asking me anything:<br><br>• <b>"Find contacts at Microsoft"</b><br>• <b>"Who has the highest engagement?"</b><br>• <b>"Show companies in healthcare"</b><br>• <b>"Search emails about proposal"</b><br>• <b>"Which leads went cold this month?"</b></div>
-  </div>
-  <div class="ai-chat-input">
-    <input type="text" id="aiInput" placeholder="Ask anything about your CRM..." onkeydown="if(event.key==='Enter')sendAI()">
-    <button onclick="sendAI()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
-  </div>
-</div>
-
 </body>
 </html>
 
