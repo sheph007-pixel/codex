@@ -1035,7 +1035,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             <h3>Data Management</h3>
           </div>
-          <p class="settings-desc">Clear all cached data and re-scan every email from scratch. Use this if data seems out of sync.</p>
+          <p class="settings-desc">Restore your data from OneDrive cloud backup, or clear everything and re-scan from scratch.</p>
+          <button class="btn btn-ms btn-sm" onclick="manualCloudRestore()" style="font-size:13px;margin-top:8px">Restore from Cloud Backup</button>
           <button class="btn btn-ghost" onclick="fullRescan()" style="color:var(--red);border-color:var(--red);font-size:13px;margin-top:8px">Reset & Full Re-scan</button>
         </div>
       </div>
@@ -1208,8 +1209,9 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Data Management</label>
+      <button class="btn btn-ms btn-sm" onclick="manualCloudRestore()" style="font-size:12px;margin-right:6px">Restore from Cloud</button>
       <button class="btn btn-ghost" onclick="fullRescan()" style="color:var(--red);border-color:var(--red);font-size:12px">Reset &amp; Full Re-scan</button>
-      <p class="help-text" style="margin-top:4px">Clears all cached data and re-scans every email from scratch.</p>
+      <p class="help-text" style="margin-top:4px">Restore data from OneDrive backup, or clear everything and re-scan from scratch.</p>
     </div>
 
     <div class="modal-actions">
@@ -2261,8 +2263,12 @@ async function saveToCloud() {
 
 async function loadFromCloud() {
   try {
-    const token = await getCloudToken();
-    if (!token) { console.warn('Cloud load: no token available'); return null; }
+    let token = await getCloudToken();
+    // Fallback: getAccessToken already includes Files.ReadWrite.AppFolder scope
+    if (!token) {
+      try { token = await getAccessToken(); } catch(e) {}
+    }
+    if (!token) { console.warn('Cloud load: no token available from either method'); return null; }
     const resp = await fetch(
       'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE + ':/content',
       { headers: { 'Authorization': 'Bearer ' + token } }
@@ -2370,6 +2376,83 @@ function applyCloudDomainData(data) {
     if (data.meta.fullScanDone) fullScanDone = data.meta.fullScanDone;
     if (data.meta.seenMsgIds) seenMsgIds = new Set(data.meta.seenMsgIds);
     if (data.meta.deltaLink) deltaLink = data.meta.deltaLink;
+  }
+}
+
+// Manual cloud restore — user-triggered from Settings
+async function manualCloudRestore() {
+  if (!currentAccount) { alert('Please sign in first.'); return; }
+  try {
+    setSyncBadge('scanning', 'Restoring...');
+    // First try loading current version
+    let cloudData = await loadFromCloud();
+    if (!cloudData || !cloudData.domainData || Object.keys(cloudData.domainData).length === 0) {
+      // Try fetching version history from OneDrive
+      console.log('Cloud restore: current backup empty, checking version history...');
+      try {
+        let token = await getCloudToken();
+        if (!token) try { token = await getAccessToken(); } catch(e) {}
+        if (token) {
+          // Get file metadata to find the item ID
+          const metaResp = await fetch(
+            'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE,
+            { headers: { 'Authorization': 'Bearer ' + token } }
+          );
+          if (metaResp.ok) {
+            const fileMeta = await metaResp.json();
+            const itemId = fileMeta.id;
+            // Fetch version history
+            const versionsResp = await fetch(
+              'https://graph.microsoft.com/v1.0/me/drive/items/' + itemId + '/versions',
+              { headers: { 'Authorization': 'Bearer ' + token } }
+            );
+            if (versionsResp.ok) {
+              const versions = await versionsResp.json();
+              console.log('Cloud restore: found ' + (versions.value || []).length + ' versions');
+              // Try each previous version until we find one with data
+              for (const ver of (versions.value || []).slice(0, 10)) {
+                try {
+                  const verResp = await fetch(
+                    'https://graph.microsoft.com/v1.0/me/drive/items/' + itemId + '/versions/' + ver.id + '/content',
+                    { headers: { 'Authorization': 'Bearer ' + token } }
+                  );
+                  if (verResp.ok) {
+                    const verData = await verResp.json();
+                    if (verData.domainData && Object.keys(verData.domainData).length > 0) {
+                      console.log('Cloud restore: found version ' + ver.id + ' from ' + (ver.lastModifiedDateTime || '?') + ' with ' + Object.keys(verData.domainData).length + ' domains');
+                      cloudData = verData;
+                      break;
+                    }
+                  }
+                } catch(ve) { console.warn('Cloud restore: version ' + ver.id + ' unreadable:', ve); }
+              }
+            }
+          }
+        }
+      } catch(vErr) { console.warn('Cloud restore: version history failed:', vErr); }
+    }
+    if (!cloudData || !cloudData.domainData || Object.keys(cloudData.domainData).length === 0) {
+      setSyncBadge('error', 'No Backup Found');
+      alert('No cloud backup found with data. You may need to run Sync Emails to re-scan your mailbox.');
+      return;
+    }
+    // Apply the cloud data
+    applyCloudSettings(cloudData);
+    applyCloudDomainData(cloudData);
+    buildCompaniesFromDomainMap();
+    renderTableHeader();
+    renderTable();
+    updateStats();
+    updateLastSyncDisplay();
+    resolveCompanyNames();
+    runEnrichment();
+    persistData();
+    setSyncBadge('synced', 'Restored');
+    alert('Restored ' + Object.keys(domainMap).length + ' companies from cloud backup' + (cloudData.syncedAt ? ' (saved ' + new Date(cloudData.syncedAt).toLocaleString() + ')' : '') + '.');
+  } catch(e) {
+    console.error('Cloud restore error:', e);
+    setSyncBadge('error', 'Restore Failed');
+    alert('Cloud restore failed: ' + (e.message || e) + '\n\nTry clicking Sync Emails to re-scan instead.');
   }
 }
 
@@ -3441,7 +3524,7 @@ function renderTable() {
   const colCount = cols.length + 1; // +1 for checkbox
   const tbody = document.getElementById('tableBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Click "Sync Emails" to scan your Outlook.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;padding:40px;color:var(--text2)">No companies found.<br><br><button class="btn btn-ms btn-sm" onclick="manualCloudRestore()" style="margin-right:8px">Restore from Cloud Backup</button> <button class="btn btn-ghost btn-sm" onclick="scanOutlookEmails()">Sync Emails</button></td></tr>';
     updateBulkBar();
     updateViewTitleCount(0);
     return;
