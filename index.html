@@ -488,6 +488,30 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .crm-content{display:none;flex-direction:column;gap:20px;flex:1}
 .crm-content.active{display:flex}
 
+/* ── SETTINGS VIEW ── */
+.settings-view{display:none;flex-direction:column;flex:1;overflow-y:auto;padding:0}
+.settings-view.active{display:flex}
+.settings-header{padding:28px 32px 0;margin-bottom:4px}
+.settings-header h2{font-size:22px;font-weight:700;color:var(--text);margin:0}
+.settings-subtitle{font-size:13px;color:var(--text2);margin-top:4px}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px;padding:20px 32px 40px}
+.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:0 1px 2px rgba(60,64,67,.06)}
+.settings-card-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.settings-card-header svg{width:18px;height:18px;color:var(--accent);flex-shrink:0}
+.settings-card-header h3{font-size:15px;font-weight:600;color:var(--text);margin:0}
+.settings-badge{background:var(--accent);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:auto}
+.settings-desc{font-size:12.5px;color:var(--text2);margin:0 0 12px;line-height:1.5}
+.settings-field{margin-bottom:12px}
+.settings-field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px}
+.settings-field input[type="text"]{padding:9px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none;width:100%;box-sizing:border-box}
+.settings-field input[type="text"]:focus{border-color:var(--accent)}
+.settings-details{margin-top:12px;font-size:13px;color:var(--text2)}
+.settings-details summary{cursor:pointer;font-weight:500;color:var(--accent);font-size:12px;padding:4px 0}
+.settings-details summary:hover{text-decoration:underline}
+.settings-steps{margin:10px 0 0;padding-left:20px;line-height:1.8;font-size:12.5px}
+.settings-steps code{background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:12px}
+@media(max-width:900px){.settings-grid{grid-template-columns:1fr;padding:16px}}
+
 /* ── INBOX VIEW (Outlook-style) ── */
 .inbox-view{display:none;flex-direction:column;flex:1;overflow:hidden;background:var(--surface);border-radius:12px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(60,64,67,.08)}
 .inbox-view.active{display:flex}
@@ -660,6 +684,10 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
       Flagged
       <span class="sidebar-badge" id="flaggedCount" style="background:#e8710a">0</span>
+    </div>
+    <div class="sidebar-item" id="settingsNavItem" onclick="showSettingsView()" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
     </div>
     <div class="sidebar-account" id="accountBar" style="display:none">
       <div class="sa-top">
@@ -859,6 +887,99 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         </div>
       </div>
     </div>
+    <!-- SETTINGS VIEW -->
+    <div class="settings-view" id="settingsView">
+      <div class="settings-header">
+        <h2>Settings</h2>
+        <p class="settings-subtitle">All changes auto-save to your OneDrive and sync across devices.</p>
+      </div>
+
+      <div class="settings-grid">
+        <!-- CONNECTION -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 010 10h-3m-6 0H6a5 5 0 010-10h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            <h3>Connection</h3>
+          </div>
+          <p class="settings-desc">Connect your Outlook by registering an Azure App. Your Client ID is stored only in your browser.</p>
+          <div class="settings-field">
+            <label>Application (Client) ID</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="settingsClientIdInput" placeholder="e.g. 12345678-abcd-1234-abcd-123456789abc" style="flex:1">
+              <button class="btn btn-primary btn-sm" onclick="saveSettingsClientId()" style="white-space:nowrap">Save & Connect</button>
+            </div>
+          </div>
+          <details class="settings-details">
+            <summary>Setup Instructions</summary>
+            <ol class="settings-steps">
+              <li>Go to <strong>portal.azure.com</strong> &rarr; <strong>Microsoft Entra ID</strong> &rarr; <strong>App registrations</strong></li>
+              <li>Click <strong>New registration</strong>, name it "Kennion CRM"</li>
+              <li>Set <strong>Redirect URI</strong> (SPA) to: <code id="settingsRedirectDisplay"></code></li>
+              <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code>, <code>Mail.Send</code>, and <code>Files.ReadWrite.AppFolder</code> (Delegated)</li>
+              <li>Click <strong>Grant admin consent</strong> (or have your admin do it)</li>
+              <li>Copy the <strong>Application (client) ID</strong> and paste above</li>
+            </ol>
+          </details>
+        </div>
+
+        <!-- BLOCKED DOMAINS -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            <h3>Protected Domains & Emails</h3>
+            <span class="settings-badge" id="settingsBlockedCount">0</span>
+          </div>
+          <p class="settings-desc">Domains and emails here will never appear in your CRM. Add multiple — one per line, or comma/space separated.</p>
+          <div style="display:flex;gap:8px">
+            <textarea id="settingsBlockDomainsInput" rows="3" placeholder="e.g. newsletter.com, noreply@company.com, spam.org" style="flex:1;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none;resize:vertical"></textarea>
+            <button class="btn btn-primary btn-sm" onclick="addBlockedDomainsFromSettingsView()" style="align-self:flex-start;white-space:nowrap">Block</button>
+          </div>
+          <div id="settingsBlockedDomainsList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;max-height:200px;overflow-y:auto"></div>
+        </div>
+
+        <!-- EMAIL SIGNATURE -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            <h3>Email Signature</h3>
+          </div>
+          <p class="settings-desc">Automatically appended to all outgoing emails (new messages and replies).</p>
+          <textarea id="settingsSignatureInput" rows="4" placeholder="e.g.&#10;Best regards,&#10;John Smith&#10;Kennion Group | (555) 123-4567" style="width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none;resize:vertical;box-sizing:border-box" onchange="saveEmailSignature(this.value)"></textarea>
+        </div>
+
+        <!-- CLOUD SYNC & BACKUP -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>
+            <h3>Cloud Sync & Backup</h3>
+          </div>
+          <p class="settings-desc">Your data is automatically synced to OneDrive so it's available on any device. You can also manually backup/restore.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn btn-ghost btn-sm" onclick="manualCloudSave()" id="settingsCloudSaveBtn">Save to Cloud Now</button>
+            <button class="btn btn-ghost btn-sm" onclick="manualCloudRestore()">Restore from Cloud</button>
+            <button class="btn btn-ghost btn-sm" onclick="showCloudVersionHistory()">Recover Previous Version</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportBackup()">Export Backup File</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('settingsImportInput').click()">Import Backup File</button>
+            <input type="file" id="settingsImportInput" accept=".json" style="display:none" onchange="importBackup(event)">
+          </div>
+          <p class="help-text" id="settingsCloudSyncStatus" style="margin-top:8px"></p>
+          <div id="settingsCloudVersionList" style="display:none;margin-top:8px;max-height:250px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface2)"></div>
+        </div>
+
+        <!-- DATA MANAGEMENT -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+            <h3>Data Management</h3>
+          </div>
+          <p class="settings-desc">Clear all cached data and re-scan every email from scratch. Use this if data seems out of sync.</p>
+          <button class="btn btn-ghost" onclick="fullRescan()" style="color:var(--red);border-color:var(--red);font-size:13px;margin-top:8px">Reset & Full Re-scan</button>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -2867,6 +2988,8 @@ function showWelcome() {
   document.getElementById('userPill').style.display = 'none';
   document.getElementById('signOutBtn').style.display = 'none';
   document.getElementById('settingsBtn').style.display = 'none';
+  document.getElementById('settingsNavItem').style.display = 'none';
+  document.getElementById('settingsView').classList.remove('active');
 }
 
 async function onSignedIn() {
@@ -2887,6 +3010,7 @@ async function onSignedIn() {
   document.getElementById('signOutBtn').style.display = '';
   document.getElementById('userPill').style.display = 'flex';
   document.getElementById('userName').textContent = userEmail;
+  document.getElementById('settingsNavItem').style.display = '';
 
   // Load cached data from IndexedDB — show instantly (no waiting for scan)
   const cached = await loadPersistedData();
@@ -3271,7 +3395,7 @@ function filterByType(type, el) {
   showingProposals = false;
   showingArchived = false;
   showingFlagged = false;
-  hideInbox();
+  hideInbox(); hideSettingsView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -3305,7 +3429,7 @@ function filterByStatus(status, el) {
   showingProposals = false;
   showingArchived = false;
   showingFlagged = false;
-  hideInbox();
+  hideInbox(); hideSettingsView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -3408,7 +3532,7 @@ function showBlockedView() {
   showingProposals = false;
   showingArchived = false;
   showingFlagged = false;
-  hideInbox();
+  hideInbox(); hideSettingsView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -3558,7 +3682,7 @@ function showFlaggedView() {
   showingProposals = false;
   showingArchived = false;
   showingFlagged = true;
-  hideInbox();
+  hideInbox(); hideSettingsView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -4217,7 +4341,7 @@ function showProposals() {
   currentFilter = 'all';
   currentTypeFilter = 'all';
   tableShowAll = false;
-  hideInbox();
+  hideInbox(); hideSettingsView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -4268,7 +4392,7 @@ function showArchivedView() {
   showingProposals = false;
   showingArchived = true;
   showingFlagged = false;
-  hideInbox();
+  hideInbox(); hideSettingsView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -4560,9 +4684,10 @@ function showCompanyPanel(id) {
   document.getElementById('dpRightTabs').style.display = 'none';
   document.getElementById('dpTimeline').style.display = 'none';
 
-  // Show detail page, hide CRM table / inbox
+  // Show detail page, hide CRM table / inbox / settings
   document.getElementById('crmContent').style.display = 'none';
   document.getElementById('inboxView').classList.remove('active');
+  document.getElementById('settingsView').classList.remove('active');
   document.getElementById('detailPage').classList.add('active');
 
   // Auto-select first contact if available
@@ -5402,16 +5527,21 @@ function saveEmailSignature(sig) {
 }
 
 function openSettings() {
-  document.getElementById('settingsModal').classList.add('active');
-  document.getElementById('clientIdInput').value = getClientId();
-  document.getElementById('redirectDisplay').textContent = window.location.origin + window.location.pathname;
-  document.getElementById('signatureInput').value = getEmailSignature();
-  renderBlockedDomainsList();
+  // Redirect to settings view if logged in, otherwise open modal for initial setup
+  if (currentAccount) {
+    showSettingsView();
+  } else {
+    document.getElementById('settingsModal').classList.add('active');
+    document.getElementById('clientIdInput').value = getClientId();
+    document.getElementById('redirectDisplay').textContent = window.location.origin + window.location.pathname;
+    document.getElementById('signatureInput').value = getEmailSignature();
+    renderBlockedDomainsList();
+  }
 }
 
 function closeSettings() {
-  // Always save signature even on cancel (it's independent of Azure config)
-  saveEmailSignature(document.getElementById('signatureInput').value);
+  const sigEl = document.getElementById('signatureInput');
+  if (sigEl) saveEmailSignature(sigEl.value);
   document.getElementById('settingsModal').classList.remove('active');
 }
 
@@ -5422,8 +5552,60 @@ async function saveSettings() {
     if (!confirm('That doesn\'t look like a standard Azure Client ID (should be a UUID). Save anyway?')) return;
   }
   localStorage.setItem('relateflow_client_id', clientId);
-  saveEmailSignature(document.getElementById('signatureInput').value);
+  const sigEl = document.getElementById('signatureInput');
+  if (sigEl) saveEmailSignature(sigEl.value);
   closeSettings();
+  msalInstance = null;
+  await initMSAL();
+  await signIn();
+}
+
+function showSettingsView() {
+  showingProposals = false;
+  showingArchived = false;
+  showingFlagged = false;
+  // Hide all other views
+  document.getElementById('crmContent').classList.remove('active');
+  document.getElementById('inboxView').classList.remove('active');
+  const dp = document.getElementById('detailPage');
+  if (dp) dp.classList.remove('active');
+  // Show settings view
+  document.getElementById('settingsView').classList.add('active');
+  // Update sidebar
+  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('settingsNavItem').classList.add('active');
+  // Populate fields
+  document.getElementById('settingsClientIdInput').value = getClientId();
+  document.getElementById('settingsRedirectDisplay').textContent = window.location.origin + window.location.pathname;
+  document.getElementById('settingsSignatureInput').value = getEmailSignature();
+  renderBlockedDomainsList();
+}
+
+function hideSettingsView() {
+  document.getElementById('settingsView').classList.remove('active');
+  document.getElementById('settingsNavItem').classList.remove('active');
+  // Auto-save signature when leaving
+  const sigEl = document.getElementById('settingsSignatureInput');
+  if (sigEl && sigEl.value !== getEmailSignature()) {
+    saveEmailSignature(sigEl.value);
+  }
+}
+
+function addBlockedDomainsFromSettingsView() {
+  const input = document.getElementById('settingsBlockDomainsInput');
+  const raw = input.value.trim();
+  if (!raw) return;
+  addBlockedDomains(raw);
+  input.value = '';
+}
+
+async function saveSettingsClientId() {
+  const clientId = document.getElementById('settingsClientIdInput').value.trim();
+  if (!clientId) { alert('Please enter your Application (Client) ID'); return; }
+  if (!/^[a-f0-9-]{36}$/i.test(clientId)) {
+    if (!confirm('That doesn\'t look like a standard Azure Client ID (should be a UUID). Save anyway?')) return;
+  }
+  localStorage.setItem('relateflow_client_id', clientId);
   msalInstance = null;
   await initMSAL();
   await signIn();
@@ -5432,33 +5614,37 @@ async function saveSettings() {
 // ──────────────────────────────────────────────
 // CLOUD SYNC & BACKUP UI ACTIONS
 // ──────────────────────────────────────────────
+function getCloudStatusEl() {
+  // Prefer settings view element (new), fall back to modal element (old)
+  return document.getElementById('settingsCloudSyncStatus') || document.getElementById('cloudSyncStatus');
+}
+function getCloudVersionListEl() {
+  return document.getElementById('settingsCloudVersionList') || document.getElementById('cloudVersionList');
+}
+
 async function manualCloudSave() {
-  const status = document.getElementById('cloudSyncStatus');
-  const btn = document.getElementById('cloudSaveBtn');
-  if (!currentAccount) { status.textContent = 'Sign in first to sync.'; return; }
-  btn.disabled = true;
-  status.textContent = 'Saving to OneDrive...';
-  status.style.color = 'var(--text2)';
+  const status = getCloudStatusEl();
+  const btn = document.getElementById('settingsCloudSaveBtn') || document.getElementById('cloudSaveBtn');
+  if (!currentAccount) { if (status) status.textContent = 'Sign in first to sync.'; return; }
+  if (btn) btn.disabled = true;
+  if (status) { status.textContent = 'Saving to OneDrive...'; status.style.color = 'var(--text2)'; }
   try {
     await saveToCloud();
-    status.textContent = 'Saved to OneDrive successfully!';
-    status.style.color = 'var(--green)';
+    if (status) { status.textContent = 'Saved to OneDrive successfully!'; status.style.color = 'var(--green)'; }
   } catch(e) {
-    status.textContent = 'Save failed: ' + e.message;
-    status.style.color = 'var(--red)';
+    if (status) { status.textContent = 'Save failed: ' + e.message; status.style.color = 'var(--red)'; }
   }
-  btn.disabled = false;
+  if (btn) btn.disabled = false;
 }
 
 async function manualCloudRestore() {
-  const status = document.getElementById('cloudSyncStatus');
-  if (!currentAccount) { status.textContent = 'Sign in first to restore.'; return; }
+  const status = getCloudStatusEl();
+  if (!currentAccount) { if (status) status.textContent = 'Sign in first to restore.'; return; }
   if (!confirm('This will merge cloud data with your current local data. Continue?')) return;
-  status.textContent = 'Restoring from OneDrive...';
-  status.style.color = 'var(--text2)';
+  if (status) { status.textContent = 'Restoring from OneDrive...'; status.style.color = 'var(--text2)'; }
   try {
     const data = await loadFromCloud();
-    if (!data) { status.textContent = 'No cloud backup found.'; status.style.color = 'var(--orange)'; return; }
+    if (!data) { if (status) { status.textContent = 'No cloud backup found.'; status.style.color = 'var(--orange)'; } return; }
     applyCloudSettings(data);
     applyCloudDomainData(data);
     buildCompaniesFromDomainMap();
@@ -5468,17 +5654,16 @@ async function manualCloudRestore() {
     updateBlockedCount();
     updateFlaggedCount();
     persistData();
-    status.textContent = 'Restored from cloud! (' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)';
-    status.style.color = 'var(--green)';
+    renderBlockedDomainsList();
+    if (status) { status.textContent = 'Restored from cloud! (' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)'; status.style.color = 'var(--green)'; }
   } catch(e) {
-    status.textContent = 'Restore failed: ' + e.message;
-    status.style.color = 'var(--red)';
+    if (status) { status.textContent = 'Restore failed: ' + e.message; status.style.color = 'var(--red)'; }
   }
 }
 
 async function showCloudVersionHistory() {
-  const status = document.getElementById('cloudSyncStatus');
-  const listEl = document.getElementById('cloudVersionList');
+  const status = getCloudStatusEl();
+  const listEl = getCloudVersionListEl();
   if (!currentAccount) { status.textContent = 'Sign in first.'; return; }
   status.textContent = 'Loading version history from OneDrive...';
   status.style.color = 'var(--text2)';
@@ -5551,7 +5736,7 @@ async function showCloudVersionHistory() {
 }
 
 async function restoreCloudVersion(fileId, versionId, dateLabel) {
-  const status = document.getElementById('cloudSyncStatus');
+  const status = getCloudStatusEl();
   if (!confirm('Restore cloud backup from ' + dateLabel + '? This will merge that version\'s data (blocked domains, settings, contacts) into your current data.')) return;
   status.textContent = 'Downloading version from ' + dateLabel + '...';
   status.style.color = 'var(--text2)';
@@ -5587,7 +5772,9 @@ async function restoreCloudVersion(fileId, versionId, dateLabel) {
     status.style.color = 'var(--green)';
 
     // Hide the version list
-    document.getElementById('cloudVersionList').style.display = 'none';
+    const vl = getCloudVersionListEl();
+    if (vl) vl.style.display = 'none';
+    renderBlockedDomainsList();
 
     // Save the merged data back to cloud
     scheduleCloudSync();
@@ -5706,16 +5893,14 @@ function archiveCompanyFromDetail(domain) {
 }
 
 function renderBlockedDomainsList() {
-  const container = document.getElementById('blockedDomainsList');
-  if (!container) return;
-  if (blockedDomains.size === 0) {
-    container.innerHTML = '<span style="font-size:11px;color:var(--text2)">No blocked domains yet</span>';
-    return;
-  }
+  const containers = [document.getElementById('blockedDomainsList'), document.getElementById('settingsBlockedDomainsList')];
   const sorted = [...blockedDomains].sort();
-  container.innerHTML = sorted.map(d =>
-    `<span class="blocked-tag">${esc(d)}<button onclick="removeBlockedDomain('${d}')" title="Unblock">&times;</button></span>`
-  ).join('');
+  const html = blockedDomains.size === 0
+    ? '<span style="font-size:11px;color:var(--text2)">No blocked domains yet</span>'
+    : sorted.map(d => `<span class="blocked-tag">${esc(d)}<button onclick="removeBlockedDomain('${d}')" title="Unblock">&times;</button></span>`).join('');
+  for (const c of containers) { if (c) c.innerHTML = html; }
+  const badge = document.getElementById('settingsBlockedCount');
+  if (badge) badge.textContent = blockedDomains.size;
 }
 
 // ──────────────────────────────────────────────
@@ -5745,6 +5930,7 @@ function showInbox() {
   showingProposals = false;
   showingArchived = false;
   showingFlagged = false;
+  hideSettingsView();
   setViewTitle(null, false);
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
