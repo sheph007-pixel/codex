@@ -5737,18 +5737,9 @@ function replyFromViewer() {
   const subject = document.getElementById('evSubject').textContent || '';
   const contactEmail = currentContactOverlay ? currentContactOverlay.email : currentViewerFromEmail;
   const msgId = currentViewerMsgId;
-  const fromName = currentViewerFromName || currentViewerFromEmail;
-  const senderLabel = currentViewerFromName ? currentViewerFromName + ' <' + currentViewerFromEmail + '>' : currentViewerFromEmail;
-  const quotedDate = currentViewerDate;
-  const quotedBody = currentViewerBodyText;
-  const quotedHtml = currentViewerBodyHtml;
   closeEmailViewer();
-  var reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
-  var ctName = currentContactOverlay ? currentContactOverlay.contact.name : fromName;
-  // Build quoted reply text
-  var quoteHeader = '\n\nOn ' + quotedDate + ', ' + senderLabel + ' wrote:\n';
-  var quotedLines = quotedBody.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
-  openCompose(contactEmail, ctName, reSubject, msgId, quoteHeader + quotedLines, quotedHtml);
+  // Use openReply which creates a draft with Outlook signature
+  openReply(msgId, contactEmail, subject);
 }
 
 function openInOutlook() {
@@ -5775,28 +5766,35 @@ function htmlToPlainText(html) {
 }
 
 let composeReplyToId = null;
+let composeDraftId = null;
 
 // ── Outlook-style compose popup ──
 var composePopupState = 'normal'; // 'normal', 'fullscreen', 'minimized'
 
 let composeOriginalBodyHtml = '';
 
-function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml) {
+function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml, draftId) {
   composeReplyToId = replyId || null;
+  composeDraftId = draftId || null;
   composeOriginalBodyHtml = originalHtml || '';
   document.getElementById('composeTo').value = toName ? toName + ' <' + toEmail + '>' : toEmail;
   document.getElementById('composeTo').dataset.email = toEmail;
   document.getElementById('composeSubject').value = subject || '';
 
-  // Build body with signature
-  var sig = getEmailSignature();
-  var sigBlock = sig ? '\n\n' + sig : '';
-  if (replyId) {
-    // Reply: cursor position → signature → quoted text
-    document.getElementById('composeBody').value = sigBlock + (quotedBody || '');
+  if (draftId && quotedBody) {
+    // Draft from Graph API — already contains signature + quoted text
+    document.getElementById('composeBody').value = '\n' + quotedBody;
   } else {
-    // New email: cursor position → signature
-    document.getElementById('composeBody').value = sigBlock;
+    // Build body with local signature
+    var sig = getEmailSignature();
+    var sigBlock = sig ? '\n\n' + sig : '';
+    if (replyId) {
+      // Reply: cursor position → signature → quoted text
+      document.getElementById('composeBody').value = sigBlock + (quotedBody || '');
+    } else {
+      // New email: cursor position → signature
+      document.getElementById('composeBody').value = sigBlock;
+    }
   }
 
   document.getElementById('composeSendStatus').textContent = '';
@@ -5820,30 +5818,64 @@ function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml
 async function openReply(messageId, toEmail, subject) {
   var reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
   var ctName = currentContactOverlay ? currentContactOverlay.contact.name : '';
-  // Fetch original email body for quoted reply
   var quotedBody = '';
   var originalHtml = '';
+  var draftId = null;
   try {
     var token = await getAccessToken();
-    var resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '?$select=from,body,receivedDateTime,sentDateTime', { headers: graphHeaders(token) });
-    if (resp.ok) {
-      var msg = await resp.json();
-      var fromName = msg.from?.emailAddress?.name || '';
-      var fromAddr = msg.from?.emailAddress?.address || toEmail;
-      if (!ctName) ctName = fromName;
-      var senderLabel = fromName ? fromName + ' <' + fromAddr + '>' : fromAddr;
-      var dt = new Date(msg.receivedDateTime || msg.sentDateTime);
-      var dateStr = dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      var bodyContent = msg.body?.content || '';
-      var bodyType = msg.body?.contentType || 'text';
-      originalHtml = bodyContent;
-      var bodyText = bodyType === 'html' ? htmlToPlainText(bodyContent) : bodyContent;
-      var quoteHeader = '\n\nOn ' + dateStr + ', ' + senderLabel + ' wrote:\n';
-      var quotedLines = bodyText.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
-      quotedBody = quoteHeader + quotedLines;
+    var headers = graphHeaders(token);
+    // Create a reply draft via Graph API — this auto-includes Outlook signature
+    var draftResp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '/createReply', {
+      method: 'POST', headers: headers, body: JSON.stringify({})
+    });
+    if (draftResp.ok) {
+      var draft = await draftResp.json();
+      draftId = draft.id;
+      var draftHtml = draft.body?.content || '';
+      var draftType = draft.body?.contentType || 'text';
+      originalHtml = draftHtml;
+      if (!ctName && draft.toRecipients && draft.toRecipients[0]) {
+        ctName = draft.toRecipients[0].emailAddress?.name || '';
+      }
+      // Convert the draft body (which has signature + quoted text) to plain text
+      var draftText = draftType === 'html' ? htmlToPlainText(draftHtml) : draftHtml;
+      quotedBody = draftText;
+      // Also auto-save the signature if we don't have one yet
+      if (!getEmailSignature() && draftHtml) {
+        // Try to extract signature: it's between the draft start and the quoted section
+        var sigMatch = draftHtml.match(/<body[^>]*>([\s\S]*?)(<div\s+id="?appendonsend|<hr\s|<div\s+style="border:none;border-top:solid)/i);
+        if (sigMatch && sigMatch[1]) {
+          var extractedSig = htmlToPlainText(sigMatch[1]).trim();
+          if (extractedSig) {
+            saveEmailSignature(extractedSig);
+            var sigEl = document.getElementById('settingsSignatureInput');
+            if (sigEl) sigEl.value = extractedSig;
+          }
+        }
+      }
+    } else {
+      // Fallback: fetch original message for manual quoting
+      var resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + messageId + '?$select=from,body,receivedDateTime,sentDateTime', { headers: headers });
+      if (resp.ok) {
+        var msg = await resp.json();
+        var fromName = msg.from?.emailAddress?.name || '';
+        var fromAddr = msg.from?.emailAddress?.address || toEmail;
+        if (!ctName) ctName = fromName;
+        var senderLabel = fromName ? fromName + ' <' + fromAddr + '>' : fromAddr;
+        var dt = new Date(msg.receivedDateTime || msg.sentDateTime);
+        var dateStr = dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        var bodyContent = msg.body?.content || '';
+        var bodyType = msg.body?.contentType || 'text';
+        originalHtml = bodyContent;
+        var bodyText = bodyType === 'html' ? htmlToPlainText(bodyContent) : bodyContent;
+        var quoteHeader = '\n\nOn ' + dateStr + ', ' + senderLabel + ' wrote:\n';
+        var quotedLines = bodyText.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
+        quotedBody = quoteHeader + quotedLines;
+      }
     }
-  } catch(e) { console.warn('Could not fetch original email for quote:', e); }
-  openCompose(toEmail, ctName, reSubject, messageId, quotedBody, originalHtml);
+  } catch(e) { console.warn('Could not create reply draft:', e); }
+  // Pass draftId so send can use it instead of /reply
+  openCompose(toEmail, ctName, reSubject, messageId, quotedBody, originalHtml, draftId);
 }
 
 function closeInlineReply() { composeClose(); }
@@ -5852,6 +5884,7 @@ function composeClose() {
   var popup = document.getElementById('composePopup');
   popup.classList.remove('active');
   composeReplyToId = null;
+  composeDraftId = null;
   composeOriginalBodyHtml = '';
 }
 
@@ -5921,10 +5954,21 @@ async function sendComposedEmail() {
     var headers = graphHeaders(token);
     var resp;
 
-    if (composeReplyToId) {
-      // Use Graph API reply endpoint for proper email threading
-      // Send everything the user sees (their text + signature) as the comment
-      // Extract text above the quoted section (user's reply + signature)
+    if (composeDraftId) {
+      // Draft was created via createReply — update body with user's text, then send
+      var userHtml = fullBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      // Update the draft body with user's reply prepended
+      var patchResp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeDraftId, {
+        method: 'PATCH', headers: headers,
+        body: JSON.stringify({ body: { contentType: 'html', content: userHtml } })
+      });
+      if (!patchResp.ok) { var pe = await patchResp.text(); throw new Error('Draft update failed: ' + patchResp.status + ' — ' + pe); }
+      // Send the draft
+      resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeDraftId + '/send', {
+        method: 'POST', headers: headers, body: ''
+      });
+    } else if (composeReplyToId) {
+      // Fallback: Use Graph API reply endpoint for proper email threading
       var quoteMarker2 = fullBody.indexOf('\n\nOn ');
       var commentText = quoteMarker2 > -1 ? fullBody.substring(0, quoteMarker2).trim() : fullBody.trim();
       var commentHtml = commentText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
