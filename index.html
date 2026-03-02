@@ -2029,31 +2029,34 @@ async function loadFromCloud() {
   }
 }
 
-function applyCloudData(data) {
-  // Restore settings
+function applyCloudSettings(data) {
+  // Restore settings only (blocked domains, starred, archived, etc.)
   const s = data.settings;
+  if (!s) return;
   if (s.blocked_domains && s.blocked_domains.length > 0) {
-    blockedDomains = new Set(s.blocked_domains);
+    // Merge cloud blocked domains with any local ones
+    for (const d of s.blocked_domains) blockedDomains.add(d);
     saveBlockedDomains();
+    console.log('Cloud sync: restored ' + s.blocked_domains.length + ' blocked domains');
   }
   if (s.starred_contacts && Object.keys(s.starred_contacts).length > 0) {
-    starredContacts = s.starred_contacts;
+    Object.assign(starredContacts, s.starred_contacts);
     saveStarredContacts();
   }
   if (s.starred_companies && s.starred_companies.length > 0) {
-    starredCompanies = new Set(s.starred_companies);
+    for (const c of s.starred_companies) starredCompanies.add(c);
     saveStarredCompanies();
   }
   if (s.archived_companies && s.archived_companies.length > 0) {
-    archivedCompanies = new Set(s.archived_companies);
+    for (const c of s.archived_companies) archivedCompanies.add(c);
     saveArchivedCompanies();
   }
   if (s.flagged_companies && s.flagged_companies.length > 0) {
-    flaggedCompanies = new Set(s.flagged_companies);
+    for (const c of s.flagged_companies) flaggedCompanies.add(c);
     saveFlaggedCompanies();
   }
   if (s.company_types && Object.keys(s.company_types).length > 0) {
-    companyTypes = s.company_types;
+    Object.assign(companyTypes, s.company_types);
     saveCompanyTypes();
   }
   if (s.column_config && s.column_config.length > 0) {
@@ -2061,7 +2064,11 @@ function applyCloudData(data) {
     saveColumnConfig();
   }
   if (s.custom_column_data && Object.keys(s.custom_column_data).length > 0) {
-    customColumnData = s.custom_column_data;
+    // Merge: cloud values fill in missing keys
+    for (const [k, v] of Object.entries(s.custom_column_data)) {
+      if (!customColumnData[k]) customColumnData[k] = v;
+      else Object.assign(customColumnData[k], v);
+    }
     saveCustomColumnData();
   }
   if (s.company_names && Object.keys(s.company_names).length > 0) {
@@ -2075,8 +2082,10 @@ function applyCloudData(data) {
   if (s.email_signature) {
     saveEmailSignature(s.email_signature);
   }
+}
 
-  // Restore domain/contact data
+function applyCloudDomainData(data) {
+  // Restore domain/contact data (merge with existing)
   if (data.domainData && Object.keys(data.domainData).length > 0) {
     for (const [domain, d] of Object.entries(data.domainData)) {
       const key = domain.toLowerCase();
@@ -2908,7 +2917,8 @@ async function onSignedIn() {
   }
 
   // Always try restoring from OneDrive cloud sync.
-  // If local data is missing or cloud has more data, merge cloud data in.
+  // Settings (blocked domains, starred, etc.) are ALWAYS restored from cloud.
+  // Domain data is merged when cloud has more data than local.
   try {
     const localDomainCount = Object.keys(domainMap).length;
     if (!hasLocalData) {
@@ -2917,13 +2927,17 @@ async function onSignedIn() {
     }
     console.log('Cloud sync: checking OneDrive backup (local domains: ' + localDomainCount + ')...');
     const cloudData = await loadFromCloud();
-    if (cloudData && cloudData.domainData && Object.keys(cloudData.domainData).length > 0) {
-      const cloudDomainCount = Object.keys(cloudData.domainData).length;
+    if (cloudData) {
+      // Always restore settings (blocked domains, starred, archived, flagged, etc.)
+      applyCloudSettings(cloudData);
+      console.log('Cloud sync: settings restored from cloud');
+
+      const cloudDomainCount = cloudData.domainData ? Object.keys(cloudData.domainData).length : 0;
       console.log('Cloud sync: found ' + cloudDomainCount + ' domains in cloud backup');
-      // If cloud has more data than local, or local is empty, merge cloud data
-      if (cloudDomainCount > localDomainCount) {
-        console.log('Cloud sync: merging cloud data (cloud: ' + cloudDomainCount + ' > local: ' + localDomainCount + ')');
-        applyCloudData(cloudData);
+      // Merge domain data if cloud has more
+      if (cloudDomainCount > 0 && cloudDomainCount > localDomainCount) {
+        console.log('Cloud sync: merging domain data (cloud: ' + cloudDomainCount + ' > local: ' + localDomainCount + ')');
+        applyCloudDomainData(cloudData);
         hasLocalData = Object.keys(domainMap).length > 0;
         if (hasLocalData) {
           buildCompaniesFromDomainMap();
@@ -2937,8 +2951,13 @@ async function onSignedIn() {
           persistData();
           console.log('Cloud sync: restored ' + Object.keys(domainMap).length + ' domains from cloud backup');
         }
-      } else {
-        console.log('Cloud sync: local data is current (' + localDomainCount + ' domains), skipping cloud restore');
+      } else if (cloudDomainCount > 0) {
+        console.log('Cloud sync: local domain data is current (' + localDomainCount + ' domains), skipping domain merge');
+        // Settings were restored above — re-render table to reflect blocked/archived/flagged changes
+        if (hasLocalData) {
+          buildCompaniesFromDomainMap();
+          renderTable();
+        }
       }
     } else {
       console.log('Cloud sync: no cloud backup found');
@@ -5413,12 +5432,14 @@ async function manualCloudRestore() {
   try {
     const data = await loadFromCloud();
     if (!data) { status.textContent = 'No cloud backup found.'; status.style.color = 'var(--orange)'; return; }
-    applyCloudData(data);
+    applyCloudSettings(data);
+    applyCloudDomainData(data);
     buildCompaniesFromDomainMap();
     renderTableHeader();
     renderTable();
     updateStats();
     updateBlockedCount();
+    updateFlaggedCount();
     persistData();
     status.textContent = 'Restored from cloud! (' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)';
     status.style.color = 'var(--green)';
@@ -5449,12 +5470,14 @@ function importBackup(event) {
       const data = JSON.parse(e.target.result);
       if (!data.version || !data.settings) { alert('Invalid backup file.'); return; }
       if (!confirm('This will merge the backup with your current data. Continue?')) return;
-      applyCloudData(data);
+      applyCloudSettings(data);
+      applyCloudDomainData(data);
       buildCompaniesFromDomainMap();
       renderTableHeader();
       renderTable();
       updateStats();
       updateBlockedCount();
+      updateFlaggedCount();
       persistData();
       scheduleCloudSync();
       if (status) { status.textContent = 'Backup imported! (' + Object.keys(domainMap).length + ' domains)'; status.style.color = 'var(--green)'; }
