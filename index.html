@@ -4645,9 +4645,15 @@ function showCompanyPanel(id) {
     '</div>' +
   '</div>';
 
-  // Type label — all companies are leads
+  // Type dropdown — Lead / Current Client / Old Client
+  var detailType = getCompanyType(c.domain);
+  var detailTypeClass = detailType === 'Current Client' ? 'badge-hot' : detailType === 'Old Client' ? 'badge-cold' : 'badge-warm';
   headHtml += '<div class="dp-co-type-row">' +
-    '<span class="badge badge-warm">Lead</span>' +
+    '<select class="type-dropdown ' + detailTypeClass + '" onchange="setCompanyType(\'' + esc(c.domain) + '\',this.value)" style="font-size:13px;padding:5px 28px 5px 12px">' +
+      '<option value="Lead"' + (detailType === 'Lead' ? ' selected' : '') + '>Lead</option>' +
+      '<option value="Current Client"' + (detailType === 'Current Client' ? ' selected' : '') + '>Current Client</option>' +
+      '<option value="Old Client"' + (detailType === 'Old Client' ? ' selected' : '') + '>Old Client</option>' +
+    '</select>' +
   '</div>';
 
   // Compact stats row + score + last activity
