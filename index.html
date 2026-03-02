@@ -3385,7 +3385,6 @@ function setViewTitle(title, showDashboard) {
   var bar = document.getElementById('viewTitleBar');
   var titleEl = document.getElementById('viewTitle');
   var stats = document.getElementById('statsSection');
-  var ai = document.getElementById('aiPanel');
   if (title) {
     titleEl.textContent = title;
     bar.style.display = '';
@@ -3393,7 +3392,6 @@ function setViewTitle(title, showDashboard) {
     bar.style.display = 'none';
   }
   stats.style.display = showDashboard ? '' : 'none';
-  ai.style.display = showDashboard ? '' : 'none';
 }
 
 function updateViewTitleCount(count) {
