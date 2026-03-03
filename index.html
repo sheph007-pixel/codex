@@ -1022,28 +1022,56 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             <h3>AI Assistant</h3>
           </div>
-          <p class="settings-desc">Connect an AI model to power the Kennion AI chat. Your API key is stored locally and never sent to our servers.</p>
-          <div style="display:flex;gap:8px;margin-bottom:8px">
-            <select id="settingsAIProvider" style="padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none" onchange="saveAISettings()">
+          <p class="settings-desc">AI powers the entire CRM — chat, email drafting, company research, data enrichment, and more. Connect both providers for maximum capability.</p>
+
+          <!-- OpenAI Connection -->
+          <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--surface2)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:600;font-size:13px">OpenAI</span>
+                <span style="font-size:11px;color:var(--text2)">ChatGPT &middot; GPT-4o</span>
+              </div>
+              <span id="aiOpenAIStatus" style="font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px"></span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="password" id="settingsOpenAIKey" placeholder="sk-..." style="flex:1;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;outline:none">
+              <button class="btn btn-primary btn-sm" onclick="saveOpenAIKey()">Save</button>
+              <button class="btn btn-ghost btn-sm" onclick="removeOpenAIKey()" style="color:var(--text2);padding:6px 8px" title="Remove key">&times;</button>
+            </div>
+          </div>
+
+          <!-- Anthropic Connection -->
+          <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--surface2)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-weight:600;font-size:13px">Anthropic</span>
+                <span style="font-size:11px;color:var(--text2)">Claude AI &middot; Sonnet</span>
+              </div>
+              <span id="aiAnthropicStatus" style="font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px"></span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="password" id="settingsAnthropicKey" placeholder="sk-ant-..." style="flex:1;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;outline:none">
+              <button class="btn btn-primary btn-sm" onclick="saveAnthropicKey()">Save</button>
+              <button class="btn btn-ghost btn-sm" onclick="removeAnthropicKey()" style="color:var(--text2);padding:6px 8px" title="Remove key">&times;</button>
+            </div>
+          </div>
+
+          <!-- Primary provider selector -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:12px;color:var(--text2)">Primary for chat:</span>
+            <select id="settingsAIProvider" style="padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:inherit;outline:none" onchange="saveAISettings()">
               <option value="openai">OpenAI (ChatGPT)</option>
               <option value="anthropic">Anthropic (Claude)</option>
             </select>
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="password" id="settingsAIKey" placeholder="Paste your API key here..." style="flex:1;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:inherit;outline:none">
-            <button class="btn btn-primary btn-sm" onclick="saveAIKeyFromSettings()">Save Key</button>
+
+          <!-- AI capabilities summary -->
+          <div style="margin-top:8px;padding:10px 12px;background:linear-gradient(135deg,rgba(124,77,255,.05),rgba(26,115,232,.05));border-radius:8px;border:1px solid rgba(124,77,255,.1)">
+            <div style="font-size:11px;font-weight:600;color:var(--text);margin-bottom:4px">AI Powers Across System</div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.6">
+              Chat Assistant &middot; Email Drafting &middot; Company Research &middot; Data Enrichment &middot; Contact Intelligence &middot; Follow-up Suggestions &middot; CRM Actions
+            </div>
           </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
-            <span id="aiKeyStatus" style="font-size:12px;color:var(--text2)"></span>
-          </div>
-          <details class="settings-details" style="margin-top:8px">
-            <summary>How to get an API key</summary>
-            <ol class="settings-steps">
-              <li><b>OpenAI:</b> Go to <strong>platform.openai.com/api-keys</strong> &rarr; Create new secret key</li>
-              <li><b>Anthropic:</b> Go to <strong>console.anthropic.com/settings/keys</strong> &rarr; Create Key</li>
-              <li>Paste the key above and click <b>Save Key</b></li>
-            </ol>
-          </details>
         </div>
 
         <!-- EMAIL SIGNATURE -->
@@ -1261,7 +1289,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     <span class="ai-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></span>
     <div style="flex:1">
       <div style="display:flex;align-items:center;gap:8px"><span class="ai-chat-title">Kennion AI</span><span class="ai-chat-dot"></span></div>
-      <div class="ai-chat-subtitle">Your AI assistant with full CRM access</div>
+      <div class="ai-chat-subtitle" id="aiChatSubtitle">Your AI assistant with full CRM access</div>
     </div>
     <button class="ai-chat-clear" onclick="clearAIChat()" title="Clear chat">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
@@ -7022,38 +7050,92 @@ let aiConversation = []; // message history for context
 let aiStreaming = false;
 
 function getAIProvider() { return localStorage.getItem('kennion_ai_provider') || 'openai'; }
-function getAIKey() { return localStorage.getItem('kennion_ai_key') || ''; }
+function getOpenAIKey() { return localStorage.getItem('kennion_openai_key') || ''; }
+function getAnthropicKey() { return localStorage.getItem('kennion_anthropic_key') || ''; }
+function getAIKey() {
+  var provider = getAIProvider();
+  if (provider === 'anthropic') return getAnthropicKey() || getOpenAIKey();
+  return getOpenAIKey() || getAnthropicKey();
+}
+function getEffectiveProvider() {
+  var provider = getAIProvider();
+  if (provider === 'anthropic' && getAnthropicKey()) return 'anthropic';
+  if (provider === 'openai' && getOpenAIKey()) return 'openai';
+  if (getOpenAIKey()) return 'openai';
+  if (getAnthropicKey()) return 'anthropic';
+  return provider;
+}
 function saveAISettings() {
-  const provider = document.getElementById('settingsAIProvider').value;
-  localStorage.setItem('kennion_ai_provider', provider);
+  var sel = document.getElementById('settingsAIProvider');
+  if (sel) localStorage.setItem('kennion_ai_provider', sel.value);
 }
-function saveAIKeyFromSettings() {
-  const key = document.getElementById('settingsAIKey').value.trim();
-  if (!key) { alert('Please enter an API key.'); return; }
-  localStorage.setItem('kennion_ai_key', key);
-  document.getElementById('settingsAIKey').value = '';
-  const status = document.getElementById('aiKeyStatus');
-  status.textContent = '\u2713 API key saved securely in browser';
-  status.style.color = '#34a853';
-  setTimeout(function() { status.textContent = 'Key stored \u00b7 ' + getAIProvider().toUpperCase(); status.style.color = 'var(--text2)'; }, 3000);
+function saveOpenAIKey() {
+  var input = document.getElementById('settingsOpenAIKey');
+  var key = input.value.trim();
+  if (!key) return;
+  localStorage.setItem('kennion_openai_key', key);
+  // Migrate old single-key if it was openai
+  if (!localStorage.getItem('kennion_anthropic_key') && localStorage.getItem('kennion_ai_key')) {
+    var old = localStorage.getItem('kennion_ai_key');
+    if (old.startsWith('sk-ant')) localStorage.setItem('kennion_anthropic_key', old);
+  }
+  input.value = '';
+  loadAISettings();
 }
+function saveAnthropicKey() {
+  var input = document.getElementById('settingsAnthropicKey');
+  var key = input.value.trim();
+  if (!key) return;
+  localStorage.setItem('kennion_anthropic_key', key);
+  input.value = '';
+  loadAISettings();
+}
+function removeOpenAIKey() {
+  localStorage.removeItem('kennion_openai_key');
+  loadAISettings();
+}
+function removeAnthropicKey() {
+  localStorage.removeItem('kennion_anthropic_key');
+  loadAISettings();
+}
+function _connectedBadge() { return '<span style="display:inline-flex;align-items:center;gap:4px;color:#34a853"><span style="width:6px;height:6px;border-radius:50%;background:#34a853;display:inline-block"></span>Connected</span>'; }
+function _disconnectedBadge() { return '<span style="color:var(--text3)">Not connected</span>'; }
 function loadAISettings() {
-  const prov = document.getElementById('settingsAIProvider');
-  const status = document.getElementById('aiKeyStatus');
+  var prov = document.getElementById('settingsAIProvider');
   if (prov) prov.value = getAIProvider();
-  if (status) {
-    if (getAIKey()) { status.textContent = '\u2713 API key saved \u00b7 ' + (getAIProvider() === 'anthropic' ? 'Claude' : 'ChatGPT'); status.style.color = '#34a853'; }
-    else { status.textContent = 'No API key set — add one to enable AI chat'; status.style.color = 'var(--orange)'; }
+  // OpenAI status
+  var oStatus = document.getElementById('aiOpenAIStatus');
+  if (oStatus) oStatus.innerHTML = getOpenAIKey() ? _connectedBadge() : _disconnectedBadge();
+  // Anthropic status
+  var aStatus = document.getElementById('aiAnthropicStatus');
+  if (aStatus) aStatus.innerHTML = getAnthropicKey() ? _connectedBadge() : _disconnectedBadge();
+  // Migrate old single key
+  if (!getOpenAIKey() && !getAnthropicKey() && localStorage.getItem('kennion_ai_key')) {
+    var old = localStorage.getItem('kennion_ai_key');
+    if (old.startsWith('sk-ant')) localStorage.setItem('kennion_anthropic_key', old);
+    else localStorage.setItem('kennion_openai_key', old);
+    localStorage.removeItem('kennion_ai_key');
+    loadAISettings();
   }
 }
 
+function updateAIChatSubtitle() {
+  var sub = document.getElementById('aiChatSubtitle');
+  if (!sub) return;
+  var parts = [];
+  if (getOpenAIKey()) parts.push('ChatGPT');
+  if (getAnthropicKey()) parts.push('Claude');
+  if (parts.length) sub.textContent = 'Connected to ' + parts.join(' + ') + ' \u00b7 Full CRM access';
+  else sub.textContent = 'Add API key in Settings to enable';
+}
 function toggleAIChat() {
   aiChatOpen = !aiChatOpen;
-  const win = document.getElementById('aiChatWindow');
-  const fab = document.getElementById('aiFab');
+  var win = document.getElementById('aiChatWindow');
+  var fab = document.getElementById('aiFab');
   if (aiChatOpen) {
     win.classList.add('open');
     fab.style.display = 'none';
+    updateAIChatSubtitle();
     setTimeout(function() { document.getElementById('aiInput').focus(); }, 100);
   } else {
     win.classList.remove('open');
@@ -7241,13 +7323,15 @@ async function sendAI() {
   // Keep conversation manageable (last 20 messages)
   if (aiConversation.length > 20) aiConversation = aiConversation.slice(-20);
 
-  var provider = getAIProvider();
+  var provider = getEffectiveProvider();
+  var providerKey = provider === 'anthropic' ? getAnthropicKey() : getOpenAIKey();
+  if (!providerKey) providerKey = apiKey; // fallback
   try {
     var reply = '';
     if (provider === 'anthropic') {
-      reply = await callAnthropicAPI(apiKey, systemPrompt, aiConversation);
+      reply = await callAnthropicAPI(providerKey, systemPrompt, aiConversation);
     } else {
-      reply = await callOpenAIAPI(apiKey, systemPrompt, aiConversation);
+      reply = await callOpenAIAPI(providerKey, systemPrompt, aiConversation);
     }
     aiConversation.push({ role: 'assistant', content: reply });
     var typing = document.getElementById(typingId);
@@ -7468,12 +7552,14 @@ async function aiDraftEmail() {
   prompt += '\nWrite a concise, professional email. Match the tone of previous conversations if available. Keep it natural and human-sounding.';
 
   try {
-    var provider = getAIProvider();
+    var provider = getEffectiveProvider();
+    var provKey = provider === 'anthropic' ? getAnthropicKey() : getOpenAIKey();
+    if (!provKey) provKey = apiKey;
     var reply = '';
     if (provider === 'anthropic') {
-      reply = await callAnthropicAPI(apiKey, prompt, [{ role: 'user', content: 'Draft this email now.' }]);
+      reply = await callAnthropicAPI(provKey, prompt, [{ role: 'user', content: 'Draft this email now.' }]);
     } else {
-      reply = await callOpenAIAPI(apiKey, prompt, [{ role: 'user', content: 'Draft this email now.' }]);
+      reply = await callOpenAIAPI(provKey, prompt, [{ role: 'user', content: 'Draft this email now.' }]);
     }
     // Insert AI draft at cursor position (top of compose)
     var sig = getEmailSignature();
@@ -7544,12 +7630,14 @@ async function aiPopulateCompany(domain) {
   prompt += 'ONLY respond with valid JSON, nothing else.';
 
   try {
-    var provider = getAIProvider();
+    var provider = getEffectiveProvider();
+    var provKey = provider === 'anthropic' ? getAnthropicKey() : getOpenAIKey();
+    if (!provKey) provKey = apiKey;
     var reply = '';
     if (provider === 'anthropic') {
-      reply = await callAnthropicAPI(apiKey, prompt, [{ role: 'user', content: 'Research and enrich this company now.' }]);
+      reply = await callAnthropicAPI(provKey, prompt, [{ role: 'user', content: 'Research and enrich this company now.' }]);
     } else {
-      reply = await callOpenAIAPI(apiKey, prompt, [{ role: 'user', content: 'Research and enrich this company now.' }]);
+      reply = await callOpenAIAPI(provKey, prompt, [{ role: 'user', content: 'Research and enrich this company now.' }]);
     }
     // Parse JSON from response
     var jsonMatch = reply.match(/\{[\s\S]*\}/);
