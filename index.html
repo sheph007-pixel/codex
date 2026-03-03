@@ -3217,6 +3217,11 @@ async function onSignedIn() {
     console.warn('Cloud restore failed:', e);
   }
 
+  // If blocked domains are still empty after cloud restore, try version history recovery
+  if (blockedDomains.size === 0) {
+    await autoRecoverBlockedDomains();
+  }
+
   updateBlockedCount();
   updateFlaggedCount();
   updateLastSyncDisplay();
@@ -6253,6 +6258,73 @@ async function restoreCloudVersion(fileId, versionId, dateLabel) {
   } catch(e) {
     status.textContent = 'Restore failed: ' + e.message;
     status.style.color = 'var(--red)';
+  }
+}
+
+// Automatically recover blocked domains from OneDrive version history
+// when the current backup has lost them (e.g. due to a bug that cleared the list).
+async function autoRecoverBlockedDomains() {
+  if (blockedDomains.size > 0) return; // nothing to recover
+  if (!currentAccount) return;
+  console.log('Auto-recovery: blocked domains list is empty — checking OneDrive version history...');
+  try {
+    const token = await getCloudToken();
+    if (!token) return;
+
+    // Get file metadata
+    const metaResp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (!metaResp.ok) return;
+    const fileMeta = await metaResp.json();
+    const fileId = fileMeta.id;
+
+    // Get version history
+    const versResp = await fetch(
+      'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions',
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    if (!versResp.ok) return;
+    const versData = await versResp.json();
+    const versions = (versData.value || []).sort((a, b) => (b.size || 0) - (a.size || 0));
+
+    // Try versions from largest to smallest — the one with blocked domains will be bigger
+    for (const v of versions) {
+      try {
+        const vResp = await fetch(
+          'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions/' + v.id + '/content',
+          { headers: { 'Authorization': 'Bearer ' + token } }
+        );
+        if (!vResp.ok) continue;
+        const data = await vResp.json();
+        const bl = data.settings && data.settings.blocked_domains ? data.settings.blocked_domains : [];
+        if (bl.length > 0) {
+          console.log('Auto-recovery: found ' + bl.length + ' blocked domains in version ' + v.id + ' from ' + v.lastModifiedDateTime);
+          for (const d of bl) blockedDomains.add(d);
+          saveBlockedDomains();
+          // Also restore other settings from this version if they're richer
+          if (data.settings) applyCloudSettings(data);
+          buildCompaniesFromDomainMap();
+          renderTable();
+          updateStats();
+          updateBlockedCount();
+          persistData();
+          renderBlockedDomainsList();
+          // Show a notification banner
+          setSyncBadge('success', 'Recovered ' + bl.length + ' blocked domains');
+          alert('Recovered ' + bl.length + ' blocked domains from OneDrive version history!');
+          console.log('Auto-recovery: SUCCESS — restored ' + blockedDomains.size + ' blocked domains');
+          return;
+        }
+      } catch(vErr) {
+        console.warn('Auto-recovery: failed to read version ' + v.id + ':', vErr.message);
+        continue;
+      }
+    }
+    console.log('Auto-recovery: no version with blocked domains found in history');
+  } catch(e) {
+    console.warn('Auto-recovery: error:', e);
   }
 }
 
