@@ -2290,21 +2290,26 @@ function applyCloudDomainData(data) {
   if (data.domainData && Object.keys(data.domainData).length > 0) {
     for (const [domain, d] of Object.entries(data.domainData)) {
       const key = domain.toLowerCase();
-      if (!domainMap[key]) {
+      const isNew = !domainMap[key];
+      if (isNew) {
         domainMap[key] = { contacts: {}, sentIds: new Set(), receivedIds: new Set(), lastDate: null, lastSentDate: null, lastReceivedDate: null };
       }
       const entry = domainMap[key];
       // v2 format: merge full ID arrays
       if (d.sentIds && d.sentIds.length > 0) { for (const id of d.sentIds) entry.sentIds.add(id); }
       if (d.receivedIds && d.receivedIds.length > 0) { for (const id of d.receivedIds) entry.receivedIds.add(id); }
-      // Merge dates (keep latest)
-      if (d.lastDate) { const dt = new Date(d.lastDate); if (!entry.lastDate || dt > entry.lastDate) entry.lastDate = dt; }
-      if (d.lastSentDate) { const sd = new Date(d.lastSentDate); if (!entry.lastSentDate || sd > entry.lastSentDate) entry.lastSentDate = sd; }
-      if (d.lastReceivedDate) { const rd = new Date(d.lastReceivedDate); if (!entry.lastReceivedDate || rd > entry.lastReceivedDate) entry.lastReceivedDate = rd; }
+      // Only set dates from cloud if this domain is NEW locally.
+      // If local already has data from a real scan, local dates are more accurate.
+      if (isNew) {
+        if (d.lastDate) entry.lastDate = new Date(d.lastDate);
+        if (d.lastSentDate) entry.lastSentDate = new Date(d.lastSentDate);
+        if (d.lastReceivedDate) entry.lastReceivedDate = new Date(d.lastReceivedDate);
+      }
       // Merge contacts
       for (const [email, c] of Object.entries(d.contacts || {})) {
         const le = email.toLowerCase();
-        if (!entry.contacts[le]) {
+        const isNewContact = !entry.contacts[le];
+        if (isNewContact) {
           entry.contacts[le] = {
             name: c.name, email: le,
             sentIds: new Set(c.sentIds || []),
@@ -2314,7 +2319,7 @@ function applyCloudDomainData(data) {
         } else {
           if (c.sentIds) { for (const id of c.sentIds) entry.contacts[le].sentIds.add(id); }
           if (c.receivedIds) { for (const id of c.receivedIds) entry.contacts[le].receivedIds.add(id); }
-          if (c.lastDate) { const cdt = new Date(c.lastDate); if (!entry.contacts[le].lastDate || cdt > entry.contacts[le].lastDate) entry.contacts[le].lastDate = cdt; }
+          // Only set contact date from cloud if it's a new contact
         }
       }
     }
@@ -2529,6 +2534,31 @@ function updateDateField(obj, field, dateStr) {
 // ──────────────────────────────────────────────
 // PROCESS EMAIL BATCH → UPDATE DOMAIN MAP
 // ──────────────────────────────────────────────
+// Recalculate domain-level dates from contact-level dates.
+// This fixes wrong dates from cloud merge or bugs.
+function recalcDomainDates() {
+  for (const [domain, data] of Object.entries(domainMap)) {
+    let maxDate = null;
+    let maxSentDate = null;
+    let maxReceivedDate = null;
+    for (const c of Object.values(data.contacts)) {
+      if (c.lastDate && (!maxDate || c.lastDate > maxDate)) maxDate = c.lastDate;
+    }
+    // If we have contact-level dates, use the max as the domain date
+    if (maxDate) {
+      data.lastDate = maxDate;
+    }
+    // Recalc sent/received dates: if contacts have IDs, domain has activity
+    // Keep existing lastSentDate/lastReceivedDate only if they're <= lastDate
+    if (data.lastSentDate && data.lastDate && data.lastSentDate > data.lastDate) {
+      data.lastSentDate = data.lastDate;
+    }
+    if (data.lastReceivedDate && data.lastDate && data.lastReceivedDate > data.lastDate) {
+      data.lastReceivedDate = data.lastDate;
+    }
+  }
+}
+
 function processEmailBatch(messages) {
   const myEmailLower = userEmail ? userEmail.toLowerCase() : '';
   const myDomain = userEmail ? getDomain(userEmail) : null;
@@ -2957,6 +2987,10 @@ async function scanOutlookEmails(forceFullScan) {
         updateScanBanner('All caught up — no new emails');
       }
     }
+
+    // Recalculate lastDate for each domain/contact from actual email data.
+    // This corrects any wrong dates brought in by cloud merge or old bugs.
+    recalcDomainDates();
 
     lastScanTime = new Date();
     await persistData();
