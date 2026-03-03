@@ -5707,6 +5707,7 @@ let currentViewerFromName = '';
 let currentViewerDate = '';
 let currentViewerBodyText = '';
 let currentViewerBodyHtml = '';
+let emailBodyCache = {}; // { messageId: { subject, from, date, plainText } } — grows as emails are opened
 
 async function openEmailViewer(messageId) {
   currentViewerMsgId = messageId;
@@ -5767,6 +5768,13 @@ async function openEmailViewer(messageId) {
     currentViewerBodyHtml = bodyContent;
     // Extract plain text from HTML for quoted reply
     currentViewerBodyText = bodyType === 'html' ? htmlToPlainText(bodyContent) : bodyContent;
+    // Cache email body for AI assistant access
+    emailBodyCache[messageId] = {
+      subject: msg.subject || '',
+      from: currentViewerFromName + ' <' + currentViewerFromEmail + '>',
+      date: currentViewerDate,
+      plainText: currentViewerBodyText.substring(0, 2000)
+    };
     const frame = document.getElementById('evBodyFrame');
     const baseStyle = 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:#222;padding:24px 28px;margin:0;line-height:1.6;word-break:break-word}img{max-width:100%;height:auto}a{color:#1a73e8}pre,code{white-space:pre-wrap;word-break:break-all}blockquote{border-left:3px solid #ddd;margin:8px 0;padding:4px 12px;color:#555}';
     if (bodyType === 'html') {
@@ -7027,7 +7035,7 @@ function clearAIChat() {
   msgs.innerHTML = '<div class="ai-msg bot">Chat cleared. Ask me anything!</div>';
 }
 
-// Build CRM context snapshot for the AI
+// Build CRM context snapshot for the AI — includes ALL available data
 function buildCRMContext() {
   var totalSent = 0, totalRecv = 0, totalContacts = 0;
   companies.forEach(function(c) { totalSent += c.sent; totalRecv += c.received; totalContacts += (c.allContacts ? c.allContacts.length : 1); });
@@ -7043,9 +7051,9 @@ function buildCRMContext() {
   ctx += '- Average AI score: ' + avgScore + '/99\n';
   ctx += '- Blocked domains: ' + blockedDomains.size + '\n\n';
 
-  // Top 30 companies by score
-  var sorted = companies.slice().sort(function(a, b) { return b.score - a.score; }).slice(0, 30);
-  ctx += 'TOP COMPANIES (by AI score):\n';
+  // ALL companies sorted by score — include every single one
+  var sorted = companies.slice().sort(function(a, b) { return b.score - a.score; });
+  ctx += 'ALL COMPANIES (' + sorted.length + ' total):\n';
   sorted.forEach(function(c) {
     var enr = enrichmentCache[c.domain] || {};
     var line = c.name + ' (' + c.domain + ') — Score: ' + c.score + ', Status: ' + c.status;
@@ -7055,31 +7063,91 @@ function buildCRMContext() {
     if (enr.industry) line += ', Industry: ' + enr.industry;
     if (enr.city || enr.country) line += ', Location: ' + [enr.city, enr.state, enr.country].filter(Boolean).join(', ');
     if (enr.employees) line += ', Employees: ' + enr.employees;
+    if (enr.founded) line += ', Founded: ' + enr.founded;
+    if (enr.type) line += ', Type: ' + enr.type;
     ctx += '  ' + line + '\n';
-    // Include all contacts for this company
-    if (c.allContacts && c.allContacts.length > 1) {
+    // Include ALL contacts for this company with enrichment
+    if (c.allContacts && c.allContacts.length > 0) {
       c.allContacts.forEach(function(ct) {
-        ctx += '    - ' + ct.name + ' <' + ct.email + '> Sent: ' + (ct.sentIds ? ct.sentIds.size : 0) + ' Recv: ' + (ct.receivedIds ? ct.receivedIds.size : 0) + '\n';
+        var ce = contactEnrichment[ct.email] || {};
+        var cLine = '    - ' + ct.name + ' <' + ct.email + '>';
+        cLine += ' Sent: ' + (ct.sentIds ? ct.sentIds.size : ct.sent || 0);
+        cLine += ', Recv: ' + (ct.receivedIds ? ct.receivedIds.size : ct.received || 0);
+        if (ct.lastDate) cLine += ', Last: ' + new Date(ct.lastDate).toLocaleDateString();
+        if (ce.title) cLine += ', Title: ' + ce.title;
+        if (ce.linkedin) cLine += ', LinkedIn: ' + ce.linkedin;
+        ctx += cLine + '\n';
       });
     }
   });
 
-  // Recent email subjects from timeline cache
-  var recentEmails = [];
+  // ALL email activity from contact timeline cache — every loaded email
+  var allTimelineEmails = [];
   for (var email in contactTimelineCache) {
     var items = contactTimelineCache[email];
-    for (var i = 0; i < Math.min(items.length, 5); i++) {
-      recentEmails.push({ subject: items[i].subject, type: items[i].type, date: items[i].date, contact: email, preview: (items[i].preview || '').substring(0, 100) });
+    for (var i = 0; i < items.length; i++) {
+      allTimelineEmails.push({
+        subject: items[i].subject || '(no subject)',
+        type: items[i].type,
+        date: items[i].date,
+        contact: email,
+        preview: items[i].preview || '',
+        conversationId: items[i].conversationId || ''
+      });
     }
   }
-  recentEmails.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
-  if (recentEmails.length > 0) {
-    ctx += '\nRECENT EMAILS (from loaded timelines):\n';
-    recentEmails.slice(0, 20).forEach(function(e) {
-      ctx += '  [' + e.type + '] ' + e.subject + ' — ' + e.contact + ' (' + new Date(e.date).toLocaleDateString() + ')';
+  allTimelineEmails.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
+  if (allTimelineEmails.length > 0) {
+    ctx += '\nALL LOADED EMAILS (' + allTimelineEmails.length + ' total, from contact timelines):\n';
+    allTimelineEmails.forEach(function(e) {
+      ctx += '  [' + e.type + '] "' + e.subject + '" — ' + e.contact + ' (' + new Date(e.date).toLocaleDateString() + ')';
       if (e.preview) ctx += ' — ' + e.preview;
       ctx += '\n';
     });
+  }
+
+  // INBOX EMAILS — recent emails in inbox view
+  if (typeof inboxEmails !== 'undefined' && inboxEmails.length > 0) {
+    ctx += '\nINBOX EMAILS (' + inboxEmails.length + ' in inbox):\n';
+    inboxEmails.forEach(function(e) {
+      ctx += '  ' + (e.isRead ? '[Read]' : '[UNREAD]') + ' From: ' + e.from + ' <' + e.fromEmail + '>';
+      ctx += ' | Subject: "' + (e.subject || '(no subject)') + '"';
+      ctx += ' | Date: ' + new Date(e.date).toLocaleDateString();
+      if (e.companyName) ctx += ' | Company: ' + e.companyName;
+      if (e.preview) ctx += ' | Preview: ' + e.preview;
+      ctx += '\n';
+    });
+  }
+
+  // STARRED / FAVORITED contacts and companies
+  var starredCompanies = companies.filter(function(c) {
+    var dm = domainMap[c.domain];
+    return dm && dm.starred;
+  });
+  if (starredCompanies.length > 0) {
+    ctx += '\nSTARRED/FAVORITE COMPANIES (' + starredCompanies.length + '):\n';
+    starredCompanies.forEach(function(c) { ctx += '  - ' + c.name + ' (' + c.domain + ') Score: ' + c.score + '\n'; });
+  }
+
+  // BLOCKED DOMAINS
+  if (blockedDomains.size > 0) {
+    ctx += '\nBLOCKED DOMAINS: ' + Array.from(blockedDomains).join(', ') + '\n';
+  }
+
+  // FULL EMAIL BODIES — emails the user has opened (full text cached)
+  var bodyKeys = Object.keys(emailBodyCache);
+  if (bodyKeys.length > 0) {
+    ctx += '\nFULL EMAIL CONTENT (emails user has opened — ' + bodyKeys.length + ' cached):\n';
+    bodyKeys.forEach(function(msgId) {
+      var e = emailBodyCache[msgId];
+      ctx += '---\nFrom: ' + e.from + ' | Subject: "' + e.subject + '" | Date: ' + e.date + '\n';
+      ctx += e.plainText + '\n';
+    });
+  }
+
+  // Trim if context is excessively large (API limit safety)
+  if (ctx.length > 120000) {
+    ctx = ctx.substring(0, 120000) + '\n...[trimmed for API limits, ' + companies.length + ' companies total]';
   }
 
   return ctx;
@@ -7108,11 +7176,17 @@ async function sendAI() {
   aiStreaming = true;
 
   // Build system prompt with CRM data
-  var systemPrompt = 'You are Kennion AI, an intelligent CRM assistant. You have access to the user\'s full CRM data below. '
-    + 'Answer questions conversationally, helpfully, and concisely. When the user asks about their data (companies, contacts, emails, leads, scores), '
-    + 'use the CRM data provided to give specific, accurate answers with names, numbers, and details. '
-    + 'You can also answer general questions, draft emails, give business advice, and help with strategy. '
-    + 'Format responses in plain text. Use line breaks for readability. Be direct and useful.\n\n'
+  var systemPrompt = 'You are Kennion AI, a personal AI assistant embedded inside the user\'s CRM. '
+    + 'You have FULL ACCESS to all of their CRM data — every company, every contact, every email subject and preview, inbox, enrichment data, scores, and more. '
+    + 'This data is provided below. USE IT to give specific, accurate, personalized answers.\n\n'
+    + 'INSTRUCTIONS:\n'
+    + '- Answer conversationally like a smart human assistant who knows their entire business.\n'
+    + '- When asked about a company, contact, or email, search the data below and reference specific names, emails, dates, and numbers.\n'
+    + '- You can answer general questions, draft emails, give business advice, suggest follow-up strategies, analyze engagement patterns, and more.\n'
+    + '- When asked about emails, search through ALL the loaded emails below (subjects and previews). Quote specific subjects/previews when relevant.\n'
+    + '- When asked about contacts, provide their name, email, title, LinkedIn if available, and communication stats.\n'
+    + '- If the user asks about something not in the data, say so honestly but still try to help.\n'
+    + '- Be concise but thorough. Use line breaks for readability. Bold key info with **.\n\n'
     + buildCRMContext();
 
   // Add user message to conversation
