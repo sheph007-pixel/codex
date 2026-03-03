@@ -4146,6 +4146,10 @@ function renderTable() {
   // Restore stats section (hidden by proposals view)
   document.getElementById('statsSection').style.display = '';
 
+  // Restore columns button (hidden by follow-up view)
+  var colMgr = document.querySelector('.col-mgr-wrap');
+  if (colMgr) colMgr.style.display = '';
+
   // Restore normal table header (in case we're returning from flagged/archived view)
   renderTableHeader();
 
@@ -5697,6 +5701,8 @@ function showFollowUp() {
 }
 
 function renderFollowUpTable() {
+  var colMgr = document.querySelector('.col-mgr-wrap');
+  if (colMgr) colMgr.style.display = 'none';
   var thead = document.getElementById('tableHead');
   thead.innerHTML = '<tr>'
     + '<th style="width:30px"><input type="checkbox" class="row-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th>'
