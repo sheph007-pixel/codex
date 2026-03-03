@@ -6597,7 +6597,6 @@ function showCompanyPanel(id) {
       '<div class="dp-domain">' +
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
           '<span style="font-size:12px">Website: <a href="https://' + esc(c.domain) + '" target="_blank" style="color:var(--accent)">' + esc(c.domain) + '</a></span>' +
-          '<span style="font-size:12px">LinkedIn: <a href="' + linkedInCompanyURL(c.domain) + '" target="_blank" class="linkedin-link" style="color:var(--accent);display:inline-flex;align-items:center;gap:3px">' + linkedInIconSVG() + ' Profile</a></span>' +
         '</div>' +
         (c.mergedAliases && c.mergedAliases.length > 0 ? '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">' +
           '<span style="font-size:11px;color:var(--text2);font-weight:600">Merged domains:</span>' +
