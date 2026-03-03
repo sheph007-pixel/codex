@@ -8250,6 +8250,10 @@ function clearAIChat() {
 
 // Build CRM context snapshot for the AI — includes ALL available data
 function buildCRMContext() {
+  // Token budget: ~20K tokens ≈ 60K chars for CRM context, leaving room for
+  // system instructions, conversation history, scanned emails, and response.
+  var MAX_CTX = 60000;
+
   var totalSent = 0, totalRecv = 0, totalContacts = 0;
   companies.forEach(function(c) { totalSent += c.sent; totalRecv += c.received; totalContacts += (c.allContacts ? c.allContacts.length : 1); });
   var hot = companies.filter(function(c) { return c.status === 'Hot'; });
@@ -8264,37 +8268,40 @@ function buildCRMContext() {
   ctx += '- Average AI score: ' + avgScore + '/99\n';
   ctx += '- Blocked domains: ' + blockedDomains.size + '\n\n';
 
-  // ALL companies sorted by score — include every single one
+  // Top companies by score — cap at 50 to stay within token budget
   var sorted = companies.slice().sort(function(a, b) { return b.score - a.score; });
-  ctx += 'ALL COMPANIES (' + sorted.length + ' total):\n';
-  sorted.forEach(function(c) {
+  var companyLimit = Math.min(sorted.length, 50);
+  ctx += 'TOP COMPANIES (' + companyLimit + ' of ' + sorted.length + ' total, sorted by score):\n';
+  for (var ci = 0; ci < companyLimit; ci++) {
+    var c = sorted[ci];
     var enr = enrichmentCache[c.domain] || {};
     var line = c.name + ' (' + c.domain + ') — Score: ' + c.score + ', Status: ' + c.status;
-    line += ', Sent: ' + c.sent + ', Received: ' + c.received;
+    line += ', Sent: ' + c.sent + ', Recv: ' + c.received;
     if (c.lastActivity) line += ', Last: ' + c.lastActivity;
     line += ', Contact: ' + c.contact + ' <' + c.contactEmail + '>';
     if (enr.industry) line += ', Industry: ' + enr.industry;
-    if (enr.city || enr.country) line += ', Location: ' + [enr.city, enr.state, enr.country].filter(Boolean).join(', ');
-    if (enr.employees) line += ', Employees: ' + enr.employees;
-    if (enr.founded) line += ', Founded: ' + enr.founded;
+    if (enr.city || enr.country) line += ', Loc: ' + [enr.city, enr.state, enr.country].filter(Boolean).join(', ');
+    if (enr.employees) line += ', Emp: ' + enr.employees;
     if (enr.type) line += ', Type: ' + enr.type;
     ctx += '  ' + line + '\n';
-    // Include ALL contacts for this company with enrichment
+    // Top 3 contacts per company
     if (c.allContacts && c.allContacts.length > 0) {
-      c.allContacts.forEach(function(ct) {
+      var contactCap = Math.min(c.allContacts.length, 3);
+      for (var cci = 0; cci < contactCap; cci++) {
+        var ct = c.allContacts[cci];
         var ce = contactEnrichment[ct.email] || {};
         var cLine = '    - ' + ct.name + ' <' + ct.email + '>';
         cLine += ' Sent: ' + (ct.sentIds ? ct.sentIds.size : ct.sent || 0);
         cLine += ', Recv: ' + (ct.receivedIds ? ct.receivedIds.size : ct.received || 0);
-        if (ct.lastDate) cLine += ', Last: ' + new Date(ct.lastDate).toLocaleDateString();
         if (ce.title) cLine += ', Title: ' + ce.title;
-        if (ce.linkedin) cLine += ', LinkedIn: ' + ce.linkedin;
         ctx += cLine + '\n';
-      });
+      }
+      if (c.allContacts.length > 3) ctx += '    ... +' + (c.allContacts.length - 3) + ' more contacts\n';
     }
-  });
+    if (ctx.length > MAX_CTX * 0.5) { ctx += '  ...[' + (sorted.length - ci - 1) + ' more companies omitted for token limits]\n'; break; }
+  }
 
-  // ALL email activity from contact timeline cache — every loaded email
+  // Recent timeline emails — cap at 30 most recent
   var allTimelineEmails = [];
   for (var email in contactTimelineCache) {
     var items = contactTimelineCache[email];
@@ -8304,63 +8311,63 @@ function buildCRMContext() {
         type: items[i].type,
         date: items[i].date,
         contact: email,
-        preview: items[i].preview || '',
-        conversationId: items[i].conversationId || ''
+        preview: items[i].preview || ''
       });
     }
   }
   allTimelineEmails.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
-  if (allTimelineEmails.length > 0) {
-    ctx += '\nALL LOADED EMAILS (' + allTimelineEmails.length + ' total, from contact timelines):\n';
-    allTimelineEmails.forEach(function(e) {
-      ctx += '  [' + e.type + '] "' + e.subject + '" — ' + e.contact + ' (' + new Date(e.date).toLocaleDateString() + ')';
-      if (e.preview) ctx += ' — ' + e.preview;
+  var emailCap = Math.min(allTimelineEmails.length, 30);
+  if (emailCap > 0) {
+    ctx += '\nRECENT EMAILS (' + emailCap + ' of ' + allTimelineEmails.length + ' total):\n';
+    for (var ei = 0; ei < emailCap; ei++) {
+      var te = allTimelineEmails[ei];
+      ctx += '  [' + te.type + '] "' + te.subject + '" — ' + te.contact + ' (' + new Date(te.date).toLocaleDateString() + ')';
+      if (te.preview) ctx += ' — ' + te.preview.substring(0, 80);
       ctx += '\n';
-    });
+    }
   }
 
-  // INBOX EMAILS — recent emails in inbox view
+  // Inbox — cap at 15 most recent
   if (typeof inboxEmails !== 'undefined' && inboxEmails.length > 0) {
-    ctx += '\nINBOX EMAILS (' + inboxEmails.length + ' in inbox):\n';
-    inboxEmails.forEach(function(e) {
-      ctx += '  ' + (e.isRead ? '[Read]' : '[UNREAD]') + ' From: ' + e.from + ' <' + e.fromEmail + '>';
-      ctx += ' | Subject: "' + (e.subject || '(no subject)') + '"';
-      ctx += ' | Date: ' + new Date(e.date).toLocaleDateString();
-      if (e.companyName) ctx += ' | Company: ' + e.companyName;
-      if (e.preview) ctx += ' | Preview: ' + e.preview;
+    var inboxCap = Math.min(inboxEmails.length, 15);
+    ctx += '\nINBOX (' + inboxCap + ' of ' + inboxEmails.length + '):\n';
+    for (var ii = 0; ii < inboxCap; ii++) {
+      var ie = inboxEmails[ii];
+      ctx += '  ' + (ie.isRead ? '[Read]' : '[UNREAD]') + ' From: ' + ie.from;
+      ctx += ' | "' + (ie.subject || '(no subject)') + '"';
+      ctx += ' | ' + new Date(ie.date).toLocaleDateString();
+      if (ie.preview) ctx += ' | ' + ie.preview.substring(0, 80);
       ctx += '\n';
-    });
+    }
   }
 
-  // STARRED / FAVORITED contacts and companies
-  var starredCompanies = companies.filter(function(c) {
-    var dm = domainMap[c.domain];
-    return dm && dm.starred;
-  });
-  if (starredCompanies.length > 0) {
-    ctx += '\nSTARRED/FAVORITE COMPANIES (' + starredCompanies.length + '):\n';
-    starredCompanies.forEach(function(c) { ctx += '  - ' + c.name + ' (' + c.domain + ') Score: ' + c.score + '\n'; });
+  // Starred companies
+  var starredCo = companies.filter(function(c) { var dm = domainMap[c.domain]; return dm && dm.starred; });
+  if (starredCo.length > 0) {
+    ctx += '\nSTARRED COMPANIES (' + starredCo.length + '):\n';
+    starredCo.forEach(function(c) { ctx += '  - ' + c.name + ' (' + c.domain + ') Score: ' + c.score + '\n'; });
   }
 
-  // BLOCKED DOMAINS
+  // Blocked domains — just count, not full list
   if (blockedDomains.size > 0) {
-    ctx += '\nBLOCKED DOMAINS: ' + Array.from(blockedDomains).join(', ') + '\n';
+    ctx += '\nBLOCKED DOMAINS: ' + blockedDomains.size + ' domains/emails blocked\n';
   }
 
-  // FULL EMAIL BODIES — emails the user has opened (full text cached)
+  // Full email bodies — only the 5 most recently opened, capped at 500 chars each
   var bodyKeys = Object.keys(emailBodyCache);
   if (bodyKeys.length > 0) {
-    ctx += '\nFULL EMAIL CONTENT (emails user has opened — ' + bodyKeys.length + ' cached):\n';
-    bodyKeys.forEach(function(msgId) {
+    var recentBodies = bodyKeys.slice(-5);
+    ctx += '\nRECENT OPENED EMAILS (' + recentBodies.length + ' of ' + bodyKeys.length + ' cached):\n';
+    recentBodies.forEach(function(msgId) {
       var e = emailBodyCache[msgId];
       ctx += '---\nFrom: ' + e.from + ' | Subject: "' + e.subject + '" | Date: ' + e.date + '\n';
-      ctx += e.plainText + '\n';
+      ctx += (e.plainText || '').substring(0, 500) + '\n';
     });
   }
 
-  // Trim if context is excessively large (API limit safety)
-  if (ctx.length > 120000) {
-    ctx = ctx.substring(0, 120000) + '\n...[trimmed for API limits, ' + companies.length + ' companies total]';
+  // Hard safety cap
+  if (ctx.length > MAX_CTX) {
+    ctx = ctx.substring(0, MAX_CTX) + '\n...[trimmed for token limits]';
   }
 
   return ctx;
@@ -8823,12 +8830,14 @@ async function aiExecuteAction(action) {
 function buildScannedEmailsContext() {
   var ctx = '';
   if (window.aiEmailScanCache && window.aiEmailScanCache.length > 0) {
-    ctx += '\nSCANNED EMAILS (' + window.aiEmailScanCache.length + ' from mailbox):\n';
-    window.aiEmailScanCache.forEach(function(e) {
-      ctx += '  From: ' + e.from + ' | To: ' + e.to + ' | Subject: "' + e.subject + '" | Date: ' + new Date(e.date).toLocaleDateString();
-      if (e.preview) ctx += ' | ' + e.preview.substring(0, 150);
+    var scanCap = Math.min(window.aiEmailScanCache.length, 30);
+    ctx += '\nSCANNED EMAILS (' + scanCap + ' of ' + window.aiEmailScanCache.length + ' from mailbox):\n';
+    for (var i = 0; i < scanCap; i++) {
+      var e = window.aiEmailScanCache[i];
+      ctx += '  From: ' + e.from + ' | To: ' + e.to + ' | "' + e.subject + '" | ' + new Date(e.date).toLocaleDateString();
+      if (e.preview) ctx += ' | ' + e.preview.substring(0, 80);
       ctx += '\n';
-    });
+    }
   }
   return ctx;
 }
