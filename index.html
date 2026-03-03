@@ -4327,7 +4327,7 @@ function renderTable() {
 
   updateBulkBar();
   document.getElementById('companyCount').textContent = companies.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain) && !blockedDomains.has(c.domain)).length;
-  updateViewTitleCount();
+  updateViewTitleCount(totalCount);
 }
 
 function updateStats() {
