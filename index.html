@@ -1324,6 +1324,10 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <input type="text" id="composeTo" autocomplete="off" placeholder="Search contacts or type email..." oninput="composeToSearch(this.value)" onfocus="composeToSearch(this.value)" onblur="setTimeout(function(){document.getElementById('composeToDropdown').style.display='none'},180)">
       <div class="compose-to-dropdown" id="composeToDropdown" style="display:none"></div>
     </div>
+    <div class="compose-field" id="composeCcField" style="display:none">
+      <label>CC</label>
+      <input type="text" id="composeCc" placeholder="CC recipients" readonly>
+    </div>
     <div class="compose-field"><label>Subject</label><input type="text" id="composeSubject" placeholder="Subject"></div>
   </div>
   <!-- AI Prompt Bar -->
@@ -1361,6 +1365,10 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <button class="ev-action-btn" onclick="replyFromViewer()" title="Reply">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/></svg>
           Reply
+        </button>
+        <button class="ev-action-btn" onclick="replyAllFromViewer()" title="Reply All">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 00-4-4H4"/><polyline points="13 17 8 12 13 7" opacity="0.5"/></svg>
+          Reply All
         </button>
         <button class="ev-action-btn" onclick="openInOutlook()" title="Open in Outlook">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
@@ -7240,6 +7248,8 @@ let currentViewerFromName = '';
 let currentViewerDate = '';
 let currentViewerBodyText = '';
 let currentViewerBodyHtml = '';
+let currentViewerToRecipients = [];
+let currentViewerCcRecipients = [];
 let emailBodyCache = {}; // { messageId: { subject, from, date, plainText } } — grows as emails are opened
 
 async function openEmailViewer(messageId) {
@@ -7283,9 +7293,11 @@ async function openEmailViewer(messageId) {
     document.getElementById('evAvatar').textContent = initials;
     document.getElementById('evFrom').innerHTML = esc(fromName || fromAddr) + (fromName ? ' <span>' + esc(fromAddr) + '</span>' : '');
 
-    // To + CC
-    const toNames = (msg.toRecipients || []).map(r => esc(r.emailAddress?.name || r.emailAddress?.address || '')).join(', ');
-    const ccNames = (msg.ccRecipients || []).map(r => esc(r.emailAddress?.name || r.emailAddress?.address || '')).join(', ');
+    // To + CC — store for Reply All
+    currentViewerToRecipients = (msg.toRecipients || []).map(r => ({ name: r.emailAddress?.name || '', address: r.emailAddress?.address || '' }));
+    currentViewerCcRecipients = (msg.ccRecipients || []).map(r => ({ name: r.emailAddress?.name || '', address: r.emailAddress?.address || '' }));
+    const toNames = currentViewerToRecipients.map(r => esc(r.name || r.address)).join(', ');
+    const ccNames = currentViewerCcRecipients.map(r => esc(r.name || r.address)).join(', ');
     let toHtml = 'to ' + toNames;
     if (ccNames) toHtml += ', <strong>CC:</strong> ' + ccNames;
     document.getElementById('evTo').innerHTML = toHtml;
@@ -7373,6 +7385,8 @@ function closeEmailViewer() {
   currentViewerDate = '';
   currentViewerBodyText = '';
   currentViewerBodyHtml = '';
+  currentViewerToRecipients = [];
+  currentViewerCcRecipients = [];
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && currentViewerMsgId) closeEmailViewer();
@@ -7396,6 +7410,30 @@ function replyFromViewer() {
   var quoteHeader = '\n\nOn ' + quotedDate + ', ' + senderLabel + ' wrote:\n';
   var quotedLines = quotedBody.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
   openCompose(contactEmail, ctName, reSubject, msgId, quoteHeader + quotedLines, quotedHtml);
+}
+
+function replyAllFromViewer() {
+  if (!currentViewerMsgId) return;
+  const subject = document.getElementById('evSubject').textContent || '';
+  const msgId = currentViewerMsgId;
+  const fromName = currentViewerFromName || currentViewerFromEmail;
+  const senderLabel = currentViewerFromName ? currentViewerFromName + ' <' + currentViewerFromEmail + '>' : currentViewerFromEmail;
+  const quotedDate = currentViewerDate;
+  const quotedBody = currentViewerBodyText;
+  const quotedHtml = currentViewerBodyHtml;
+  // Collect all To recipients (the sender + original To list minus current user)
+  var allTo = [{ name: fromName, address: currentViewerFromEmail }];
+  currentViewerToRecipients.forEach(function(r) {
+    if (r.address && r.address.toLowerCase() !== currentViewerFromEmail.toLowerCase()) {
+      allTo.push(r);
+    }
+  });
+  var ccList = currentViewerCcRecipients.slice();
+  closeEmailViewer();
+  var reSubject = subject.startsWith('Re:') ? subject : 'Re: ' + subject;
+  var quoteHeader = '\n\nOn ' + quotedDate + ', ' + senderLabel + ' wrote:\n';
+  var quotedLines = quotedBody.trim().split('\n').map(function(l) { return '> ' + l; }).join('\n');
+  openCompose(allTo[0].address, allTo[0].name, reSubject, msgId, quoteHeader + quotedLines, quotedHtml, allTo, ccList);
 }
 
 function openInOutlook() {
@@ -7427,14 +7465,42 @@ let composeReplyToId = null;
 var composePopupState = 'normal'; // 'normal', 'fullscreen', 'minimized'
 
 let composeOriginalBodyHtml = '';
+let composeIsReplyAll = false;
+let composeReplyAllTo = [];
+let composeReplyAllCc = [];
 
-function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml) {
+function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml, replyAllTo, replyAllCc) {
   composeReplyToId = replyId || null;
   composeOriginalBodyHtml = originalHtml || '';
+  composeIsReplyAll = !!(replyAllTo && replyAllTo.length > 0);
+  composeReplyAllTo = replyAllTo || [];
+  composeReplyAllCc = replyAllCc || [];
+
   var toEl = document.getElementById('composeTo');
-  toEl.value = toName ? toName + ' <' + toEmail + '>' : toEmail;
-  toEl.dataset.email = toEmail;
-  toEl.readOnly = !!toEmail;
+  var ccField = document.getElementById('composeCcField');
+  var ccEl = document.getElementById('composeCc');
+
+  if (composeIsReplyAll && composeReplyAllTo.length > 0) {
+    // Show all To recipients for Reply All
+    toEl.value = composeReplyAllTo.map(function(r) { return r.name ? r.name + ' <' + r.address + '>' : r.address; }).join('; ');
+    toEl.dataset.email = composeReplyAllTo.map(function(r) { return r.address; }).join(';');
+    toEl.readOnly = true;
+    // Show CC field if there are CC recipients
+    if (composeReplyAllCc.length > 0) {
+      ccEl.value = composeReplyAllCc.map(function(r) { return r.name ? r.name + ' <' + r.address + '>' : r.address; }).join('; ');
+      ccField.style.display = '';
+    } else {
+      ccEl.value = '';
+      ccField.style.display = 'none';
+    }
+  } else {
+    toEl.value = toName ? toName + ' <' + toEmail + '>' : toEmail;
+    toEl.dataset.email = toEmail;
+    toEl.readOnly = !!toEmail;
+    ccEl.value = '';
+    ccField.style.display = 'none';
+  }
+
   document.getElementById('composeSubject').value = subject || '';
   document.getElementById('composeAIPrompt').value = '';
   document.getElementById('composeToDropdown').style.display = 'none';
@@ -7450,7 +7516,7 @@ function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml
 
   document.getElementById('composeSendStatus').textContent = '';
   document.getElementById('composeSendBtn').disabled = false;
-  document.getElementById('composeTitle').textContent = replyId ? 'Reply' : 'New Email';
+  document.getElementById('composeTitle').textContent = composeIsReplyAll ? 'Reply All' : (replyId ? 'Reply' : 'New Email');
   composeSetState('normal');
   var popup = document.getElementById('composePopup');
   popup.classList.add('active');
@@ -7469,6 +7535,9 @@ function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml
 function openComposeNew() {
   composeReplyToId = null;
   composeOriginalBodyHtml = '';
+  composeIsReplyAll = false;
+  composeReplyAllTo = [];
+  composeReplyAllCc = [];
   var toEl = document.getElementById('composeTo');
   toEl.value = '';
   toEl.dataset.email = '';
@@ -7476,6 +7545,8 @@ function openComposeNew() {
   document.getElementById('composeSubject').value = '';
   document.getElementById('composeAIPrompt').value = '';
   document.getElementById('composeToDropdown').style.display = 'none';
+  document.getElementById('composeCcField').style.display = 'none';
+  document.getElementById('composeCc').value = '';
 
   var sig = getEmailSignature();
   document.getElementById('composeBody').value = sig ? '\n\n' + sig : '';
@@ -7661,13 +7732,13 @@ async function sendComposedEmail() {
     var resp;
 
     if (composeReplyToId) {
-      // Use Graph API reply endpoint for proper email threading
-      // Send everything the user sees (their text + signature) as the comment
+      // Use Graph API reply/replyAll endpoint for proper email threading
       // Extract text above the quoted section (user's reply + signature)
       var quoteMarker2 = fullBody.indexOf('\n\nOn ');
       var commentText = quoteMarker2 > -1 ? fullBody.substring(0, quoteMarker2).trim() : fullBody.trim();
       var commentHtml = commentText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-      resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeReplyToId + '/reply', {
+      var replyEndpoint = composeIsReplyAll ? '/replyAll' : '/reply';
+      resp = await fetch('https://graph.microsoft.com/v1.0/me/messages/' + composeReplyToId + replyEndpoint, {
         method: 'POST', headers: headers,
         body: JSON.stringify({ comment: commentHtml })
       });
