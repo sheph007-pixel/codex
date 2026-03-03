@@ -6185,27 +6185,59 @@ async function showCloudVersionHistory() {
     listEl.innerHTML = '';
     listEl.style.display = 'block';
 
+    status.textContent = 'Found ' + versions.length + ' version(s). Loading details...';
+
     for (const v of versions) {
       const dt = new Date(v.lastModifiedDateTime);
       const dateStr = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
       const sizeStr = v.size ? Math.round(v.size / 1024) + ' KB' : '';
       const row = document.createElement('div');
       row.style.cssText = 'padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;';
-      row.innerHTML = '<div><strong>' + dateStr + '</strong><span style="color:var(--text2);margin-left:8px;font-size:12px">' + sizeStr + '</span></div><button class="btn btn-ghost btn-sm" style="font-size:11px" data-vid="' + v.id + '" data-fid="' + fileId + '">Restore this version</button>';
+      // Preview: download version to show blocked/domain counts
+      let detailHtml = '<span class="ver-detail" style="color:var(--text2);font-size:11px;margin-left:6px">loading...</span>';
+      row.innerHTML = '<div><strong>' + dateStr + '</strong><span style="color:var(--text2);margin-left:8px;font-size:12px">' + sizeStr + '</span>' + detailHtml + '</div><button class="btn btn-ghost btn-sm" style="font-size:11px" data-vid="' + v.id + '" data-fid="' + fileId + '">Restore this version</button>';
       row.querySelector('button').addEventListener('click', async function(e) {
         e.stopPropagation();
         await restoreCloudVersion(fileId, v.id, dateStr);
       });
-      // Highlight rows from before this weekend (likely the good data)
-      const friday = new Date();
-      friday.setDate(friday.getDate() - (friday.getDay() + 2) % 7); // last Friday
-      friday.setHours(23, 59, 59);
-      if (dt <= friday) {
-        row.style.background = 'rgba(76,175,80,0.1)';
-        row.style.borderLeft = '3px solid var(--green)';
-      }
       listEl.appendChild(row);
+
+      // Async: fetch version content to show blocked/domain counts
+      (async (rowEl, ver) => {
+        try {
+          const vResp = await fetch(
+            'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions/' + ver.id + '/content',
+            { headers: { 'Authorization': 'Bearer ' + token } }
+          );
+          if (!vResp.ok) { rowEl.querySelector('.ver-detail').textContent = '(failed to load)'; return; }
+          const data = await vResp.json();
+          const bl = data.settings && data.settings.blocked_domains ? data.settings.blocked_domains.length : 0;
+          const domains = data.domainData ? Object.keys(data.domainData).length : 0;
+          const ratio = domains > 0 ? bl / domains : 0;
+          const detailEl = rowEl.querySelector('.ver-detail');
+          detailEl.textContent = bl + ' blocked / ' + domains + ' domains';
+          // Highlight: green = healthy, red = all blocked (corruption), grey = empty
+          if (bl === 0) {
+            detailEl.style.color = 'var(--text2)';
+            rowEl.style.opacity = '0.5';
+          } else if (ratio >= 0.9) {
+            detailEl.style.color = 'var(--red)';
+            detailEl.textContent += ' (ALL blocked — corrupted)';
+            rowEl.style.background = 'rgba(244,67,54,0.05)';
+            rowEl.style.borderLeft = '3px solid var(--red)';
+          } else {
+            detailEl.style.color = 'var(--green)';
+            detailEl.textContent += ' ✓';
+            rowEl.style.background = 'rgba(76,175,80,0.1)';
+            rowEl.style.borderLeft = '3px solid var(--green)';
+          }
+        } catch(e) {
+          rowEl.querySelector('.ver-detail').textContent = '(error)';
+        }
+      })(row, v);
     }
+
+    status.textContent = 'Found ' + versions.length + ' version(s). Green = healthy, Red = corrupted. Click to restore:';
   } catch(e) {
     status.textContent = 'Error loading versions: ' + e.message;
     status.style.color = 'var(--red)';
@@ -6261,22 +6293,23 @@ async function restoreCloudVersion(fileId, versionId, dateLabel) {
   }
 }
 
-// Automatically recover blocked domains from OneDrive version history
-// when the current backup has lost them (e.g. due to a bug that cleared the list).
+// Automatically recover blocked domains from OneDrive version history.
+// Looks for the best version: one where blocked domains is > 0 but NOT nearly
+// all domains (which would indicate a corruption bug, not real user data).
 async function autoRecoverBlockedDomains() {
   if (blockedDomains.size > 0) return; // nothing to recover
   if (!currentAccount) return;
   console.log('Auto-recovery: blocked domains list is empty — checking OneDrive version history...');
   try {
     const token = await getCloudToken();
-    if (!token) return;
+    if (!token) { console.warn('Auto-recovery: no token'); return; }
 
     // Get file metadata
     const metaResp = await fetch(
       'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE,
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
-    if (!metaResp.ok) return;
+    if (!metaResp.ok) { console.warn('Auto-recovery: file metadata failed HTTP ' + metaResp.status); return; }
     const fileMeta = await metaResp.json();
     const fileId = fileMeta.id;
 
@@ -6285,11 +6318,20 @@ async function autoRecoverBlockedDomains() {
       'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions',
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
-    if (!versResp.ok) return;
+    if (!versResp.ok) { console.warn('Auto-recovery: versions failed HTTP ' + versResp.status); return; }
     const versData = await versResp.json();
-    const versions = (versData.value || []).sort((a, b) => (b.size || 0) - (a.size || 0));
+    // Sort by date, newest first
+    const versions = (versData.value || []).sort((a, b) => new Date(b.lastModifiedDateTime) - new Date(a.lastModifiedDateTime));
 
-    // Try versions from largest to smallest — the one with blocked domains will be bigger
+    console.log('Auto-recovery: found ' + versions.length + ' versions to check');
+
+    // Scan all versions and pick the best one:
+    // - Has blocked domains > 0
+    // - Blocked count is NOT >= 90% of total domains (that was a bug state)
+    let bestVersion = null;
+    let bestBlocked = 0;
+    let bestDate = '';
+
     for (const v of versions) {
       try {
         const vResp = await fetch(
@@ -6299,30 +6341,48 @@ async function autoRecoverBlockedDomains() {
         if (!vResp.ok) continue;
         const data = await vResp.json();
         const bl = data.settings && data.settings.blocked_domains ? data.settings.blocked_domains : [];
-        if (bl.length > 0) {
-          console.log('Auto-recovery: found ' + bl.length + ' blocked domains in version ' + v.id + ' from ' + v.lastModifiedDateTime);
-          for (const d of bl) blockedDomains.add(d);
-          saveBlockedDomains();
-          // Also restore other settings from this version if they're richer
-          if (data.settings) applyCloudSettings(data);
-          buildCompaniesFromDomainMap();
-          renderTable();
-          updateStats();
-          updateBlockedCount();
-          persistData();
-          renderBlockedDomainsList();
-          // Show a notification banner
-          setSyncBadge('success', 'Recovered ' + bl.length + ' blocked domains');
-          alert('Recovered ' + bl.length + ' blocked domains from OneDrive version history!');
-          console.log('Auto-recovery: SUCCESS — restored ' + blockedDomains.size + ' blocked domains');
-          return;
+        const totalDomains = data.domainData ? Object.keys(data.domainData).length : 0;
+        const ratio = totalDomains > 0 ? bl.length / totalDomains : 0;
+
+        console.log('Auto-recovery: version ' + v.id + ' from ' + v.lastModifiedDateTime + ' — ' + bl.length + ' blocked / ' + totalDomains + ' total (' + Math.round(ratio * 100) + '%)');
+
+        // Skip versions where everything is blocked (bug state) or nothing is blocked
+        if (bl.length === 0) continue;
+        if (totalDomains > 0 && ratio >= 0.9) {
+          console.log('Auto-recovery: skipping version — ' + Math.round(ratio * 100) + '% blocked looks like corruption');
+          continue;
+        }
+
+        // Pick the version with the most blocked domains (that isn't corrupted)
+        if (bl.length > bestBlocked) {
+          bestBlocked = bl.length;
+          bestVersion = data;
+          bestDate = v.lastModifiedDateTime;
         }
       } catch(vErr) {
         console.warn('Auto-recovery: failed to read version ' + v.id + ':', vErr.message);
         continue;
       }
     }
-    console.log('Auto-recovery: no version with blocked domains found in history');
+
+    if (bestVersion) {
+      const bl = bestVersion.settings.blocked_domains;
+      console.log('Auto-recovery: BEST version from ' + bestDate + ' with ' + bl.length + ' blocked domains');
+      for (const d of bl) blockedDomains.add(d);
+      saveBlockedDomains();
+      applyCloudSettings(bestVersion);
+      buildCompaniesFromDomainMap();
+      renderTable();
+      updateStats();
+      updateBlockedCount();
+      persistData();
+      renderBlockedDomainsList();
+      setSyncBadge('success', 'Recovered ' + bl.length + ' blocked domains');
+      alert('Recovered ' + bl.length + ' blocked domains from OneDrive backup (version from ' + new Date(bestDate).toLocaleDateString() + ')');
+      console.log('Auto-recovery: SUCCESS — restored ' + blockedDomains.size + ' blocked domains');
+    } else {
+      console.log('Auto-recovery: no suitable version found in history (all were either empty or fully blocked)');
+    }
   } catch(e) {
     console.warn('Auto-recovery: error:', e);
   }
