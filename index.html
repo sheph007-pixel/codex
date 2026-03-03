@@ -2616,6 +2616,16 @@ function gatherSyncPayload() {
 async function saveToCloud() {
   if (cloudSyncInProgress) return;
   if (!currentAccount) return;
+
+  // Safety guard: don't overwrite cloud if we have suspiciously few companies
+  // This prevents a corrupted local state from destroying the cloud backup
+  var currentCompanyCount = companies.length;
+  var currentDomainCount = Object.keys(domainMap).length;
+  if (currentDomainCount > 0 && currentCompanyCount <= 2 && currentDomainCount > 50) {
+    console.warn('Cloud save BLOCKED: only ' + currentCompanyCount + ' companies from ' + currentDomainCount + ' domains — likely corrupted state');
+    return;
+  }
+
   cloudSyncInProgress = true;
   setSyncBadge('scanning', 'Saving...');
   const saveStart = Date.now();
@@ -2789,6 +2799,14 @@ function applyCloudDomainData(data) {
       // v2 format: merge full ID arrays
       if (d.sentIds && d.sentIds.length > 0) { for (const id of d.sentIds) entry.sentIds.add(id); }
       if (d.receivedIds && d.receivedIds.length > 0) { for (const id of d.receivedIds) entry.receivedIds.add(id); }
+      // v3 format: no ID arrays, only counts — generate synthetic placeholder IDs
+      // so buildCompaniesFromDomainMap() doesn't skip these domains (uniqueSent > 0 check)
+      if (!d.sentIds && d.sent > 0 && entry.sentIds.size === 0) {
+        for (var si = 0; si < d.sent; si++) entry.sentIds.add('cloud_' + key + '_s_' + si);
+      }
+      if (!d.receivedIds && d.received > 0 && entry.receivedIds.size === 0) {
+        for (var ri = 0; ri < d.received; ri++) entry.receivedIds.add('cloud_' + key + '_r_' + ri);
+      }
       // Only set dates from cloud if this domain is NEW locally.
       // If local already has data from a real scan, local dates are more accurate.
       if (isNew) {
@@ -2801,16 +2819,27 @@ function applyCloudDomainData(data) {
         const le = email.toLowerCase();
         const isNewContact = !entry.contacts[le];
         if (isNewContact) {
+          // v3 format: contacts have c.sent/c.received counts, not c.sentIds/c.receivedIds arrays
+          var cSentSet = new Set(c.sentIds || []);
+          var cRecvSet = new Set(c.receivedIds || []);
+          if (!c.sentIds && c.sent > 0) { for (var csi = 0; csi < c.sent; csi++) cSentSet.add('cloud_' + le + '_s_' + csi); }
+          if (!c.receivedIds && c.received > 0) { for (var cri = 0; cri < c.received; cri++) cRecvSet.add('cloud_' + le + '_r_' + cri); }
           entry.contacts[le] = {
             name: c.name, email: le,
-            sentIds: new Set(c.sentIds || []),
-            receivedIds: new Set(c.receivedIds || []),
+            sentIds: cSentSet,
+            receivedIds: cRecvSet,
             lastDate: c.lastDate ? new Date(c.lastDate) : null
           };
         } else {
           if (c.sentIds) { for (const id of c.sentIds) entry.contacts[le].sentIds.add(id); }
           if (c.receivedIds) { for (const id of c.receivedIds) entry.contacts[le].receivedIds.add(id); }
-          // Only set contact date from cloud if it's a new contact
+          // v3: if existing contact has empty sets, fill from counts
+          if (!c.sentIds && c.sent > 0 && entry.contacts[le].sentIds.size === 0) {
+            for (var ecsi = 0; ecsi < c.sent; ecsi++) entry.contacts[le].sentIds.add('cloud_' + le + '_s_' + ecsi);
+          }
+          if (!c.receivedIds && c.received > 0 && entry.contacts[le].receivedIds.size === 0) {
+            for (var ecri = 0; ecri < c.received; ecri++) entry.contacts[le].receivedIds.add('cloud_' + le + '_r_' + ecri);
+          }
         }
       }
     }
@@ -3811,6 +3840,7 @@ async function onSignedIn() {
   // ── FAST STARTUP: Local first, cloud merge in background ──
   // Step 1: Load local cache INSTANTLY (same browser = fast)
   let hasData = false;
+  let cloudOnlyRestore = false;
   const cached = await loadPersistedData();
   const hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
   if (hasLocalData) {
@@ -3878,7 +3908,12 @@ async function onSignedIn() {
         const totalDomains = Object.keys(domainMap).length;
         if (totalDomains > 0 && !hasData) {
           // First time on this browser — cloud had data, local didn't
+          // Force full rescan so real email IDs replace synthetic cloud placeholders
+          fullScanDone = false;
+          deltaLink = null;
+          seenMsgIds = new Set();
           hasData = true;
+          cloudOnlyRestore = true;
           buildCompaniesFromDomainMap();
           renderTableHeader();
           resolveCompanyNames();
@@ -3914,7 +3949,13 @@ async function onSignedIn() {
   updateLastScanLabel();
 
   // Step 3: Email scan — only ADDS new emails, never removes existing data
-  if (hasData) {
+  if (cloudOnlyRestore) {
+    // Cloud-only restore: need full rescan to get real email IDs (cloud v3 only has counts)
+    // NOTE: don't pass forceFullScan=true — that clears domainMap. We already set
+    // fullScanDone=false + deltaLink=null so it'll do a full scan while keeping cloud data.
+    console.log('Startup: cloud-only restore detected — running full email rescan');
+    await scanOutlookEmails();
+  } else if (hasData) {
     // Have data already — scan for new emails in background (fast, incremental)
     scanOutlookEmails();
   } else {
