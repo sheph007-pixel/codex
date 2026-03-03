@@ -3383,7 +3383,7 @@ async function aiImproveNames() {
 let deltaSupported = true; // assume delta works until proven otherwise
 
 async function fetchEmailsProgressively(token, useDelta) {
-  const headers = graphHeaders(token);
+  let headers = graphHeaders(token);
   const MSG_SELECT = '$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime';
 
   // Decide URL: delta sync or fallback timestamp polling
@@ -3439,6 +3439,19 @@ async function fetchEmailsProgressively(token, useDelta) {
         throw e;
       }
       clearTimeout(timeout);
+
+      // Handle 401 (expired token) — refresh token and retry once
+      if (resp.status === 401 && attempt < MAX_RETRIES) {
+        console.warn('Graph API returned 401 (token expired), refreshing token and retrying...');
+        updateScanBanner('Session expired — refreshing authentication...');
+        try {
+          const newToken = await getAccessToken();
+          headers['Authorization'] = 'Bearer ' + newToken;
+        } catch(authErr) {
+          throw new Error('Session expired and re-authentication failed. Please sign out and sign back in.');
+        }
+        continue;
+      }
 
       // Retry on transient server errors (429, 5xx) with exponential backoff
       if (TRANSIENT_CODES.includes(resp.status) && attempt < MAX_RETRIES) {
@@ -3626,6 +3639,8 @@ async function scanOutlookEmails(forceFullScan) {
       alert('Too many requests — Microsoft is rate-limiting your account. Please wait a few minutes before syncing again.');
     } else if (msg.includes('Not signed in') || msg.includes('interaction_required')) {
       alert('Your session has expired. Please sign out and sign back in.');
+    } else if (msg.includes('401') || msg.includes('InvalidAuthenticationToken') || msg.includes('token is expired') || msg.includes('re-authentication failed')) {
+      alert('Your authentication token has expired. Please sign out and sign back in to reconnect.');
     } else {
       alert('Email scan failed: ' + msg);
     }
