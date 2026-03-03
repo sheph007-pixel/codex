@@ -120,13 +120,11 @@ body{min-height:100vh;overflow-x:hidden}
 .view-title{font-size:22px;font-weight:700;color:var(--text);margin:0;letter-spacing:-.3px}
 .view-title-count{font-size:14px;font-weight:600;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:2px 10px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.type-filter-tabs{display:flex;gap:6px;padding:0 24px;margin-bottom:12px}
-.type-tab{padding:8px 18px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:.15s;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
-.type-tab:hover{background:var(--surface2);color:var(--text);border-color:var(--text2)}
-.type-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
-.type-tab.active:hover{background:#1557b0}
-.type-tab-count{font-size:11px;opacity:.8}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(60,64,67,.08)}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(60,64,67,.08);cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}
+.stat-card:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(26,115,232,.12)}
+.stat-card.active{border-color:var(--accent);background:rgba(26,115,232,.06);box-shadow:0 2px 8px rgba(26,115,232,.15)}
+.stat-card.active .stat-label{color:var(--accent)}
+.stat-card.active .stat-value{color:var(--accent)}
 .stat-card .stat-label{font-size:12px;color:var(--text2);font-weight:500}
 .stat-card .stat-value{font-size:26px;font-weight:700;letter-spacing:-.5px}
 .stat-card .stat-change{font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px}
@@ -829,29 +827,21 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <span class="view-title-count" id="viewTitleCount"></span>
       </div>
 
-      <!-- TYPE FILTER TABS -->
-      <div class="type-filter-tabs" id="typeFilterTabs">
-        <button class="type-tab active" data-type="all" onclick="filterByTypeTab('all',this)">All Companies</button>
-        <button class="type-tab" data-type="Lead" onclick="filterByTypeTab('Lead',this)">Leads <span class="type-tab-count" id="tabCountLead"></span></button>
-        <button class="type-tab" data-type="Current Client" onclick="filterByTypeTab('Current Client',this)">Existing Clients <span class="type-tab-count" id="tabCountCurrent"></span></button>
-        <button class="type-tab" data-type="Old Client" onclick="filterByTypeTab('Old Client',this)">Old Clients <span class="type-tab-count" id="tabCountOld"></span></button>
-      </div>
-
       <!-- STATS -->
       <div class="stats" id="statsSection">
-        <div class="stat-card">
+        <div class="stat-card active" data-type="all" onclick="filterByStatCard('all',this)">
           <span class="stat-label">Total Companies</span>
           <span class="stat-value" id="statCompanies">0</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" data-type="Lead" onclick="filterByStatCard('Lead',this)">
           <span class="stat-label">Leads</span>
           <span class="stat-value" id="statLeads">0</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" data-type="Current Client" onclick="filterByStatCard('Current Client',this)">
           <span class="stat-label">Existing Clients</span>
           <span class="stat-value" id="statExisting">0</span>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" data-type="Old Client" onclick="filterByStatCard('Old Client',this)">
           <span class="stat-label">Old Clients</span>
           <span class="stat-value" id="statOld">0</span>
         </div>
@@ -3807,12 +3797,6 @@ function updateStats() {
   document.getElementById('statExisting').textContent = existing.toLocaleString();
   document.getElementById('statOld').textContent = old.toLocaleString();
   // Update type filter tab counts
-  var tlEl = document.getElementById('tabCountLead');
-  var tcEl = document.getElementById('tabCountCurrent');
-  var toEl = document.getElementById('tabCountOld');
-  if (tlEl) tlEl.textContent = leads ? '(' + leads + ')' : '';
-  if (tcEl) tcEl.textContent = existing ? '(' + existing + ')' : '';
-  if (toEl) toEl.textContent = old ? '(' + old + ')' : '';
   // Update segment counts in sidebar
   const hot = active.filter(c => c.status === 'Hot').length;
   const warm = active.filter(c => c.status === 'Warm').length;
@@ -3869,16 +3853,22 @@ function filterByType(type, el) {
   if (el) el.classList.add('active');
   var titles = { all: 'All Types', Lead: 'Leads', 'Current Client': 'Existing Clients', 'Old Client': 'Old Clients' };
   setViewTitle(titles[type] || type, false);
+  syncStatCardActive(type);
   clearSelection();
   renderTable();
-  // Sync tab buttons
-  document.querySelectorAll('.type-tab').forEach(function(t) {
-    t.classList.toggle('active', t.dataset.type === type);
+}
+
+function syncStatCardActive(type) {
+  document.querySelectorAll('#statsSection .stat-card').forEach(function(c) {
+    c.classList.toggle('active', c.dataset.type === type);
   });
 }
 
-// Quick filter from top tabs — same as filterByType but lighter
-function filterByTypeTab(type, el) {
+function filterByStatCard(type, el) {
+  // If clicking the already-active card, reset to "all"
+  if (currentTypeFilter === type && type !== 'all') {
+    type = 'all';
+  }
   currentTypeFilter = type;
   currentFilter = 'all';
   tableShowAll = false;
@@ -3889,17 +3879,14 @@ function filterByTypeTab(type, el) {
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
-  // Update tab active states
-  document.querySelectorAll('.type-tab').forEach(function(t) {
-    t.classList.toggle('active', t.dataset.type === type);
-  });
-  // Sync sidebar
+  // Sync sidebar — highlight "All Companies"
   document.querySelectorAll('.sidebar-item').forEach(function(e) { e.classList.remove('active'); });
   document.querySelectorAll('.sidebar-item[data-group="segment"]').forEach(function(e) {
     if (e.textContent.trim().startsWith('All')) e.classList.add('active');
   });
   var titles = { all: 'All Companies', Lead: 'Leads', 'Current Client': 'Existing Clients', 'Old Client': 'Old Clients' };
   setViewTitle(titles[type] || type, type === 'all');
+  syncStatCardActive(type);
   clearSelection();
   renderTable();
 }
@@ -4222,10 +4209,7 @@ function filterByStatus(status, el) {
   if (el) el.classList.add('active');
   var titles = { all: 'All Companies', Hot: 'Hot (10+ emails received)', Warm: 'Warm (1-9 emails received)', Cold: 'Cold (no emails received)' };
   setViewTitle(titles[status] || status, status === 'all');
-  // Reset type tabs to "All"
-  document.querySelectorAll('.type-tab').forEach(function(t) {
-    t.classList.toggle('active', t.dataset.type === 'all');
-  });
+  syncStatCardActive('all');
   clearSelection();
   renderTable();
 }
