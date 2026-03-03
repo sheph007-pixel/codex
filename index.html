@@ -299,31 +299,32 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 /* ── FULL-PAGE COMPANY DETAIL ── */
 .detail-page{display:none;flex-direction:column;height:100%}
 .detail-page.active{display:flex}
-.dp-topbar{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.dp-topbar{display:flex;align-items:center;gap:12px;padding:10px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .dp-topbar-back{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--accent);cursor:pointer;font-size:13px;font-weight:500;font-family:inherit;padding:6px 10px;border-radius:6px;transition:.15s}
 .dp-topbar-back:hover{background:var(--surface2)}
 .dp-topbar-back svg{width:16px;height:16px}
-.dp-topbar-title{flex:1;font-size:15px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dp-topbar-close{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:34px;height:34px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;transition:.15s}
+.dp-topbar-close{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;width:34px;height:34px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;transition:.15s;margin-left:auto}
 .dp-topbar-close:hover{background:var(--surface2);color:var(--text)}
 .dp-topbar-close svg{width:16px;height:16px}
+.dp-company-banner{padding:20px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
 
 .dp-body{display:flex;flex:1;overflow:hidden}
 
 /* Left: company info + relationships */
 .dp-left{width:420px;min-width:320px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
-.dp-left-head{padding:20px 20px 0;flex-shrink:0}
-.dp-company-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.dp-co-logo{width:44px;height:44px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:16px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
+.dp-left-head{padding:0;flex-shrink:0}
+.dp-company-head{display:flex;align-items:center;gap:14px;margin-bottom:0}
+.dp-co-logo{width:48px;height:48px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:18px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
 .dp-co-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:4px;border-radius:inherit}
-.dp-co-info h2{font-size:22px;font-weight:700;letter-spacing:-.3px}
-.dp-co-info .dp-domain{font-size:11px;color:var(--text2)}
-.dp-co-meta{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
-.dp-co-type-row{margin-bottom:10px}
+.dp-co-info h2{font-size:24px;font-weight:700;letter-spacing:-.3px}
+.dp-co-info .dp-domain{font-size:12px;color:var(--text2)}
+.dp-banner-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:14px}
+.dp-co-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dp-co-type-row{display:inline-flex}
 .dp-co-type-row .cp-type-select{font-size:14px;padding:6px 14px;border-radius:8px;min-width:160px}
 .cp-type-select{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:11px;font-family:inherit;cursor:pointer;outline:none;transition:border-color .15s}
 .cp-type-select:hover,.cp-type-select:focus{border-color:var(--accent)}
-.dp-mini-stats-inline{display:flex;gap:14px;margin-bottom:10px;align-items:center}
+.dp-mini-stats-inline{display:flex;gap:14px;align-items:center}
 .dp-mini-stats-inline .dp-inline-stat{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px}
 .dp-mini-stats-inline .dp-inline-stat b{font-weight:700;font-size:13px}
 .dp-mini-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
@@ -972,9 +973,9 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
           All Companies
         </button>
-        <div class="dp-topbar-title" id="dpTopbarTitle"></div>
         <button class="dp-topbar-close" onclick="closePanel()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
+      <div class="dp-company-banner" id="dpCompanyBanner"></div>
       <div class="dp-body">
         <div class="dp-left">
           <div class="dp-left-head" id="dpLeftHead"></div>
@@ -5830,7 +5831,8 @@ function saveCompanyNameEdit(domain, el) {
   var comp = companies.find(function(c) { return c.domain === domain; });
   if (comp) {
     comp.name = newName;
-    document.getElementById('dpTopbarTitle').textContent = newName;
+    var topTitle = document.getElementById('dpTopbarTitle');
+    if (topTitle) topTitle.textContent = newName;
   }
   // Refresh sidebar company list
   if (typeof renderTable === 'function') renderTable();
@@ -5889,14 +5891,11 @@ function showCompanyPanel(id) {
   const offset = circumference - (c.score / 100) * circumference;
   const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
 
-  // Topbar
-  document.getElementById('dpTopbarTitle').textContent = c.name;
-
-  // Left head: company info with proposal star
+  // ── Full-width company banner ──
   var isStarredH = starredCompanies.has(c.domain);
   var dSafeH = c.domain.replace(/'/g, "\\'");
-  let headHtml = '<div class="dp-company-head">' +
-    '<div class="dp-co-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name, 44) + '</div>' +
+  let bannerHtml = '<div class="dp-company-head">' +
+    '<div class="dp-co-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name, 48) + '</div>' +
     '<div class="dp-co-info"><div style="display:flex;align-items:center;gap:6px"><h2 class="editable-name" style="margin:0;cursor:text" contenteditable="false" id="dpCompanyName" onclick="this.contentEditable=\'true\';this.focus()" onblur="saveCompanyNameEdit(\'' + esc(c.domain).replace(/'/g,"\\'") + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(c.name) + '</h2>' +
       '<svg class="edit-pencil-icon" onclick="var h=document.getElementById(\'dpCompanyName\');h.contentEditable=\'true\';h.focus()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="cursor:pointer;color:var(--text3);flex-shrink:0"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>' +
       '<button class="dp-star' + (isStarredH ? ' active' : '') + '" onclick="event.stopPropagation();toggleCompanyStar(\'' + dSafeH + '\');showCompanyPanel(' + c.id + ')" title="' + (isStarredH ? 'Remove from Proposals' : 'Add to Proposals') + '" style="font-size:18px">&#9733;</button></div>' +
@@ -5915,18 +5914,9 @@ function showCompanyPanel(id) {
     '</div>' +
   '</div>';
 
-  // Type dropdown — Lead / Current Client / Old Client
+  // Details row: type, stats, score, enrichment — all inline
   var detailType = getCompanyType(c.domain);
   var detailTypeClass = detailType === 'Current Client' ? 'badge-hot' : detailType === 'Old Client' ? 'badge-cold' : 'badge-warm';
-  headHtml += '<div class="dp-co-type-row">' +
-    '<select class="type-dropdown ' + detailTypeClass + '" onchange="setCompanyType(\'' + esc(c.domain) + '\',this.value)" style="font-size:13px;padding:5px 28px 5px 12px">' +
-      '<option value="Lead"' + (detailType === 'Lead' ? ' selected' : '') + '>Lead</option>' +
-      '<option value="Current Client"' + (detailType === 'Current Client' ? ' selected' : '') + '>Current Client</option>' +
-      '<option value="Old Client"' + (detailType === 'Old Client' ? ' selected' : '') + '>Old Client</option>' +
-    '</select>' +
-  '</div>';
-
-  // Enrichment info + AI populate
   var enr = enrichmentCache[c.domain] || {};
   var enrParts = [];
   if (enr.industry) enrParts.push('Industry: ' + esc(enr.industry));
@@ -5934,30 +5924,47 @@ function showCompanyPanel(id) {
   if (enr.employees) enrParts.push('Employees: ' + esc(enr.employees));
   if (enr.founded) enrParts.push('Founded: ' + esc(String(enr.founded)));
   var dSafeAI = c.domain.replace(/'/g, "\\'");
-  headHtml += '<div class="ai-populate-row">' +
-    '<div style="flex:1;font-size:11px;color:var(--text2)">' +
-      (enrParts.length ? enrParts.join(' &middot; ') : 'No enrichment data yet') +
+
+  bannerHtml += '<div class="dp-banner-row">' +
+    // Type dropdown
+    '<div class="dp-co-type-row">' +
+      '<select class="type-dropdown ' + detailTypeClass + '" onchange="setCompanyType(\'' + esc(c.domain) + '\',this.value,this)" style="font-size:13px;padding:5px 28px 5px 12px">' +
+        '<option value="Lead"' + (detailType === 'Lead' ? ' selected' : '') + '>Lead</option>' +
+        '<option value="Current Client"' + (detailType === 'Current Client' ? ' selected' : '') + '>Current Client</option>' +
+        '<option value="Old Client"' + (detailType === 'Old Client' ? ' selected' : '') + '>Old Client</option>' +
+      '</select>' +
     '</div>' +
-    '<button class="btn-ai" onclick="aiPopulateCompany(\'' + dSafeAI + '\')" title="AI researches and populates company data">' +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' +
-      'AI Populate' +
-    '</button>' +
+    '<div style="width:1px;height:20px;background:var(--border)"></div>' +
+    // Status + Score
+    '<div class="dp-co-meta">' +
+      '<span class="badge ' + (STATUS_CLASS[c.status] || '') + '">' + c.status + '</span>' +
+      '<div class="ai-score"><div class="score-ring" style="color:' + scoreColor + '"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="' + scoreColor + '" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + offset + '"/></svg>' + c.score + '</div></div>' +
+      '<span style="font-size:11px;color:var(--text2)">' + esc(c.lastActivity) + '</span>' +
+    '</div>' +
+    '<div style="width:1px;height:20px;background:var(--border)"></div>' +
+    // Stats
+    '<div class="dp-mini-stats-inline">' +
+      '<div class="dp-inline-stat"><b style="color:var(--accent2)">' + c.sent + '</b> Sent</div>' +
+      '<div class="dp-inline-stat"><b style="color:var(--green)">' + c.received + '</b> Received</div>' +
+      '<div class="dp-inline-stat"><b>' + (c.sent + c.received) + '</b> Total</div>' +
+    '</div>' +
+    '<div style="width:1px;height:20px;background:var(--border)"></div>' +
+    // AI Populate
+    '<div class="ai-populate-row" style="margin:0;flex:1">' +
+      '<div style="flex:1;font-size:11px;color:var(--text2)">' +
+        (enrParts.length ? enrParts.join(' &middot; ') : 'No enrichment data') +
+      '</div>' +
+      '<button class="btn-ai" onclick="aiPopulateCompany(\'' + dSafeAI + '\')" title="AI researches and populates company data">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' +
+        'AI Populate' +
+      '</button>' +
+    '</div>' +
   '</div>';
 
-  // Compact stats row + score + last activity
-  headHtml += '<div class="dp-co-meta">' +
-    '<span class="badge ' + (STATUS_CLASS[c.status] || '') + '">' + c.status + '</span>' +
-    '<div class="ai-score"><div class="score-ring" style="color:' + scoreColor + '"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="' + scoreColor + '" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + offset + '"/></svg>' + c.score + '</div></div>' +
-    '<span style="font-size:11px;color:var(--text2)">' + esc(c.lastActivity) + '</span>' +
-  '</div>';
+  document.getElementById('dpCompanyBanner').innerHTML = bannerHtml;
 
-  headHtml += '<div class="dp-mini-stats-inline">' +
-    '<div class="dp-inline-stat"><b style="color:var(--accent2)">' + c.sent + '</b> Sent</div>' +
-    '<div class="dp-inline-stat"><b style="color:var(--green)">' + c.received + '</b> Received</div>' +
-    '<div class="dp-inline-stat"><b>' + (c.sent + c.received) + '</b> Total</div>' +
-  '</div>';
-
-  document.getElementById('dpLeftHead').innerHTML = headHtml;
+  // Left head is now empty (contacts list starts directly)
+  document.getElementById('dpLeftHead').innerHTML = '';
 
   // Left panel tabs (Relationships / Files)
   currentLeftTab = 'relationships';
