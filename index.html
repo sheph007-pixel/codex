@@ -334,6 +334,11 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .dp-contact .dp-ct-avatar img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:inherit}
 .dp-contact .dp-ct-info{flex:1;min-width:0}
 .dp-contact .dp-ct-name{font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-contact:hover .edit-pencil-sm{opacity:.6!important}
+.edit-pencil-sm:hover{opacity:1!important;color:var(--accent)!important}
+.editable-name[contenteditable="true"],.editable-ct-name[contenteditable="true"]{outline:none;border-bottom:2px solid var(--accent);padding-bottom:1px;background:rgba(26,115,232,.06);border-radius:3px;padding:0 4px}
+.edit-pencil-icon{opacity:.4;transition:opacity .15s}
+.edit-pencil-icon:hover{opacity:1;color:var(--accent)!important}
 .dp-contact .dp-ct-email{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dp-contact .dp-ct-count{font-size:11px;color:var(--text2);flex-shrink:0;font-weight:600}
 .dp-star{background:none;border:none;cursor:pointer;font-size:15px;color:var(--border);padding:2px;transition:.15s;flex-shrink:0;line-height:1}
@@ -1993,6 +1998,41 @@ function saveCompanyNameCache() {
   } catch(e) {}
 }
 
+// Contact name overrides — manual edits by user persist here
+const contactNameOverrides = {}; // { "email": "Custom Name" }
+let contactNameDirty = false;
+function loadContactNameOverrides() {
+  try {
+    const raw = localStorage.getItem('relateflow_contact_names');
+    if (raw) Object.assign(contactNameOverrides, JSON.parse(raw));
+  } catch(e) {}
+}
+function saveContactNameOverrides() {
+  if (!contactNameDirty) return;
+  try {
+    localStorage.setItem('relateflow_contact_names', JSON.stringify(contactNameOverrides));
+    contactNameDirty = false;
+  } catch(e) {}
+}
+function getContactDisplayName(email, fallback) {
+  var le = email.toLowerCase();
+  if (contactNameOverrides[le]) return contactNameOverrides[le];
+  return fallback || email;
+}
+function setContactDisplayName(email, name) {
+  var le = email.toLowerCase();
+  contactNameOverrides[le] = name;
+  contactNameDirty = true;
+  saveContactNameOverrides();
+  // Also update domainMap in-memory
+  for (var domain in domainMap) {
+    if (domainMap[domain].contacts[le]) {
+      domainMap[domain].contacts[le].name = name;
+      break;
+    }
+  }
+}
+
 // Known brand corrections for common domains
 const KNOWN_BRANDS = {
   'github.com':'GitHub','linkedin.com':'LinkedIn','youtube.com':'YouTube',
@@ -2221,6 +2261,7 @@ function gatherSyncPayload() {
     column_config: columnConfig,
     custom_column_data: customColumnData,
     company_names: companyNameCache,
+    contact_names: contactNameOverrides,
     client_id: getClientId(),
     email_signature: getEmailSignature(),
   };
@@ -2387,6 +2428,11 @@ function applyCloudSettings(data) {
     Object.assign(companyNameCache, s.company_names);
     companyNameCacheDirty = true;
     saveCompanyNameCache();
+  }
+  if (s.contact_names && Object.keys(s.contact_names).length > 0) {
+    Object.assign(contactNameOverrides, s.contact_names);
+    contactNameDirty = true;
+    saveContactNameOverrides();
   }
   if (s.client_id) {
     localStorage.setItem('relateflow_client_id', s.client_id);
@@ -2619,12 +2665,20 @@ function ensureDomain(domain) {
 function ensureContact(domain, email, name) {
   ensureDomain(domain);
   const le = email.toLowerCase();
+  // If user manually overrode this contact's name, always use that
+  if (contactNameOverrides[le]) {
+    if (!domainMap[domain].contacts[le]) {
+      domainMap[domain].contacts[le] = { name: contactNameOverrides[le], email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null };
+    } else {
+      domainMap[domain].contacts[le].name = contactNameOverrides[le];
+    }
+    return;
+  }
   const formatted = formatContactName(name, le);
   if (!domainMap[domain].contacts[le]) {
     domainMap[domain].contacts[le] = { name: formatted, email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null };
   } else {
     const existing = domainMap[domain].contacts[le].name;
-    // Upgrade name if current one is just the email or worse quality
     if (existing === le || existing === email || (name && name !== email && existing === formatContactName(null, le))) {
       domainMap[domain].contacts[le].name = formatted;
     }
@@ -2882,10 +2936,130 @@ async function resolveCompanyNames() {
       if (changed) renderTable();
     }
     saveCompanyNameCache();
+    // After Clearbit lookups, run AI improvement for remaining poor names
+    setTimeout(function() { aiImproveNames(); }, 500);
   } catch(e) {
     console.warn('Company name lookup error:', e);
   } finally {
     nameLookupsRunning = false;
+  }
+}
+
+// ──────────────────────────────────────────────
+// AI NAME IMPROVEMENT — Title Case company names + proper contact names
+// ──────────────────────────────────────────────
+let aiNamesRunning = false;
+async function aiImproveNames() {
+  var apiKey = getAIKey();
+  if (!apiKey || aiNamesRunning) return;
+
+  // Collect company domains that still look like raw domain-derived names
+  var companyBatch = [];
+  for (var i = 0; i < companies.length && companyBatch.length < 20; i++) {
+    var c = companies[i];
+    // Skip if user manually set this name via companyNameCache from Clearbit
+    // But check if name still looks like a raw domain prefix (no spaces, all lowercase root, etc.)
+    var rawFallback = titleCase(c.domain.split('.')[0].replace(/[-_]/g, ' '));
+    if (c.name === rawFallback && !contactNameOverrides['__company__' + c.domain]) {
+      companyBatch.push({ domain: c.domain, currentName: c.name });
+    }
+  }
+
+  // Collect contacts that have poor names (look like email prefixes)
+  var contactBatch = [];
+  for (var domain in domainMap) {
+    var dm = domainMap[domain];
+    for (var email in dm.contacts) {
+      if (contactBatch.length >= 30) break;
+      if (contactNameOverrides[email]) continue; // User already overrode
+      var ct = dm.contacts[email];
+      var name = ct.name;
+      // Detect poor names: same as email, has dots/underscores, single word from email prefix
+      var prefix = email.split('@')[0];
+      var looksAuto = (name.toLowerCase() === prefix.toLowerCase()) ||
+                      (name.toLowerCase() === prefix.replace(/[._-]/g, ' ').toLowerCase()) ||
+                      (name === titleCase(prefix.replace(/[._-]/g, ' ')));
+      if (looksAuto) {
+        contactBatch.push({ email: email, currentName: name });
+      }
+    }
+  }
+
+  if (companyBatch.length === 0 && contactBatch.length === 0) return;
+
+  aiNamesRunning = true;
+  try {
+    var prompt = 'You are a data enrichment AI. Given domain names and email-derived contact names, return the BEST proper names.\n\n';
+    prompt += 'RULES:\n';
+    prompt += '- Company names: Convert domain to proper Title Case business name. e.g. "southviewmed" → "SouthView Med", "acme-corp" → "Acme Corp", "techsolutions" → "Tech Solutions"\n';
+    prompt += '- Contact names: Convert email-prefix-derived names to proper First Last format. e.g. "john.doe" → "John Doe", "Jsmith" → "J Smith"\n';
+    prompt += '- If you cannot determine a better name, return the current name unchanged.\n';
+    prompt += '- Return ONLY valid JSON, no markdown fences.\n\n';
+
+    if (companyBatch.length > 0) {
+      prompt += 'COMPANIES (domain → current name):\n';
+      companyBatch.forEach(function(c) { prompt += '  ' + c.domain + ' → "' + c.currentName + '"\n'; });
+    }
+    if (contactBatch.length > 0) {
+      prompt += '\nCONTACTS (email → current name):\n';
+      contactBatch.forEach(function(ct) { prompt += '  ' + ct.email + ' → "' + ct.currentName + '"\n'; });
+    }
+
+    prompt += '\nReturn JSON: { "companies": { "domain.com": "Proper Name", ... }, "contacts": { "email@example.com": "First Last", ... } }';
+
+    var provider = getEffectiveProvider();
+    var provKey = provider === 'anthropic' ? getAnthropicKey() : getOpenAIKey();
+    if (!provKey) provKey = apiKey;
+    var reply = '';
+    if (provider === 'anthropic') {
+      reply = await callAnthropicAPI(provKey, prompt, [{ role: 'user', content: 'Improve these names now. Return only JSON.' }]);
+    } else {
+      reply = await callOpenAIAPI(provKey, prompt, [{ role: 'user', content: 'Improve these names now. Return only JSON.' }]);
+    }
+
+    // Parse JSON from response
+    var jsonStr = reply.trim();
+    var fenceStart = jsonStr.indexOf('{');
+    var fenceEnd = jsonStr.lastIndexOf('}');
+    if (fenceStart > -1 && fenceEnd > fenceStart) jsonStr = jsonStr.substring(fenceStart, fenceEnd + 1);
+    var result = JSON.parse(jsonStr);
+
+    // Apply company name improvements
+    var changed = false;
+    if (result.companies) {
+      for (var dom in result.companies) {
+        var newName = result.companies[dom];
+        if (newName && newName.trim()) {
+          companyNameCache[dom] = newName.trim();
+          companyNameCacheDirty = true;
+          var comp = companies.find(function(c) { return c.domain === dom; });
+          if (comp) { comp.name = newName.trim(); changed = true; }
+        }
+      }
+      if (changed) { saveCompanyNameCache(); renderTable(); }
+    }
+
+    // Apply contact name improvements
+    if (result.contacts) {
+      for (var em in result.contacts) {
+        var newCtName = result.contacts[em];
+        if (newCtName && newCtName.trim() && newCtName.trim() !== em) {
+          var le = em.toLowerCase();
+          // Don't set as manual override — these are AI suggestions, can be overridden later
+          for (var d in domainMap) {
+            if (domainMap[d].contacts[le]) {
+              domainMap[d].contacts[le].name = newCtName.trim();
+              break;
+            }
+          }
+        }
+      }
+    }
+    console.log('AI name improvement done:', result);
+  } catch(e) {
+    console.warn('AI name improvement error:', e);
+  } finally {
+    aiNamesRunning = false;
   }
 }
 
@@ -5162,6 +5336,55 @@ let panelState = null; // null | { view:'company', companyId } | { view:'contact
 
 function openDetail(id) { showCompanyPanel(id); }
 
+// Save edited company name
+function saveCompanyNameEdit(domain, el) {
+  el.contentEditable = 'false';
+  var newName = el.textContent.trim();
+  if (!newName) return;
+  // Save to cache
+  companyNameCache[domain] = newName;
+  companyNameCacheDirty = true;
+  saveCompanyNameCache();
+  // Update in-memory company object
+  var comp = companies.find(function(c) { return c.domain === domain; });
+  if (comp) {
+    comp.name = newName;
+    document.getElementById('dpTopbarTitle').textContent = newName;
+  }
+  // Refresh sidebar company list
+  if (typeof renderTable === 'function') renderTable();
+}
+
+// Save edited contact name from left list
+function saveContactNameEdit(el) {
+  el.contentEditable = 'false';
+  var newName = el.textContent.trim();
+  var email = el.dataset.email;
+  if (!newName || !email) return;
+  setContactDisplayName(email, newName);
+  // Refresh the right panel if this contact is selected
+  if (currentContactOverlay && currentContactOverlay.email === email.toLowerCase()) {
+    var h2 = document.querySelector('#dpRightHead .editable-name[data-email="' + email + '"]');
+    if (h2) h2.textContent = newName;
+  }
+}
+
+// Save edited contact name from right panel head
+function saveContactNameEditHead(el) {
+  el.contentEditable = 'false';
+  var newName = el.textContent.trim();
+  var email = el.dataset.email;
+  var domain = el.dataset.domain;
+  var cid = el.dataset.cid;
+  if (!newName || !email) return;
+  setContactDisplayName(email, newName);
+  // Also update left panel contact list
+  var leftEl = document.querySelector('#dpLeftContacts .editable-ct-name[data-email="' + email + '"]');
+  if (leftEl) leftEl.textContent = newName;
+  // Refresh the full panel to update initials etc
+  if (cid) showCompanyPanel(parseInt(cid));
+}
+
 function showCompanyPanel(id) {
   const c = companies.find(x => x.id === id);
   if (!c) return;
@@ -5185,7 +5408,8 @@ function showCompanyPanel(id) {
   var dSafeH = c.domain.replace(/'/g, "\\'");
   let headHtml = '<div class="dp-company-head">' +
     '<div class="dp-co-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name, 44) + '</div>' +
-    '<div class="dp-co-info"><div style="display:flex;align-items:center;gap:6px"><h2 style="margin:0">' + esc(c.name) + '</h2>' +
+    '<div class="dp-co-info"><div style="display:flex;align-items:center;gap:6px"><h2 class="editable-name" style="margin:0;cursor:text" contenteditable="false" id="dpCompanyName" onclick="this.contentEditable=\'true\';this.focus()" onblur="saveCompanyNameEdit(\'' + esc(c.domain).replace(/'/g,"\\'") + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(c.name) + '</h2>' +
+      '<svg class="edit-pencil-icon" onclick="var h=document.getElementById(\'dpCompanyName\');h.contentEditable=\'true\';h.focus()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="cursor:pointer;color:var(--text3);flex-shrink:0"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>' +
       '<button class="dp-star' + (isStarredH ? ' active' : '') + '" onclick="event.stopPropagation();toggleCompanyStar(\'' + dSafeH + '\');showCompanyPanel(' + c.id + ')" title="' + (isStarredH ? 'Remove from Proposals' : 'Add to Proposals') + '" style="font-size:18px">&#9733;</button></div>' +
       '<div class="dp-domain">' +
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
@@ -5264,7 +5488,9 @@ function showCompanyPanel(id) {
     ctHtml += '<div class="dp-contact" data-email="' + esc(ct.email) + '" onclick="selectContact(\'' + eSafe + '\',\'' + dSafe + '\',' + c.id + ')">' +
       '<div class="dp-ct-avatar" style="background:' + color + '">' + contactPhotoHTML(ct.email, color, initials, 30) + '</div>' +
       '<div class="dp-ct-info">' +
-        '<div class="dp-ct-name">' + esc(ct.name) + (isPrimary ? ' <span class="dp-primary-badge">Primary</span>' : '') + '</div>' +
+        '<div class="dp-ct-name"><span class="editable-ct-name" contenteditable="false" data-email="' + esc(ct.email) + '" onclick="event.stopPropagation();this.contentEditable=\'true\';this.focus()" onblur="saveContactNameEdit(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(ct.name) + '</span>' +
+        '<svg class="edit-pencil-sm" onclick="event.stopPropagation();var s=this.previousElementSibling;s.contentEditable=\'true\';s.focus()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="11" height="11" style="cursor:pointer;color:var(--text3);flex-shrink:0;margin-left:4px;opacity:0;transition:opacity .15s"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>' +
+        (isPrimary ? ' <span class="dp-primary-badge">Primary</span>' : '') + '</div>' +
         '<div class="dp-ct-email">' + esc(ct.email) + (ctTitle ? ' · ' + esc(ctTitle) : '') + '</div>' +
       '</div>' +
       '<div class="dp-ct-count"><span style="color:var(--accent2)">' + ct.sent + '</span><span style="color:var(--text3);margin:0 1px">/</span><span style="color:var(--green)">' + ct.received + '</span></div>' +
@@ -5337,7 +5563,7 @@ function selectContact(email, domain, companyId) {
   let headHtml = '<div class="dp-ct-head">' +
     '<div class="dp-ct-big-avatar" style="background:' + color + '">' + contactPhotoHTML(ct.email, color, initials, 40) + '</div>' +
     '<div class="dp-ct-head-info">' +
-      '<h2>' + esc(ct.name) + '</h2>' +
+      '<h2 class="editable-name" contenteditable="false" data-email="' + esc(ct.email) + '" data-domain="' + esc(domain) + '" data-cid="' + (c?c.id:'') + '" onclick="this.contentEditable=\'true\';this.focus()" onblur="saveContactNameEditHead(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}" style="cursor:text;margin:0">' + esc(ct.name) + '</h2>' +
       '<div class="dp-ct-head-email">' + esc(ct.email) + '</div>' +
     '</div>' +
   '</div>';
@@ -7882,6 +8108,7 @@ function esc(text) {
   loadFlaggedCompanies();
   updateFlaggedCount(); // Show correct flagged count immediately on load
   loadCompanyNameCache();
+  loadContactNameOverrides();
   loadStarredContacts();
   loadCompanyTypes();
   loadColumnConfig();
