@@ -150,6 +150,7 @@ th:hover{color:var(--text)}
 td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
 table{will-change:auto;contain:layout style}
 tr:last-child td{border-bottom:none}
+tr[data-id]{cursor:pointer}
 tr:hover td{background:rgba(26,115,232,.04)}
 tr.row-selected td{background:rgba(26,115,232,.08)}
 
@@ -198,13 +199,15 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 .company-logo{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
 .company-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:3px;border-radius:inherit}
 .company-info{display:flex;flex-direction:column}
-.company-name{font-weight:600;color:var(--text)}
+.company-name{font-weight:600;color:var(--text);cursor:pointer}
+.company-name:hover{text-decoration:underline}
 .company-domain{font-size:11px;color:var(--text2)}
 
 .contact-cell{display:flex;align-items:center;gap:8px}
 .avatar{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:10px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
 .avatar img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:inherit}
-.contact-name{font-weight:500}
+.contact-name{font-weight:500;cursor:pointer}
+.contact-name:hover{text-decoration:underline}
 .contact-title{font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .linkedin-link{display:inline-flex;align-items:center;gap:3px;color:#0a66c2;font-size:10px;text-decoration:none;font-weight:500;transition:.15s;flex-shrink:0}
 .linkedin-link:hover{text-decoration:underline}
