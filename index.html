@@ -370,12 +370,9 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .fu-kanban-col-header{padding:8px 6px 5px;display:flex;align-items:center;justify-content:center;gap:4px;position:sticky;top:0;z-index:1}
 .fu-kanban-col-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)}
 .fu-kanban-col-count{font-size:9px;font-weight:700;background:var(--border);color:var(--text2);border-radius:8px;padding:0 5px;min-width:16px;text-align:center;line-height:16px}
-.fu-kanban-col.col-new .fu-kanban-col-title{color:var(--accent)}
-.fu-kanban-col.col-new .fu-kanban-col-count{background:rgba(26,115,232,.15);color:var(--accent)}
-.fu-kanban-col.col-overdue .fu-kanban-col-title{color:var(--red)}
-.fu-kanban-col.col-overdue .fu-kanban-col-count{background:var(--red-bg);color:var(--red)}
-.fu-kanban-col.col-current .fu-kanban-col-title{color:var(--green)}
-.fu-kanban-col.col-current .fu-kanban-col-count{background:var(--green-bg);color:var(--green)}
+.fu-kanban-col.col-current{background:rgba(26,115,232,.10);border:1.5px solid var(--accent)}
+.fu-kanban-col.col-current .fu-kanban-col-title{color:var(--accent);font-size:11px}
+.fu-kanban-col.col-current .fu-kanban-col-count{background:var(--accent);color:#fff}
 .fu-kanban-cards{flex:1;overflow-y:auto;padding:2px 4px 6px;display:flex;flex-direction:column;gap:4px}
 .fu-kanban-cards::-webkit-scrollbar{width:3px}
 .fu-kanban-cards::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -398,7 +395,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .fu-move-menu-item:hover{background:var(--surface2);color:var(--accent)}
 .fu-move-menu-item.active{color:var(--accent);font-weight:700}
 .fu-kanban-empty{text-align:center;padding:12px 4px;color:var(--text2);font-size:10px;opacity:.6}
-.fu-card-overdue{border-left:2px solid var(--red)}
 
 .dp-primary-badge{font-size:8px;padding:1px 5px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;flex-shrink:0}
 .dp-left-foot{padding:8px 20px;border-top:1px solid var(--border);flex-shrink:0}
@@ -5808,14 +5804,12 @@ function renderFollowUpKanban() {
   var html = '';
 
   // NEW column
-  html += buildKanbanColumn('new', 'NEW', buckets['new'], nowMonth, 'col-new');
+  html += buildKanbanColumn('new', 'NEW', buckets['new'], nowMonth, '');
 
-  // Month columns
+  // Month columns — only current month highlighted
   for (var mi = 0; mi < monthKeys.length; mi++) {
     var mk = monthKeys[mi];
-    var extraClass = '';
-    if (mk < nowMonth) extraClass = 'col-overdue';
-    else if (mk === nowMonth) extraClass = 'col-current';
+    var extraClass = (mk === nowMonth) ? 'col-current' : '';
     html += buildKanbanColumn(mk, MONTH_LABELS[mi], buckets[mk], nowMonth, extraClass);
   }
 
