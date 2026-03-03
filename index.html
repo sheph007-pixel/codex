@@ -5702,7 +5702,7 @@ function renderFollowUpTable() {
     + '<th onclick="sortTable(\'company\')" style="cursor:pointer">Company</th>'
     + '<th onclick="sortTable(\'contact\')" style="cursor:pointer">Primary Contact</th>'
     + '<th onclick="sortTable(\'lastActivity\')" style="cursor:pointer">Last Email</th>'
-    + '<th style="width:150px">Follow Up Date</th>'
+    + '<th onclick="sortTable(\'followUpDate\')" style="cursor:pointer;width:150px">Follow Up Month</th>'
     + '</tr>';
 
   var data = companies.filter(function(c) {
@@ -5731,11 +5731,12 @@ function renderFollowUpTable() {
       var va = a.lastDate ? a.lastDate.getTime() : 0, vb = b.lastDate ? b.lastDate.getTime() : 0;
       return currentSort.asc ? va - vb : vb - va;
     }
-    // Default: sort by follow-up date
-    var da = followUpDates[a.domain] || '', db = followUpDates[b.domain] || '';
+    // Default: sort by follow-up month (earliest first, undated last)
+    var da = (followUpDates[a.domain] || '').slice(0, 7);
+    var db = (followUpDates[b.domain] || '').slice(0, 7);
     if (da && !db) return -1;
     if (!da && db) return 1;
-    if (da && db) return da.localeCompare(db);
+    if (da && db) { var cmp = da.localeCompare(db); if (cmp !== 0) return currentSort.asc === false ? -cmp : cmp; }
     return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
   });
 
@@ -5747,15 +5748,16 @@ function renderFollowUpTable() {
   }
 
   var rows = [];
-  var today = new Date().toISOString().split('T')[0];
+  var nowMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
   for (var i = 0; i < data.length; i++) {
     var c = data[i];
     var color = COLORS[c.id % COLORS.length];
     var sel = selectedIds.has(c.id);
     var dSafe = c.domain.replace(/'/g, "\\'");
-    var dateVal = followUpDates[c.domain] || '';
-    var isOverdue = dateVal && dateVal < today;
-    var isToday = dateVal && dateVal === today;
+    var rawDate = followUpDates[c.domain] || '';
+    var dateVal = rawDate.length > 7 ? rawDate.slice(0, 7) : rawDate; // migrate YYYY-MM-DD → YYYY-MM
+    var isOverdue = dateVal && dateVal < nowMonth;
+    var isCurrent = dateVal && dateVal === nowMonth;
 
     var row = '<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">';
     row += '<td class="col-check"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>';
@@ -5777,9 +5779,9 @@ function renderFollowUpTable() {
     // Last Email
     row += '<td><span style="color:var(--text2)">' + esc(c.lastActivity) + '</span></td>';
 
-    // Follow Up Date
-    var dateStyle = isOverdue ? 'color:#e8453c;font-weight:600' : isToday ? 'color:#1e8e3e;font-weight:600' : '';
-    row += '<td><input type="date" class="followup-date-input" value="' + dateVal + '" style="' + dateStyle + '" onclick="event.stopPropagation()" onchange="event.stopPropagation();setFollowUpDate(\'' + dSafe + '\',this.value)"></td>';
+    // Follow Up Month
+    var dateStyle = isOverdue ? 'color:#e8453c;font-weight:600' : isCurrent ? 'color:#1e8e3e;font-weight:600' : '';
+    row += '<td><input type="month" class="followup-date-input" value="' + dateVal + '" style="' + dateStyle + '" onclick="event.stopPropagation()" onchange="event.stopPropagation();setFollowUpDate(\'' + dSafe + '\',this.value)"></td>';
 
     row += '</tr>';
     rows.push(row);
