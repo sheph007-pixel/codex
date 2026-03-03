@@ -3948,6 +3948,12 @@ function setProposalNote(domain, value) {
 }
 
 function renderProposalsTable() {
+  // If a note input is focused, skip re-render to avoid destroying user's typing
+  var activeEl = document.activeElement;
+  if (activeEl && activeEl.classList && activeEl.classList.contains('proposal-note-input')) {
+    return;
+  }
+
   var thead = document.getElementById('tableHead');
   thead.innerHTML = '<tr>'
     + '<th style="width:30px"><input type="checkbox" class="row-checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th>'
@@ -4019,10 +4025,12 @@ function renderProposalsTable() {
     // Last Email
     row += '<td><span style="color:var(--text2)">' + esc(c.lastActivity) + '</span></td>';
 
-    // Notes
+    // Notes — save on blur, stop propagation on click and keydown
     row += '<td><input type="text" class="proposal-note-input" data-domain="' + esc(c.domain) + '" value="' + esc(note).replace(/"/g, '&quot;') + '" placeholder="Add a note..." '
       + 'onclick="event.stopPropagation()" '
-      + 'onchange="setProposalNote(\'' + dSafe + '\',this.value)" '
+      + 'onfocus="event.stopPropagation()" '
+      + 'onblur="setProposalNote(\'' + dSafe + '\',this.value)" '
+      + 'onkeydown="event.stopPropagation();if(event.key===\'Enter\'){this.blur()}" '
       + 'style="width:100%;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:inherit;outline:none;box-sizing:border-box">'
       + '</td>';
 
