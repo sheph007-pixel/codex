@@ -2123,6 +2123,7 @@ async function clearPersistedData() {
 // ──────────────────────────────────────────────
 let cloudSyncInProgress = false;
 let cloudSyncTimer = null;
+let lastCloudSaveTime = 0;
 const CLOUD_SYNC_FILE = 'kennion-crm-sync.json';
 
 async function getCloudToken() {
@@ -2205,35 +2206,12 @@ function gatherSyncPayload() {
 
 async function saveToCloud() {
   if (cloudSyncInProgress) return;
-  if (!currentAccount || Object.keys(domainMap).length === 0) return;
+  if (!currentAccount) return;
   cloudSyncInProgress = true;
+  setSyncBadge('scanning', 'Saving...');
   try {
     const token = await getCloudToken();
-    if (!token) return;
-
-    // Safety check: don't overwrite a larger cloud backup with much smaller local data.
-    // This prevents a broken deployment from wiping a good backup.
-    try {
-      const checkResp = await fetch(
-        'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE,
-        { headers: { 'Authorization': 'Bearer ' + token } }
-      );
-      if (checkResp.ok) {
-        const cloudMeta = await checkResp.json();
-        const cloudSize = cloudMeta.size || 0;
-        const localDomainCount = Object.keys(domainMap).length;
-        const localBlockedCount = blockedDomains.size;
-        // If cloud file is >100KB and local has very few domains and no blocked domains,
-        // something is wrong — don't overwrite.
-        if (cloudSize > 100000 && localDomainCount < 50 && localBlockedCount === 0) {
-          console.warn('Cloud sync: BLOCKED — local data looks incomplete (' + localDomainCount + ' domains, 0 blocked) vs cloud file (' + Math.round(cloudSize/1024) + ' KB). Refusing to overwrite good backup.');
-          return;
-        }
-      }
-    } catch(checkErr) {
-      // If the safety check itself fails, proceed with save anyway
-      console.warn('Cloud sync: safety check failed, proceeding with save:', checkErr.message);
-    }
+    if (!token) { setSyncBadge('error', 'No token'); return; }
 
     const payload = gatherSyncPayload();
     const body = JSON.stringify(payload);
@@ -2242,12 +2220,16 @@ async function saveToCloud() {
       { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body }
     );
     if (resp.ok) {
-      console.log('Cloud sync saved successfully (' + Math.round(body.length/1024) + ' KB, ' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)');
+      console.log('Cloud sync saved (' + Math.round(body.length/1024) + ' KB, ' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)');
+      setSyncBadge('success', 'Saved');
+      lastCloudSaveTime = Date.now();
     } else {
       console.warn('Cloud sync save failed:', resp.status, await resp.text());
+      setSyncBadge('error', 'Save failed');
     }
   } catch(e) {
     console.warn('Cloud sync save error:', e);
+    setSyncBadge('error', 'Save error');
   } finally {
     cloudSyncInProgress = false;
   }
@@ -2370,7 +2352,14 @@ function applyCloudDomainData(data) {
 function scheduleCloudSync() {
   if (!currentAccount) return;
   if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
-  cloudSyncTimer = setTimeout(() => { saveToCloud(); }, 30000);
+  // Show pending indicator
+  const badge = document.getElementById('syncBadge');
+  if (badge) {
+    badge.className = 'sync-badge scanning';
+    document.getElementById('syncBadgeText').textContent = 'Saving...';
+  }
+  // 2-second debounce: cloud is the source of truth, save quickly
+  cloudSyncTimer = setTimeout(() => { saveToCloud(); }, 2000);
 }
 
 // ──────────────────────────────────────────────
@@ -2992,7 +2981,8 @@ async function scanOutlookEmails(forceFullScan) {
 
     lastScanTime = new Date();
     await persistData();
-    scheduleCloudSync(); // sync to OneDrive after scan completes
+    // Save to cloud immediately after scan (not debounced — this is a major data event)
+    saveToCloud();
     setSyncBadge('synced', 'In Sync');
     updateLastSyncDisplay();
     scheduleDomainScan(); // check domain validity after sync
@@ -3069,8 +3059,19 @@ function updateLastSyncDisplay() {
 }
 function setSyncBadge(state, text) {
   const badge = document.getElementById('syncBadge');
-  badge.className = 'sync-badge' + (state === 'scanning' ? ' scanning' : state === 'error' ? ' error' : '');
-  document.getElementById('syncBadgeText').textContent = text || (state === 'scanning' ? 'Syncing...' : state === 'error' ? 'Error' : 'In Sync');
+  badge.className = 'sync-badge' + (state === 'scanning' ? ' scanning' : state === 'error' ? ' error' : state === 'success' ? ' success' : '');
+  const displayText = text || (state === 'scanning' ? 'Syncing...' : state === 'error' ? 'Error' : 'Saved to cloud');
+  document.getElementById('syncBadgeText').textContent = displayText;
+  // Auto-clear "Saved" status after 3 seconds
+  if (state === 'success') {
+    setTimeout(() => {
+      const current = document.getElementById('syncBadgeText').textContent;
+      if (current === displayText) {
+        badge.className = 'sync-badge';
+        document.getElementById('syncBadgeText').textContent = 'Cloud synced';
+      }
+    }, 3000);
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -3112,113 +3113,150 @@ async function onSignedIn() {
   document.getElementById('userName').textContent = userEmail;
   document.getElementById('settingsNavItem').style.display = '';
 
-  // Load cached data from IndexedDB — show instantly (no waiting for scan)
-  const cached = await loadPersistedData();
-  let hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
+  // ── CLOUD-FIRST ARCHITECTURE ──
+  // OneDrive is the source of truth. Load from cloud first.
+  // Local IndexedDB is a cache for fast loading on the same browser.
+  let hasData = false;
 
-  if (hasLocalData) {
-    domainMap = cached.domainMap;
-    lastScanTime = cached.lastScanTime;
-    fullScanDone = cached.fullScanDone || false;
-    deltaLink = cached.deltaLink || null;
-    if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
-      seenMsgIds = cached.seenMsgIds;
-    } else {
-      // Upgrade from old cache: no dedup tracking.
-      // Force full rescan to rebuild with immutable IDs + delta sync.
-      seenMsgIds = new Set();
-      deltaLink = null;
-      fullScanDone = false;
-    }
-    // Migration: if no deltaLink exists, old data used mutable IDs.
-    // Force full rescan to rebuild with immutable IDs + delta sync.
-    if (!deltaLink && fullScanDone) {
-      seenMsgIds = new Set();
-      for (const d of Object.values(domainMap)) {
-        if (d.sentIds instanceof Set) d.sentIds.clear(); else d.sentIds = new Set();
-        if (d.receivedIds instanceof Set) d.receivedIds.clear(); else d.receivedIds = new Set();
-        for (const c of Object.values(d.contacts)) {
-          if (c.sentIds instanceof Set) c.sentIds.clear(); else c.sentIds = new Set();
-          if (c.receivedIds instanceof Set) c.receivedIds.clear(); else c.receivedIds = new Set();
-        }
-      }
-      fullScanDone = false;
-    }
-    // Check if any domain still uses old counter format (no sentIds Set)
-    const needsSetUpgrade = Object.values(domainMap).some(d => !(d.sentIds instanceof Set));
-    if (needsSetUpgrade) {
-      for (const d of Object.values(domainMap)) {
-        if (!(d.sentIds instanceof Set)) d.sentIds = new Set();
-        if (!(d.receivedIds instanceof Set)) d.receivedIds = new Set();
-        for (const c of Object.values(d.contacts)) {
-          if (!(c.sentIds instanceof Set)) c.sentIds = new Set();
-          if (!(c.receivedIds instanceof Set)) c.receivedIds = new Set();
-        }
-      }
-      fullScanDone = false;
-      deltaLink = null;
-    }
-    buildCompaniesFromDomainMap();
-    renderTableHeader();
-    renderTable();
-    updateStats();
-    updateLastSyncDisplay();
-    resolveCompanyNames();
-    runEnrichment();
-  }
-
-  // Always try restoring from OneDrive cloud sync.
-  // Settings (blocked domains, starred, etc.) are ALWAYS restored from cloud.
-  // Domain data is merged when cloud has more data than local.
+  // Step 1: Try loading from OneDrive (source of truth)
+  setSyncBadge('scanning', 'Loading...');
+  document.getElementById('lastSyncText').textContent = 'Loading from cloud...';
+  console.log('Cloud-first: loading data from OneDrive...');
   try {
-    const localDomainCount = Object.keys(domainMap).length;
-    if (!hasLocalData) {
-      setSyncBadge('scanning', 'Restoring...');
-      document.getElementById('lastSyncText').textContent = 'Checking cloud backup...';
-    }
-    console.log('Cloud sync: checking OneDrive backup (local domains: ' + localDomainCount + ')...');
     const cloudData = await loadFromCloud();
     if (cloudData) {
-      // Always restore settings (blocked domains, starred, archived, flagged, etc.)
+      // Cloud has data — use it as the base
       applyCloudSettings(cloudData);
-      console.log('Cloud sync: settings restored from cloud');
-
+      console.log('Cloud-first: settings restored from cloud');
       const cloudDomainCount = cloudData.domainData ? Object.keys(cloudData.domainData).length : 0;
-      console.log('Cloud sync: found ' + cloudDomainCount + ' domains in cloud backup');
-      // Merge domain data if cloud has more
-      if (cloudDomainCount > 0 && cloudDomainCount > localDomainCount) {
-        console.log('Cloud sync: merging domain data (cloud: ' + cloudDomainCount + ' > local: ' + localDomainCount + ')');
+      if (cloudDomainCount > 0) {
         applyCloudDomainData(cloudData);
-        hasLocalData = Object.keys(domainMap).length > 0;
-        if (hasLocalData) {
-          buildCompaniesFromDomainMap();
-          renderTableHeader();
-          renderTable();
-          updateStats();
-          updateLastSyncDisplay();
-          resolveCompanyNames();
-          runEnrichment();
-          // Persist merged data to local IndexedDB
-          persistData();
-          console.log('Cloud sync: restored ' + Object.keys(domainMap).length + ' domains from cloud backup');
-        }
-      } else if (cloudDomainCount > 0) {
-        console.log('Cloud sync: local domain data is current (' + localDomainCount + ' domains), skipping domain merge');
-        // Settings were restored above — re-render table to reflect blocked/archived/flagged changes
-        if (hasLocalData) {
-          buildCompaniesFromDomainMap();
-          renderTable();
-        }
+        console.log('Cloud-first: loaded ' + cloudDomainCount + ' domains from cloud');
       }
+      hasData = Object.keys(domainMap).length > 0;
+      if (hasData) {
+        buildCompaniesFromDomainMap();
+        renderTableHeader();
+        renderTable();
+        updateStats();
+        updateLastSyncDisplay();
+        resolveCompanyNames();
+        runEnrichment();
+        // Cache cloud data locally for fast loading next time
+        persistData();
+      }
+      setSyncBadge('success', 'Loaded from cloud');
+      console.log('Cloud-first: cloud restore complete (' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)');
     } else {
-      console.log('Cloud sync: no cloud backup found');
+      console.log('Cloud-first: no cloud backup found, falling back to local cache');
     }
   } catch(e) {
-    console.warn('Cloud restore failed:', e);
+    console.warn('Cloud-first: cloud load failed, falling back to local cache:', e);
   }
 
-  // If blocked domains are still empty after cloud restore, try version history recovery
-  if (blockedDomains.size === 0) {
+  // Step 2: If cloud had no data or failed, fall back to local IndexedDB cache
+  if (!hasData) {
+    const cached = await loadPersistedData();
+    const hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
+    if (hasLocalData) {
+      domainMap = cached.domainMap;
+      lastScanTime = cached.lastScanTime;
+      fullScanDone = cached.fullScanDone || false;
+      deltaLink = cached.deltaLink || null;
+      if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
+        seenMsgIds = cached.seenMsgIds;
+      } else {
+        seenMsgIds = new Set();
+        deltaLink = null;
+        fullScanDone = false;
+      }
+      if (!deltaLink && fullScanDone) {
+        seenMsgIds = new Set();
+        for (const d of Object.values(domainMap)) {
+          if (d.sentIds instanceof Set) d.sentIds.clear(); else d.sentIds = new Set();
+          if (d.receivedIds instanceof Set) d.receivedIds.clear(); else d.receivedIds = new Set();
+          for (const c of Object.values(d.contacts)) {
+            if (c.sentIds instanceof Set) c.sentIds.clear(); else c.sentIds = new Set();
+            if (c.receivedIds instanceof Set) c.receivedIds.clear(); else c.receivedIds = new Set();
+          }
+        }
+        fullScanDone = false;
+      }
+      const needsSetUpgrade = Object.values(domainMap).some(d => !(d.sentIds instanceof Set));
+      if (needsSetUpgrade) {
+        for (const d of Object.values(domainMap)) {
+          if (!(d.sentIds instanceof Set)) d.sentIds = new Set();
+          if (!(d.receivedIds instanceof Set)) d.receivedIds = new Set();
+          for (const c of Object.values(d.contacts)) {
+            if (!(c.sentIds instanceof Set)) c.sentIds = new Set();
+            if (!(c.receivedIds instanceof Set)) c.receivedIds = new Set();
+          }
+        }
+        fullScanDone = false;
+        deltaLink = null;
+      }
+      buildCompaniesFromDomainMap();
+      renderTableHeader();
+      renderTable();
+      updateStats();
+      updateLastSyncDisplay();
+      resolveCompanyNames();
+      runEnrichment();
+      hasData = true;
+      setSyncBadge('success', 'Loaded from cache');
+      console.log('Cloud-first: loaded ' + Object.keys(domainMap).length + ' domains from local cache');
+    }
+  } else {
+    // Cloud loaded successfully — also merge any newer local data on top
+    // (e.g. if a scan happened on this browser that hasn't synced yet)
+    try {
+      const cached = await loadPersistedData();
+      if (cached && cached.domainMap) {
+        const localDomainCount = Object.keys(cached.domainMap).length;
+        const cloudDomainCount = Object.keys(domainMap).length;
+        if (localDomainCount > cloudDomainCount) {
+          console.log('Cloud-first: local cache has more domains (' + localDomainCount + ') than cloud (' + cloudDomainCount + '), merging local on top');
+          // Merge local domains into cloud base
+          for (const [domain, localData] of Object.entries(cached.domainMap)) {
+            if (!domainMap[domain]) {
+              domainMap[domain] = localData;
+            } else {
+              // Merge message IDs
+              const existing = domainMap[domain];
+              if (localData.sentIds instanceof Set) localData.sentIds.forEach(id => existing.sentIds.add(id));
+              if (localData.receivedIds instanceof Set) localData.receivedIds.forEach(id => existing.receivedIds.add(id));
+              for (const [email, lc] of Object.entries(localData.contacts || {})) {
+                if (!existing.contacts[email]) {
+                  existing.contacts[email] = lc;
+                } else {
+                  if (lc.sentIds instanceof Set) lc.sentIds.forEach(id => existing.contacts[email].sentIds.add(id));
+                  if (lc.receivedIds instanceof Set) lc.receivedIds.forEach(id => existing.contacts[email].receivedIds.add(id));
+                }
+              }
+            }
+          }
+          // Use local scan metadata if more recent
+          if (cached.lastScanTime && (!lastScanTime || cached.lastScanTime > lastScanTime)) {
+            lastScanTime = cached.lastScanTime;
+          }
+          if (cached.seenMsgIds) {
+            cached.seenMsgIds.forEach(id => seenMsgIds.add(id));
+          }
+          if (cached.deltaLink) deltaLink = cached.deltaLink;
+          if (cached.fullScanDone) fullScanDone = true;
+          buildCompaniesFromDomainMap();
+          renderTable();
+          updateStats();
+          console.log('Cloud-first: merged to ' + Object.keys(domainMap).length + ' domains');
+        }
+      }
+    } catch(e) {
+      console.warn('Cloud-first: local cache merge failed (non-critical):', e);
+    }
+  }
+
+  // Step 3: If blocked domains are empty, try recovering from version history
+  if (blockedDomains.size === 0 && hasData) {
     await autoRecoverBlockedDomains();
   }
 
@@ -7221,6 +7259,8 @@ function esc(text) {
 window.addEventListener('beforeunload', () => {
   if (currentAccount && Object.keys(domainMap).length > 0) {
     persistData();
+    // Flush pending cloud sync on page close
+    if (cloudSyncTimer) { clearTimeout(cloudSyncTimer); cloudSyncTimer = null; saveToCloud(); }
   }
 });
 document.addEventListener('visibilitychange', () => {
