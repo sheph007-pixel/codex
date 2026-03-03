@@ -97,10 +97,12 @@ body{min-height:100vh;overflow-x:hidden}
 .sa-top{display:flex;align-items:center;gap:6px;color:#9e9eb8;overflow:hidden}
 .sa-top svg{flex-shrink:0;color:var(--ms-blue)}
 .sa-email{font-size:11px;font-weight:500;color:#c8c8de;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sa-status{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sa-status-row{display:flex;align-items:center;gap:5px;color:#7a7a95}
+.sa-status-row svg{flex-shrink:0}
+.sa-scan-status{font-size:10px;font-weight:500;color:#7a7a95}
+.sa-scan-status.active{color:#5b9cf6}
+.sa-scan-status.done{color:#34a853}
 .sa-last-sync{font-size:10px;color:#7a7a95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sa-sync-btn{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;padding:5px 0;background:#2a2a3d;border:1px solid #3a3a4d;border-radius:6px;color:#b0b0c8;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;transition:.15s}
-.sa-sync-btn:hover{background:#353550;color:#e0e0ef;border-color:#5b9cf6}
 .sync-badge{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:2px 6px;border-radius:20px;background:rgba(52,168,83,.15);color:#34a853}
 .sync-badge.scanning{background:rgba(26,115,232,.15);color:#5b9cf6}
 .sync-badge.error{background:rgba(234,67,53,.15);color:#ea4335}
@@ -730,17 +732,20 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
         <span class="sa-email" id="accountEmail"></span>
       </div>
-      <div class="sa-status">
+      <!-- Cloud Backup Status -->
+      <div class="sa-status-row">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>
         <span class="sync-badge" id="syncBadge">
           <span class="sync-dot"></span>
           <span id="syncBadgeText">Connected</span>
         </span>
-        <span class="sa-last-sync" id="lastSyncText"></span>
       </div>
-      <button class="sa-sync-btn" id="accountSyncBtn" onclick="scanOutlookEmails()" title="Sync now">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-        Sync Emails
-      </button>
+      <!-- Email Scan Status -->
+      <div class="sa-status-row">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22,6 12,13 2,6"/><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/></svg>
+        <span class="sa-scan-status" id="scanStatusText">Not yet scanned</span>
+      </div>
+      <span class="sa-last-sync" id="lastSyncText"></span>
     </div>
   </aside>
 
@@ -2894,10 +2899,8 @@ function timeAgo(date) {
 async function scanOutlookEmails(forceFullScan) {
   if (isScanning) return;
   isScanning = true;
-  setSyncBadge('scanning');
-
   try {
-    showScanBanner('Connecting to Microsoft Graph...');
+    showScanBanner('Connecting to Outlook...');
     const token = await getAccessToken();
 
     // Decide: full scan or delta sync
@@ -2906,12 +2909,12 @@ async function scanOutlookEmails(forceFullScan) {
 
     if (needsFullScan) {
       if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); deltaLink = null; }
-      showScanBanner('Full scan — reading all emails' + (Object.keys(domainMap).length > 0 ? ' (resuming)' : '') + '...');
+      showScanBanner('One-time full scan — reading all emails...');
       totalFetched = await fetchEmailsProgressively(token, false); // full delta scan
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
     } else {
-      showScanBanner('Syncing — checking for new emails...');
+      showScanBanner('Live sync — checking recent emails...');
       totalFetched = await fetchEmailsProgressively(token, true); // incremental (delta or timestamp fallback)
       if (totalFetched > 0) {
         updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails — ' + companies.length + ' companies');
@@ -2924,7 +2927,7 @@ async function scanOutlookEmails(forceFullScan) {
     await persistData();
     // Save to cloud immediately after scan (not debounced — this is a major data event)
     saveToCloud();
-    setSyncBadge('synced', 'In Sync');
+    setSyncBadge('success', 'Saved');
     updateLastSyncDisplay();
     scheduleDomainScan(); // check domain validity after sync
 
@@ -2992,11 +2995,12 @@ function updateLastSyncDisplay() {
   document.getElementById('accountEmail').textContent = userEmail || currentAccount.username || '';
   if (lastScanTime) {
     document.getElementById('lastSyncText').textContent =
-      'Last synced ' + timeAgo(lastScanTime) + ' · ' +
+      'Last scanned ' + timeAgo(lastScanTime) + ' · ' +
       companies.length + ' companies';
   } else {
-    document.getElementById('lastSyncText').textContent = 'Not yet synced';
+    document.getElementById('lastSyncText').textContent = '';
   }
+  updateScanStatus();
 }
 function setSyncBadge(state, text) {
   const badge = document.getElementById('syncBadge');
@@ -3057,7 +3061,7 @@ async function onSignedIn() {
 
   // Step 1: Try loading from OneDrive (source of truth)
   setSyncBadge('scanning', 'Loading...');
-  document.getElementById('lastSyncText').textContent = 'Loading from cloud...';
+  setSyncBadge('scanning', 'Loading...');
   console.log('Cloud-first: loading data from OneDrive...');
   try {
     const cloudData = await loadFromCloud();
@@ -3228,13 +3232,31 @@ async function onSignedIn() {
 
 // Scan progress shown in the account bar
 function showScanBanner(text) {
-  setSyncBadge('scanning', 'Syncing...');
-  document.getElementById('lastSyncText').textContent = text;
+  const el = document.getElementById('scanStatusText');
+  if (el) { el.textContent = text; el.className = 'sa-scan-status active'; }
 }
 function updateScanBanner(text) {
-  document.getElementById('lastSyncText').textContent = text;
+  const el = document.getElementById('scanStatusText');
+  if (el) { el.textContent = text; el.className = 'sa-scan-status active'; }
 }
-function hideScanBanner() { updateLastSyncDisplay(); }
+function hideScanBanner() {
+  updateLastSyncDisplay();
+  updateScanStatus();
+}
+function updateScanStatus() {
+  const el = document.getElementById('scanStatusText');
+  if (!el) return;
+  if (fullScanDone) {
+    el.textContent = 'Live — auto-syncing new emails';
+    el.className = 'sa-scan-status done';
+  } else if (lastScanTime) {
+    el.textContent = 'Full scan in progress...';
+    el.className = 'sa-scan-status active';
+  } else {
+    el.textContent = 'Waiting to scan';
+    el.className = 'sa-scan-status';
+  }
+}
 
 // ──────────────────────────────────────────────
 // TABLE RENDERING (dynamic columns)
