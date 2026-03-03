@@ -835,7 +835,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <div class="welcome-features">
           <div class="welcome-feat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            <div><span class="feat-title">Email Scanning</span><span class="feat-desc">Reads your Outlook inbox automatically</span></div>
+            <div><span class="feat-title">Email Scanning</span><span class="feat-desc">Reads your Outlook emails automatically</span></div>
           </div>
           <div class="welcome-feat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
@@ -950,10 +950,10 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       </div>
     </div>
 
-    <!-- INBOX VIEW -->
+    <!-- EMAILS VIEW -->
     <div class="inbox-view" id="inboxView">
       <div class="inbox-toolbar">
-        <h2>Inbox</h2>
+        <h2>Emails</h2>
         <span class="inbox-count-label" id="inboxTopCount"></span>
         <button class="inbox-tb-btn inbox-compose-btn" onclick="openComposeNew()" title="Compose new email">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -983,8 +983,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <div class="inbox-list" id="inboxList">
         <div class="inbox-empty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
-          <p>Your inbox is clear</p>
-          <span>Emails from leads in your CRM will show here — only active emails from your Outlook inbox</span>
+          <p>No emails yet</p>
+          <span>Emails from leads in your CRM will show here — only active emails from your Outlook account</span>
         </div>
       </div>
     </div>
@@ -3796,7 +3796,7 @@ async function onSignedIn() {
     await scanOutlookEmails();
   }
 
-  // Load inbox in background after data is ready
+  // Load emails in background after data is ready
   setTimeout(() => refreshInbox(), 1000);
 
   // Fetch Outlook signature if no custom signature is saved yet
@@ -6296,7 +6296,7 @@ function showCompanyPanel(id) {
   document.getElementById('dpRightTabs').style.display = 'none';
   document.getElementById('dpTimeline').style.display = 'none';
 
-  // Show detail page, hide CRM table / inbox / settings / blocked
+  // Show detail page, hide CRM table / emails / settings / blocked
   document.getElementById('crmContent').style.display = 'none';
   document.getElementById('inboxView').classList.remove('active');
   document.getElementById('settingsView').classList.remove('active');
@@ -7063,7 +7063,7 @@ function openCompose(toEmail, toName, subject, replyId, quotedBody, originalHtml
   }, 100);
 }
 
-// Open blank compose from Inbox toolbar
+// Open blank compose from Emails toolbar
 function openComposeNew() {
   composeReplyToId = null;
   composeOriginalBodyHtml = '';
@@ -8068,13 +8068,13 @@ async function refreshInbox() {
   if (!currentAccount) return;
   inboxLoading = true;
   const list = document.getElementById('inboxList');
-  list.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:60px;color:var(--text2)"><div class="scan-spinner"></div> Loading inbox...</div>';
+  list.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:60px;color:var(--text2)"><div class="scan-spinner"></div> Loading emails...</div>';
 
   try {
     const token = await getAccessToken();
     const headers = graphHeaders(token);
     const allEmails = [];
-    // Fetch ONLY from Inbox folder (active emails, not archived/deleted)
+    // Fetch ONLY from inbox folder (active emails, not archived/deleted)
     let url = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=100&$orderby=receivedDateTime desc&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,webLink,conversationId';
     let pages = 0;
     while (url && pages < 3) {
@@ -8118,8 +8118,8 @@ async function refreshInbox() {
     renderInbox();
     updateInboxBadge();
   } catch(e) {
-    console.error('Inbox load error:', e);
-    list.innerHTML = '<div class="inbox-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><p>Could not load inbox</p><span>' + esc(e.message) + '</span></div>';
+    console.error('Email load error:', e);
+    list.innerHTML = '<div class="inbox-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg><p>Could not load emails</p><span>' + esc(e.message) + '</span></div>';
   }
   inboxLoading = false;
 }
@@ -8165,8 +8165,8 @@ function renderInbox() {
   if (!items.length) {
     list.innerHTML = `<div class="inbox-empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
-      <p>${inboxCurrentTab === 'unread' ? 'No unread emails' : 'Inbox is clear'}</p>
-      <span>${inboxCurrentTab === 'unread' ? 'All caught up!' : 'Only active emails in your Outlook inbox from CRM leads appear here'}</span>
+      <p>${inboxCurrentTab === 'unread' ? 'No unread emails' : 'No emails yet'}</p>
+      <span>${inboxCurrentTab === 'unread' ? 'All caught up!' : 'Only active emails in your Outlook account from CRM leads appear here'}</span>
     </div>`;
     return;
   }
@@ -8520,10 +8520,10 @@ function buildCRMContext() {
     }
   }
 
-  // Inbox — cap at 15 most recent
+  // Emails — cap at 15 most recent
   if (typeof inboxEmails !== 'undefined' && inboxEmails.length > 0) {
     var inboxCap = Math.min(inboxEmails.length, 15);
-    ctx += '\nINBOX (' + inboxCap + ' of ' + inboxEmails.length + '):\n';
+    ctx += '\nEMAILS (' + inboxCap + ' of ' + inboxEmails.length + '):\n';
     for (var ii = 0; ii < inboxCap; ii++) {
       var ie = inboxEmails[ii];
       ctx += '  ' + (ie.isRead ? '[Read]' : '[UNREAD]') + ' From: ' + ie.from;
@@ -8590,7 +8590,7 @@ async function sendAI() {
 
   // Build system prompt with CRM data
   var systemPrompt = 'You are Kennion AI, a powerful personal AI assistant embedded inside the user\'s CRM. '
-    + 'You have FULL ACCESS to all of their CRM data — every company, every contact, every email (sent & received), inbox, enrichment data, scores, and more. '
+    + 'You have FULL ACCESS to all of their CRM data — every company, every contact, every email (sent & received), enrichment data, scores, and more. '
     + 'This data is provided below. USE IT to give specific, accurate, personalized answers.\n\n'
     + 'CAPABILITIES:\n'
     + '- Search and analyze all CRM companies, contacts, and emails\n'
