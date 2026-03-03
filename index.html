@@ -6029,11 +6029,35 @@ function showCompanyPanel(id) {
 }
 
 function selectContact(email, domain, companyId) {
-  const data = domainMap[domain];
-  if (!data) return;
-  const ct = data.contacts[email.toLowerCase()];
-  if (!ct) return;
   const c = companies.find(x => x.domain === domain);
+  var ct = null;
+  var emailLower = email.toLowerCase();
+
+  // First: try to find the contact in the company's merged allContacts (has computed sent/received)
+  if (c && c.allContacts) {
+    ct = c.allContacts.find(function(x) { return x.email === emailLower; });
+  }
+
+  // Fallback: look up in domainMap (primary domain, then merged aliases)
+  if (!ct) {
+    var data = domainMap[domain];
+    if (data) ct = data.contacts[emailLower];
+    if (!ct) {
+      var aliases = getMergedAliases(domain);
+      for (var ai = 0; ai < aliases.length; ai++) {
+        var aliasData = domainMap[aliases[ai]];
+        if (aliasData && aliasData.contacts[emailLower]) {
+          ct = aliasData.contacts[emailLower];
+          break;
+        }
+      }
+    }
+  }
+  if (!ct) return;
+
+  // Ensure sent/received counts are always set
+  if (ct.sent === undefined) ct.sent = ct.sentIds ? ct.sentIds.size : 0;
+  if (ct.received === undefined) ct.received = ct.receivedIds ? ct.receivedIds.size : 0;
   const color = COLORS[(c ? c.id : 0) % COLORS.length];
   currentContactOverlay = { contact: ct, company: c, domain: domain, email: email.toLowerCase() };
   if (panelState) panelState.selectedContact = email.toLowerCase();
