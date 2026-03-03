@@ -772,7 +772,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
-    <div class="sidebar-section">AI Segments</div>
+    <div class="sidebar-section">Leads</div>
     <div class="sidebar-item" data-group="segment" onclick="filterByStatus('Hot',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       Hot Leads
@@ -4269,10 +4269,11 @@ function updateStats() {
   document.getElementById('statExisting').textContent = existing.toLocaleString();
   document.getElementById('statOld').textContent = old.toLocaleString();
   // Update type filter tab counts
-  // Update segment counts in sidebar
-  const hot = active.filter(c => c.status === 'Hot').length;
-  const warm = active.filter(c => c.status === 'Warm').length;
-  const cold = active.filter(c => c.status === 'Cold').length;
+  // Update lead segment counts in sidebar (only count leads, not clients)
+  const leadOnly = active.filter(c => getCompanyType(c.domain) === 'Lead');
+  const hot = leadOnly.filter(c => c.status === 'Hot').length;
+  const warm = leadOnly.filter(c => c.status === 'Warm').length;
+  const cold = leadOnly.filter(c => c.status === 'Cold').length;
   document.getElementById('hotCount').textContent = hot;
   document.getElementById('warmCount').textContent = warm;
   document.getElementById('coldCount').textContent = cold;
@@ -4669,7 +4670,7 @@ function toggleSidebar() {
 
 function filterByStatus(status, el) {
   currentFilter = status;
-  currentTypeFilter = 'all';
+  currentTypeFilter = 'Lead';
   tableShowAll = false;
   showingProposals = false;
   showingArchived = false;
