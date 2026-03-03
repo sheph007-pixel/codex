@@ -2155,27 +2155,42 @@ async function saveToCloud() {
   if (!currentAccount) return;
   cloudSyncInProgress = true;
   setSyncBadge('scanning', 'Saving...');
+  const saveStart = Date.now();
   try {
     const token = await getCloudToken();
-    if (!token) { setSyncBadge('error', 'No token'); return; }
+    if (!token) { setSyncBadge('error', 'No token'); cloudSyncInProgress = false; return; }
 
     const payload = gatherSyncPayload();
     const body = JSON.stringify(payload);
+    const sizeKB = Math.round(body.length / 1024);
+
+    // 15-second timeout — saving should never take longer than this
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     const resp = await fetch(
       'https://graph.microsoft.com/v1.0/me/drive/special/approot:/' + CLOUD_SYNC_FILE + ':/content',
-      { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body }
+      { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body, signal: controller.signal }
     );
+    clearTimeout(timeout);
+
+    const elapsed = ((Date.now() - saveStart) / 1000).toFixed(1);
     if (resp.ok) {
-      console.log('Cloud sync saved (' + Math.round(body.length/1024) + ' KB, ' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)');
-      setSyncBadge('success', 'Saved');
+      console.log('Cloud saved in ' + elapsed + 's (' + sizeKB + ' KB, ' + Object.keys(domainMap).length + ' domains, ' + blockedDomains.size + ' blocked)');
+      setSyncBadge('success', 'Saved (' + elapsed + 's)');
       lastCloudSaveTime = Date.now();
     } else {
-      console.warn('Cloud sync save failed:', resp.status, await resp.text());
+      console.warn('Cloud save failed:', resp.status, await resp.text());
       setSyncBadge('error', 'Save failed');
     }
   } catch(e) {
-    console.warn('Cloud sync save error:', e);
-    setSyncBadge('error', 'Save error');
+    if (e.name === 'AbortError') {
+      console.warn('Cloud save timed out after 15s');
+      setSyncBadge('error', 'Save timeout');
+    } else {
+      console.warn('Cloud save error:', e);
+      setSyncBadge('error', 'Save error');
+    }
   } finally {
     cloudSyncInProgress = false;
   }
@@ -2294,17 +2309,11 @@ function applyCloudDomainData(data) {
   }
 }
 
-// Debounced cloud save — triggers 30s after last change
+// Debounced cloud save — triggers 2s after last change
 function scheduleCloudSync() {
   if (!currentAccount) return;
   if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
-  // Show pending indicator
-  const badge = document.getElementById('syncBadge');
-  if (badge) {
-    badge.className = 'sync-badge scanning';
-    document.getElementById('syncBadgeText').textContent = 'Saving...';
-  }
-  // 2-second debounce: cloud is the source of truth, save quickly
+  // 2-second debounce, then save. Badge updates when upload actually starts.
   cloudSyncTimer = setTimeout(() => { saveToCloud(); }, 2000);
 }
 
