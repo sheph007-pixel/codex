@@ -825,6 +825,17 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       Cold Leads
       <span class="sidebar-badge" id="coldCount" style="background:var(--blue)">0</span>
     </div>
+    <div class="sidebar-section">Clients</div>
+    <div class="sidebar-item" data-group="segment" onclick="filterByClientType('Current Client',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Current Clients
+      <span class="sidebar-badge" id="currentClientCount" style="background:var(--green)">0</span>
+    </div>
+    <div class="sidebar-item" data-group="segment" onclick="filterByClientType('Old Client',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+      Old Clients
+      <span class="sidebar-badge" id="oldClientCount" style="background:#7a7a95">0</span>
+    </div>
     <div class="sidebar-section">Manage</div>
     <div class="sidebar-item" id="archivedViewItem" onclick="showArchivedView()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
@@ -4343,6 +4354,8 @@ function updateStats() {
   document.getElementById('hotCount').textContent = hot;
   document.getElementById('warmCount').textContent = warm;
   document.getElementById('coldCount').textContent = cold;
+  document.getElementById('currentClientCount').textContent = existing;
+  document.getElementById('oldClientCount').textContent = old;
   updateProposalCount();
   updateArchivedCount();
 }
@@ -4751,6 +4764,26 @@ function filterByStatus(status, el) {
   if (el) el.classList.add('active');
   var titles = { all: 'All Companies', Hot: 'Hot (10+ emails received)', Warm: 'Warm (1-9 emails received)', Cold: 'Cold (no emails received)' };
   setViewTitle(titles[status] || status, status === 'all');
+  syncStatCardActive('all');
+  clearSelection();
+  renderTable();
+}
+
+function filterByClientType(type, el) {
+  currentFilter = 'all';
+  currentTypeFilter = type;
+  tableShowAll = false;
+  showingProposals = false;
+  showingArchived = false;
+  showingFlagged = false;
+  showingFollowUp = false; hideFollowUpKanban();
+  hideInbox(); hideSettingsView(); hideBlockedView();
+  document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
+  document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
+  if (el) el.classList.add('active');
+  setViewTitle(type === 'Current Client' ? 'Current Clients' : 'Old Clients', false);
   syncStatCardActive('all');
   clearSelection();
   renderTable();
