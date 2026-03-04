@@ -2092,10 +2092,6 @@ function loadCompanyTypes() {
 
 function saveCompanyTypes() {
   localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
-  // Instant Supabase save for each changed type
-  for (const [domain, type] of Object.entries(companyTypes)) {
-    supabaseSaveCompanyField(domain, 'company_type', type ? type.toLowerCase() : null);
-  }
 }
 
 function getCompanyType(domain) {
@@ -2105,6 +2101,9 @@ function getCompanyType(domain) {
 function setCompanyType(domain, type, selectEl) {
   companyTypes[domain] = type;
   saveCompanyTypes();
+  // Instant Supabase save for this specific domain
+  supabaseSaveCompanyField(domain, 'company_type', type ? type.toLowerCase() : null);
+  scheduleSupabaseSync();
   updateTypeCounts();
   // Update the dropdown badge class in-place instead of full re-render
   // This prevents the dropdown from being destroyed mid-interaction
@@ -2166,6 +2165,7 @@ function loadStarredCompanies() {
 function saveStarredCompanies() {
   localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
   supabaseSaveSetting('starred_companies', [...starredCompanies]);
+  scheduleSupabaseSync();
 }
 
 // PROPOSAL NOTES & STAGES PERSISTENCE
@@ -2186,11 +2186,13 @@ function loadProposalData() {
 function saveProposalNotes() {
   localStorage.setItem('kennion_proposal_notes', JSON.stringify(proposalNotes));
   supabaseSaveSetting('proposal_notes', proposalNotes);
+  scheduleSupabaseSync();
 }
 
 function saveProposalStages() {
   localStorage.setItem('kennion_proposal_stages', JSON.stringify(proposalStages));
   supabaseSaveSetting('proposal_stages', proposalStages);
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2209,6 +2211,7 @@ function loadFollowUpData() {
 function saveFollowUpCompanies() {
   localStorage.setItem('kennion_followup_companies', JSON.stringify([...followUpCompanies]));
   supabaseSaveSetting('followup_companies', [...followUpCompanies]);
+  scheduleSupabaseSync();
 }
 function saveFollowUpDates() {
   localStorage.setItem('kennion_followup_dates', JSON.stringify(followUpDates));
@@ -2227,6 +2230,7 @@ function loadArchivedCompanies() {
 function saveArchivedCompanies() {
   localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
   supabaseSaveSetting('archived_companies', [...archivedCompanies]);
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2241,6 +2245,7 @@ function loadMergedDomains() {
 function saveMergedDomains() {
   localStorage.setItem('kennion_merged_domains', JSON.stringify(mergedDomains));
   supabaseSaveSetting('merged_domains', mergedDomains);
+  scheduleSupabaseSync();
 }
 // Resolve a domain to its primary (follow chain)
 function resolveMergedDomain(domain) {
@@ -2273,6 +2278,7 @@ function loadFlaggedCompanies() {
 function saveFlaggedCompanies() {
   localStorage.setItem('kennion_flagged_companies', JSON.stringify([...flaggedCompanies]));
   supabaseSaveSetting('flagged_companies', [...flaggedCompanies]);
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2834,7 +2840,7 @@ async function loadFromSupabase() {
       };
       // Restore metadata
       if (c.company_name) companyNameCache[c.domain] = c.company_name;
-      if (c.company_type) companyTypes[c.domain] = c.company_type.charAt(0).toUpperCase() + c.company_type.slice(1);
+      if (c.company_type) companyTypes[c.domain] = c.company_type.replace(/\b\w/g, l => l.toUpperCase());
       if (c.is_starred) starredCompanies.add(c.domain);
       if (c.is_archived) archivedCompanies.add(c.domain);
       if (c.is_flagged) flaggedCompanies.add(c.domain);
@@ -2921,11 +2927,10 @@ async function loadFromSupabase() {
 async function supabaseSaveCompanyField(domain, field, value) {
   if (!supabaseReady || !supabaseUserId) return;
   try {
+    const row = { user_id: supabaseUserId, domain: domain, [field]: value };
     await supabaseClient
       .from('companies')
-      .update({ [field]: value })
-      .eq('user_id', supabaseUserId)
-      .eq('domain', domain);
+      .upsert(row, { onConflict: 'user_id,domain' });
   } catch(e) { console.warn('Supabase: field save failed:', e); }
 }
 
@@ -2969,7 +2974,7 @@ async function refreshFromSupabase() {
   if (Date.now() - lastRefreshTime < 10000) return;
   refreshInProgress = true;
   try {
-    // Clear mutable state before reload
+    // Clear all mutable state before reload
     Object.keys(companyTypes).forEach(k => delete companyTypes[k]);
     starredCompanies.clear();
     archivedCompanies.clear();
@@ -2982,6 +2987,9 @@ async function refreshFromSupabase() {
     Object.keys(mergedDomains).forEach(k => delete mergedDomains[k]);
     Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
     Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
+    Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
+    Object.keys(enrichmentCache).forEach(k => delete enrichmentCache[k]);
+    Object.keys(contactEnrichment).forEach(k => delete contactEnrichment[k]);
 
     const result = await loadFromSupabase();
     if (result && result.domainMap && Object.keys(result.domainMap).length > 0) {
@@ -5450,6 +5458,7 @@ function unflagCompany(domain) {
   flaggedCompanies.delete(domain);
   selectedFlaggedDomains.delete(domain);
   saveFlaggedCompanies();
+  supabaseSaveCompanyField(domain, 'is_flagged', false);
   updateFlaggedCount();
   buildCompaniesFromDomainMap();
   updateStats();
@@ -5463,6 +5472,8 @@ function blockFlaggedCompany(domain) {
   blockedDomains.add(domain.toLowerCase());
   saveFlaggedCompanies();
   saveBlockedDomains();
+  supabaseSaveCompanyField(domain, 'is_flagged', false);
+  supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
   updateFlaggedCount();
   updateBlockedCount();
   buildCompaniesFromDomainMap();
@@ -5917,6 +5928,7 @@ function toggleCompanyStar(domain) {
     starredCompanies.add(domain);
   }
   saveStarredCompanies();
+  supabaseSaveCompanyField(domain, 'is_starred', starredCompanies.has(domain));
   updateProposalCount();
   renderTable();
 }
@@ -5962,10 +5974,12 @@ function toggleFollowUp(domain) {
     followUpCompanies.delete(domain);
     delete followUpDates[domain];
     saveFollowUpDates();
+    supabaseSaveCompanyField(domain, 'followup_date', null);
   } else {
     followUpCompanies.add(domain);
   }
   saveFollowUpCompanies();
+  supabaseSaveCompanyField(domain, 'is_followup', followUpCompanies.has(domain));
   updateFollowUpCount();
   renderTable();
 }
@@ -5977,6 +5991,7 @@ function setFollowUpDate(domain, date) {
     delete followUpDates[domain];
   }
   saveFollowUpDates();
+  supabaseSaveCompanyField(domain, 'followup_date', date || null);
   renderTable();
 }
 
@@ -6226,6 +6241,8 @@ function archiveCompany(domain) {
   starredCompanies.delete(domain); // unstar if starred
   saveArchivedCompanies();
   saveStarredCompanies();
+  supabaseSaveCompanyField(domain, 'is_archived', true);
+  supabaseSaveCompanyField(domain, 'is_starred', false);
   updateArchivedCount();
   updateProposalCount();
   buildCompaniesFromDomainMap();
@@ -6236,6 +6253,7 @@ function archiveCompany(domain) {
 function unarchiveCompany(domain) {
   archivedCompanies.delete(domain);
   saveArchivedCompanies();
+  supabaseSaveCompanyField(domain, 'is_archived', false);
   updateArchivedCount();
   buildCompaniesFromDomainMap();
   updateStats();
