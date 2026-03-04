@@ -1586,6 +1586,26 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 </div>
 
 <script>
+// Global error handler — if any uncaught error occurs, show welcome screen
+window.onerror = function(msg, src, line, col, err) {
+  console.error('Global error:', msg, 'at', src, line);
+  try {
+    var al = document.getElementById('authLoading');
+    var ws = document.getElementById('welcomeScreen');
+    if (al) al.style.display = 'none';
+    if (ws) ws.style.display = 'flex';
+  } catch(e) {}
+};
+window.addEventListener('unhandledrejection', function(ev) {
+  console.error('Unhandled promise rejection:', ev.reason);
+  try {
+    var al = document.getElementById('authLoading');
+    var ws = document.getElementById('welcomeScreen');
+    if (al) al.style.display = 'none';
+    if (ws) ws.style.display = 'flex';
+  } catch(e) {}
+});
+
 // ──────────────────────────────────────────────
 // CONFIG & STATE
 // ──────────────────────────────────────────────
@@ -2387,7 +2407,7 @@ function clearPersistedData() { /* no-op */ }
 // ──────────────────────────────────────────────
 let _sidebarCollapsed = false;
 let _domainScanLastTs = '0';
-const _deviceId = crypto.randomUUID(); // ephemeral per-session device ID
+const _deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
 let supabaseClient = null;
 let supabaseUserId = null;
 let supabaseReady = false;
