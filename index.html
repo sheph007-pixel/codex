@@ -8306,6 +8306,7 @@ async function showCloudVersionHistory() {
 
     status.textContent = 'Found ' + versions.length + ' version(s). Loading details...';
 
+    var versionRows = [];
     for (const v of versions) {
       const dt = new Date(v.lastModifiedDateTime);
       const dateStr = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -8320,63 +8321,84 @@ async function showCloudVersionHistory() {
       });
       listEl.appendChild(row);
 
-      // Async: fetch version content to show blocked/domain counts
-      (async (rowEl, ver) => {
-        try {
-          const vResp = await fetch(
-            'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions/' + ver.id + '/content',
-            { headers: { 'Authorization': 'Bearer ' + token } }
-          );
-          if (!vResp.ok) { rowEl.querySelector('.ver-detail').textContent = '(failed to load)'; return; }
-          const data = await vResp.json();
-          const bl = data.settings && data.settings.blocked_domains ? data.settings.blocked_domains.length : 0;
-          const domains = data.domainData ? Object.keys(data.domainData).length : 0;
-          const ratio = domains > 0 ? bl / domains : 0;
-          // Count each company type category
-          var typeCounts = {};
-          var totalCategorized = 0;
-          if (data.settings && data.settings.company_types) {
-            for (var tk of Object.values(data.settings.company_types)) {
-              typeCounts[tk] = (typeCounts[tk] || 0) + 1;
-              totalCategorized++;
-            }
-          }
-          const starred = data.settings && data.settings.starred_companies ? data.settings.starred_companies.length : 0;
-          const flagged = data.settings && data.settings.flagged_companies ? data.settings.flagged_companies.length : 0;
-          const detailEl = rowEl.querySelector('.ver-detail');
-          // Build stats as labeled badges
-          var badgeStyle = 'display:inline-block;padding:1px 7px;border-radius:3px;margin:2px 3px 2px 0;font-size:11px;';
-          var html = '<span style="' + badgeStyle + 'background:var(--bg2);color:var(--text1)">' + domains + ' Companies</span>';
-          if (typeCounts['Lead']) html += '<span style="' + badgeStyle + 'background:#e3f2fd;color:#1565c0">' + typeCounts['Lead'] + ' Leads</span>';
-          if (typeCounts['Current Client']) html += '<span style="' + badgeStyle + 'background:#e8f5e9;color:#2e7d32">' + typeCounts['Current Client'] + ' Current</span>';
-          if (typeCounts['Old Client']) html += '<span style="' + badgeStyle + 'background:#fff3e0;color:#e65100">' + typeCounts['Old Client'] + ' Old</span>';
-          // Show any other categories
-          for (var cat in typeCounts) {
-            if (cat !== 'Lead' && cat !== 'Current Client' && cat !== 'Old Client') {
-              html += '<span style="' + badgeStyle + 'background:#f3e5f5;color:#7b1fa2">' + typeCounts[cat] + ' ' + cat + '</span>';
-            }
-          }
-          if (bl > 0) html += '<span style="' + badgeStyle + 'background:#ffebee;color:#c62828">' + bl + ' Blocked</span>';
-          if (starred > 0) html += '<span style="' + badgeStyle + 'background:#fffde7;color:#f57f17">' + starred + ' Starred</span>';
-          if (flagged > 0) html += '<span style="' + badgeStyle + 'background:#fce4ec;color:#ad1457">' + flagged + ' Flagged</span>';
-          detailEl.innerHTML = html;
-          // Row highlight based on health
-          if (totalCategorized >= 10) {
-            rowEl.style.background = 'rgba(76,175,80,0.07)';
-            rowEl.style.borderLeft = '3px solid var(--green)';
-          } else if (bl === 0 && totalCategorized === 0) {
-            rowEl.style.opacity = '0.5';
-          } else if (ratio >= 0.9) {
-            detailEl.innerHTML += '<span style="color:var(--red);margin-left:4px;font-weight:600">(corrupted)</span>';
-            rowEl.style.background = 'rgba(244,67,54,0.05)';
-            rowEl.style.borderLeft = '3px solid var(--red)';
+      versionRows.push({ row: row, ver: v });
+    }
+
+    // Load version details in batches of 3 to avoid rate-limiting
+    async function loadVersionDetail(rowEl, ver) {
+      try {
+        const vResp = await fetch(
+          'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions/' + ver.id + '/content',
+          { headers: { 'Authorization': 'Bearer ' + token } }
+        );
+        if (!vResp.ok) {
+          // Retry once after 429 rate limit
+          if (vResp.status === 429) {
+            var retryAfter = parseInt(vResp.headers.get('Retry-After') || '2', 10);
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
+            const retry = await fetch(
+              'https://graph.microsoft.com/v1.0/me/drive/items/' + fileId + '/versions/' + ver.id + '/content',
+              { headers: { 'Authorization': 'Bearer ' + token } }
+            );
+            if (!retry.ok) { rowEl.querySelector('.ver-detail').textContent = '(failed)'; return; }
+            var data = await retry.json();
           } else {
-            rowEl.style.borderLeft = '3px solid #1a73e8';
+            rowEl.querySelector('.ver-detail').textContent = '(failed)'; return;
           }
-        } catch(e) {
-          rowEl.querySelector('.ver-detail').textContent = '(error)';
+        } else {
+          var data = await vResp.json();
         }
-      })(row, v);
+        const bl = data.settings && data.settings.blocked_domains ? data.settings.blocked_domains.length : 0;
+        const domains = data.domainData ? Object.keys(data.domainData).length : 0;
+        const ratio = domains > 0 ? bl / domains : 0;
+        var typeCounts = {};
+        var totalCategorized = 0;
+        if (data.settings && data.settings.company_types) {
+          for (var tk of Object.values(data.settings.company_types)) {
+            typeCounts[tk] = (typeCounts[tk] || 0) + 1;
+            totalCategorized++;
+          }
+        }
+        const starred = data.settings && data.settings.starred_companies ? data.settings.starred_companies.length : 0;
+        const flagged = data.settings && data.settings.flagged_companies ? data.settings.flagged_companies.length : 0;
+        const detailEl = rowEl.querySelector('.ver-detail');
+        var badgeStyle = 'display:inline-block;padding:1px 7px;border-radius:3px;margin:2px 3px 2px 0;font-size:11px;';
+        var html = '<span style="' + badgeStyle + 'background:var(--bg2);color:var(--text1)">' + domains + ' Companies</span>';
+        if (typeCounts['Lead']) html += '<span style="' + badgeStyle + 'background:#e3f2fd;color:#1565c0">' + typeCounts['Lead'] + ' Leads</span>';
+        if (typeCounts['Current Client']) html += '<span style="' + badgeStyle + 'background:#e8f5e9;color:#2e7d32">' + typeCounts['Current Client'] + ' Current</span>';
+        if (typeCounts['Old Client']) html += '<span style="' + badgeStyle + 'background:#fff3e0;color:#e65100">' + typeCounts['Old Client'] + ' Old</span>';
+        for (var cat in typeCounts) {
+          if (cat !== 'Lead' && cat !== 'Current Client' && cat !== 'Old Client') {
+            html += '<span style="' + badgeStyle + 'background:#f3e5f5;color:#7b1fa2">' + typeCounts[cat] + ' ' + cat + '</span>';
+          }
+        }
+        if (bl > 0) html += '<span style="' + badgeStyle + 'background:#ffebee;color:#c62828">' + bl + ' Blocked</span>';
+        if (starred > 0) html += '<span style="' + badgeStyle + 'background:#fffde7;color:#f57f17">' + starred + ' Starred</span>';
+        if (flagged > 0) html += '<span style="' + badgeStyle + 'background:#fce4ec;color:#ad1457">' + flagged + ' Flagged</span>';
+        detailEl.innerHTML = html;
+        if (totalCategorized >= 10) {
+          rowEl.style.background = 'rgba(76,175,80,0.07)';
+          rowEl.style.borderLeft = '3px solid var(--green)';
+        } else if (bl === 0 && totalCategorized === 0) {
+          rowEl.style.opacity = '0.5';
+        } else if (ratio >= 0.9) {
+          detailEl.innerHTML += '<span style="color:var(--red);margin-left:4px;font-weight:600">(corrupted)</span>';
+          rowEl.style.background = 'rgba(244,67,54,0.05)';
+          rowEl.style.borderLeft = '3px solid var(--red)';
+        } else {
+          rowEl.style.borderLeft = '3px solid #1a73e8';
+        }
+      } catch(e) {
+        rowEl.querySelector('.ver-detail').textContent = '(error)';
+      }
+    }
+
+    // Process in batches of 3 concurrent requests
+    var BATCH_SIZE = 3;
+    for (var bi = 0; bi < versionRows.length; bi += BATCH_SIZE) {
+      var batch = versionRows.slice(bi, bi + BATCH_SIZE);
+      await Promise.all(batch.map(function(item) { return loadVersionDetail(item.row, item.ver); }));
+      status.textContent = 'Loading details... ' + Math.min(bi + BATCH_SIZE, versionRows.length) + '/' + versionRows.length;
     }
 
     status.textContent = 'Found ' + versions.length + ' version(s). Green = healthy, Red = corrupted. Click to restore:';
