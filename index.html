@@ -747,6 +747,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   .ev-attachments{padding:10px 16px}
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 
@@ -1106,7 +1107,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     <div class="settings-view" id="settingsView">
       <div class="settings-header">
         <h2>Settings</h2>
-        <p class="settings-subtitle">All changes auto-save to your OneDrive and sync across devices.</p>
+        <p class="settings-subtitle">All changes auto-save to your database and sync across devices. Connect Supabase below for reliable server-side storage.</p>
       </div>
 
       <div class="settings-grid">
@@ -1149,6 +1150,40 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
               </ol>
             </details>
           </div>
+        </div>
+
+        <!-- DATABASE (SUPABASE) -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+            <h3>Database</h3>
+          </div>
+          <div id="supabaseSyncBadge" style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(26,115,232,.08);border:1px solid rgba(26,115,232,.15);border-radius:6px;margin-bottom:10px;font-size:11px">
+            <span style="color:var(--text2)">Not configured</span>
+          </div>
+          <p class="settings-desc">Connect to Supabase for reliable server-side PostgreSQL storage with automatic backups. Your data will never be lost — even if you clear your browser, switch devices, or reinstall.</p>
+          <div class="settings-field">
+            <label>Supabase Project URL</label>
+            <input type="text" id="settingsSupabaseUrl" placeholder="https://your-project.supabase.co" style="width:100%;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;outline:none">
+          </div>
+          <div class="settings-field" style="margin-top:8px">
+            <label>Supabase Anon Key</label>
+            <input type="password" id="settingsSupabaseKey" placeholder="eyJhbGciOiJIUzI1NiIs..." style="width:100%;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;font-family:inherit;outline:none">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn btn-primary btn-sm" onclick="saveSupabaseSettings()">Save & Connect</button>
+            <button class="btn btn-ghost btn-sm" onclick="testSupabaseConnection()">Test Connection</button>
+          </div>
+          <details class="settings-details" style="margin-top:12px">
+            <summary>Setup Instructions</summary>
+            <ol class="settings-steps">
+              <li>Go to <strong>supabase.com</strong> and create a free account</li>
+              <li>Click <strong>New Project</strong>, choose a name and password</li>
+              <li>Go to <strong>SQL Editor</strong> and run the migration file from <code>supabase/migrations/001_initial_schema.sql</code> in your repo</li>
+              <li>Go to <strong>Settings &rarr; API</strong> and copy your <strong>Project URL</strong> and <strong>anon/public key</strong></li>
+              <li>Paste both values above and click <strong>Save & Connect</strong></li>
+            </ol>
+          </details>
         </div>
 
         <!-- BLOCKED DOMAINS -->
@@ -1664,6 +1699,7 @@ function loadColumnConfig() {
 function saveColumnConfig() {
   localStorage.setItem('kennion_columns', JSON.stringify(columnConfig));
   scheduleCloudSync();
+  supabaseSaveSetting('column_config', columnConfig);
 }
 
 function loadCustomColumnData() {
@@ -1676,6 +1712,7 @@ function loadCustomColumnData() {
 function saveCustomColumnData() {
   localStorage.setItem('kennion_custom_data', JSON.stringify(customColumnData));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 function loadEnrichmentCache() {
@@ -2059,6 +2096,7 @@ function loadStarredContacts() {
 function saveStarredContacts() {
   localStorage.setItem('relateflow_starred_contacts', JSON.stringify(starredContacts));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 function loadCompanyTypes() {
@@ -2071,6 +2109,10 @@ function loadCompanyTypes() {
 function saveCompanyTypes() {
   localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
   scheduleCloudSync();
+  // Instant Supabase save for each changed type
+  for (const [domain, type] of Object.entries(companyTypes)) {
+    supabaseSaveCompanyField(domain, 'company_type', type ? type.toLowerCase() : null);
+  }
 }
 
 function getCompanyType(domain) {
@@ -2123,6 +2165,7 @@ function loadBlockedDomains() {
 function saveBlockedDomains() {
   localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
   scheduleCloudSync();
+  supabaseSaveSetting('blocked_domains', [...blockedDomains]);
 }
 
 function isBlockedDomain(domain) {
@@ -2141,6 +2184,7 @@ function loadStarredCompanies() {
 function saveStarredCompanies() {
   localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 // PROPOSAL NOTES & STAGES PERSISTENCE
@@ -2161,11 +2205,13 @@ function loadProposalData() {
 function saveProposalNotes() {
   localStorage.setItem('kennion_proposal_notes', JSON.stringify(proposalNotes));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 function saveProposalStages() {
   localStorage.setItem('kennion_proposal_stages', JSON.stringify(proposalStages));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2184,10 +2230,12 @@ function loadFollowUpData() {
 function saveFollowUpCompanies() {
   localStorage.setItem('kennion_followup_companies', JSON.stringify([...followUpCompanies]));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 function saveFollowUpDates() {
   localStorage.setItem('kennion_followup_dates', JSON.stringify(followUpDates));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2202,6 +2250,7 @@ function loadArchivedCompanies() {
 function saveArchivedCompanies() {
   localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2216,6 +2265,7 @@ function loadMergedDomains() {
 function saveMergedDomains() {
   localStorage.setItem('kennion_merged_domains', JSON.stringify(mergedDomains));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 // Resolve a domain to its primary (follow chain)
 function resolveMergedDomain(domain) {
@@ -2248,6 +2298,7 @@ function loadFlaggedCompanies() {
 function saveFlaggedCompanies() {
   localStorage.setItem('kennion_flagged_companies', JSON.stringify([...flaggedCompanies]));
   scheduleCloudSync();
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -2324,6 +2375,7 @@ function saveCompanyNameCache() {
   try {
     localStorage.setItem('relateflow_company_names', JSON.stringify(companyNameCache));
     companyNameCacheDirty = false;
+    supabaseSaveSetting('company_name_cache', companyNameCache);
   } catch(e) {}
 }
 
@@ -2341,6 +2393,7 @@ function saveContactNameOverrides() {
   try {
     localStorage.setItem('relateflow_contact_names', JSON.stringify(contactNameOverrides));
     contactNameDirty = false;
+    supabaseSaveSetting('contact_name_overrides', contactNameOverrides);
   } catch(e) {}
 }
 function getContactDisplayName(email, fallback) {
@@ -2540,6 +2593,365 @@ async function clearPersistedData() {
     tx.objectStore('meta').clear();
     await new Promise(r => { tx.oncomplete = r; });
   } catch(e) { console.warn('Clear failed:', e); }
+}
+
+// ──────────────────────────────────────────────
+// SUPABASE DATABASE LAYER
+// All data writes go to Supabase (PostgreSQL) first,
+// then update local cache. This is the source of truth.
+// ──────────────────────────────────────────────
+let supabaseClient = null;
+let supabaseUserId = null;
+let supabaseReady = false;
+let supabaseSyncTimer = null;
+let supabaseSyncInProgress = false;
+
+function getSupabaseConfig() {
+  const url = localStorage.getItem('kennion_supabase_url') || '';
+  const key = localStorage.getItem('kennion_supabase_key') || '';
+  return { url, key };
+}
+
+function saveSupabaseConfig(url, key) {
+  localStorage.setItem('kennion_supabase_url', url.trim());
+  localStorage.setItem('kennion_supabase_key', key.trim());
+}
+
+function initSupabase() {
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) {
+    supabaseReady = false;
+    supabaseClient = null;
+    return false;
+  }
+  try {
+    supabaseClient = supabase.createClient(url, key);
+    supabaseReady = true;
+    console.log('Supabase: initialized');
+    return true;
+  } catch(e) {
+    console.warn('Supabase: init failed:', e);
+    supabaseReady = false;
+    return false;
+  }
+}
+
+// Upsert user record on sign-in (returns user UUID)
+async function supabaseEnsureUser(microsoftId, email, displayName) {
+  if (!supabaseReady) return null;
+  try {
+    const { data, error } = await supabaseClient
+      .from('users')
+      .upsert({ microsoft_id: microsoftId, email: email, display_name: displayName || email },
+              { onConflict: 'microsoft_id' })
+      .select('id')
+      .single();
+    if (error) { console.warn('Supabase: user upsert failed:', error.message); return null; }
+    supabaseUserId = data.id;
+    console.log('Supabase: user ready, id=' + supabaseUserId);
+    return supabaseUserId;
+  } catch(e) {
+    console.warn('Supabase: user ensure failed:', e);
+    return null;
+  }
+}
+
+// ── SAVE TO SUPABASE (debounced full sync) ──
+function scheduleSupabaseSync() {
+  if (!supabaseReady || !supabaseUserId) return;
+  if (supabaseSyncTimer) clearTimeout(supabaseSyncTimer);
+  supabaseSyncTimer = setTimeout(() => { syncToSupabase(); }, 3000);
+}
+
+async function syncToSupabase() {
+  if (!supabaseReady || !supabaseUserId || supabaseSyncInProgress) return;
+  supabaseSyncInProgress = true;
+  const syncStart = Date.now();
+  try {
+    // Sync companies + contacts in batches
+    const companyRows = [];
+    const contactRows = [];
+    for (const [domain, data] of Object.entries(domainMap)) {
+      const row = {
+        user_id: supabaseUserId,
+        domain: domain,
+        company_name: companyNameCache[domain] || null,
+        company_type: companyTypes[domain] ? companyTypes[domain].toLowerCase() : null,
+        is_starred: starredCompanies.has(domain),
+        is_archived: archivedCompanies.has(domain),
+        is_flagged: flaggedCompanies.has(domain),
+        is_blocked: blockedDomains.has(domain),
+        is_followup: followUpCompanies.has(domain),
+        followup_date: followUpDates[domain] || null,
+        last_activity_date: data.lastDate ? data.lastDate.toISOString() : null,
+        last_sent_date: data.lastSentDate ? data.lastSentDate.toISOString() : null,
+        last_received_date: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null,
+        sent_count: data.sentIds ? data.sentIds.size : 0,
+        received_count: data.receivedIds ? data.receivedIds.size : 0,
+        proposal_stage: proposalStages[domain] || null,
+        proposal_notes: proposalNotes[domain] || null,
+        merged_into: mergedDomains[domain] || null,
+        enrichment: enrichmentCache[domain] || {},
+        custom_data: customColumnData[domain] || {},
+      };
+      companyRows.push(row);
+      for (const [email, c] of Object.entries(data.contacts)) {
+        contactRows.push({
+          user_id: supabaseUserId,
+          email: email,
+          name: c.name,
+          is_starred: starredContacts[domain] === email,
+          last_activity_date: c.lastDate ? c.lastDate.toISOString() : null,
+          sent_count: c.sentIds ? c.sentIds.size : 0,
+          received_count: c.receivedIds ? c.receivedIds.size : 0,
+          enrichment: contactEnrichment[email] || {},
+          _domain: domain, // temp field for company lookup
+        });
+      }
+    }
+
+    // Batch upsert companies (chunks of 200)
+    for (let i = 0; i < companyRows.length; i += 200) {
+      const batch = companyRows.slice(i, i + 200);
+      const { error } = await supabaseClient
+        .from('companies')
+        .upsert(batch, { onConflict: 'user_id,domain' });
+      if (error) console.warn('Supabase: company batch ' + i + ' failed:', error.message);
+    }
+
+    // Get company IDs for contact foreign keys
+    const { data: companyIdRows } = await supabaseClient
+      .from('companies')
+      .select('id, domain')
+      .eq('user_id', supabaseUserId);
+    const domainToCompanyId = {};
+    if (companyIdRows) {
+      for (const r of companyIdRows) domainToCompanyId[r.domain] = r.id;
+    }
+
+    // Batch upsert contacts (chunks of 200)
+    for (let i = 0; i < contactRows.length; i += 200) {
+      const batch = contactRows.slice(i, i + 200).map(c => {
+        const { _domain, ...rest } = c;
+        rest.company_id = domainToCompanyId[_domain] || null;
+        return rest;
+      }).filter(c => c.company_id); // skip orphans
+      if (batch.length === 0) continue;
+      const { error } = await supabaseClient
+        .from('contacts')
+        .upsert(batch, { onConflict: 'user_id,email' });
+      if (error) console.warn('Supabase: contact batch ' + i + ' failed:', error.message);
+    }
+
+    // Sync user settings
+    const settingsToSync = {
+      column_config: columnConfig,
+      email_signature: getEmailSignature(),
+      email_throttle: getThrottleSettings(),
+      openai_key: getOpenAIKey(),
+      client_id: getClientId(),
+      contact_name_overrides: contactNameOverrides,
+      company_name_cache: companyNameCache,
+      blocked_domains: [...blockedDomains],
+    };
+    for (const [key, value] of Object.entries(settingsToSync)) {
+      const { error } = await supabaseClient
+        .from('user_settings')
+        .upsert({ user_id: supabaseUserId, key: key, value: JSON.stringify(value) },
+                { onConflict: 'user_id,key' });
+      if (error) console.warn('Supabase: setting ' + key + ' failed:', error.message);
+    }
+
+    // Sync scan metadata
+    const deviceId = localStorage.getItem('kennion_device_id') || (() => {
+      const id = crypto.randomUUID();
+      localStorage.setItem('kennion_device_id', id);
+      return id;
+    })();
+    await supabaseClient
+      .from('scan_metadata')
+      .upsert({
+        user_id: supabaseUserId,
+        device_id: deviceId,
+        last_scan_time: lastScanTime ? lastScanTime.toISOString() : null,
+        full_scan_done: fullScanDone,
+        delta_link: deltaLink,
+      }, { onConflict: 'user_id,device_id' });
+
+    const elapsed = ((Date.now() - syncStart) / 1000).toFixed(1);
+    console.log('Supabase: synced ' + companyRows.length + ' companies, ' + contactRows.length + ' contacts in ' + elapsed + 's');
+    updateSupabaseBadge('success');
+  } catch(e) {
+    console.warn('Supabase: sync error:', e);
+    updateSupabaseBadge('error');
+  } finally {
+    supabaseSyncInProgress = false;
+  }
+}
+
+// ── LOAD FROM SUPABASE ──
+async function loadFromSupabase() {
+  if (!supabaseReady || !supabaseUserId) return null;
+  try {
+    console.log('Supabase: loading data...');
+    const loadStart = Date.now();
+
+    // Load companies
+    const { data: companyData, error: companyErr } = await supabaseClient
+      .from('companies')
+      .select('*')
+      .eq('user_id', supabaseUserId);
+    if (companyErr) { console.warn('Supabase: load companies failed:', companyErr.message); return null; }
+    if (!companyData || companyData.length === 0) {
+      console.log('Supabase: no companies found (first time)');
+      return null;
+    }
+
+    // Load contacts
+    const { data: contactData } = await supabaseClient
+      .from('contacts')
+      .select('*')
+      .eq('user_id', supabaseUserId);
+
+    // Load settings
+    const { data: settingsData } = await supabaseClient
+      .from('user_settings')
+      .select('key, value')
+      .eq('user_id', supabaseUserId);
+
+    // Load scan metadata for this device
+    const deviceId = localStorage.getItem('kennion_device_id') || '';
+    const { data: scanData } = await supabaseClient
+      .from('scan_metadata')
+      .select('*')
+      .eq('user_id', supabaseUserId)
+      .eq('device_id', deviceId)
+      .single();
+
+    // Build domainMap from companies + contacts
+    const newDomainMap = {};
+    const companyIdToDomain = {};
+    for (const c of companyData) {
+      companyIdToDomain[c.id] = c.domain;
+      newDomainMap[c.domain] = {
+        contacts: {},
+        sentIds: new Set(),
+        receivedIds: new Set(),
+        lastDate: c.last_activity_date ? new Date(c.last_activity_date) : null,
+        lastSentDate: c.last_sent_date ? new Date(c.last_sent_date) : null,
+        lastReceivedDate: c.last_received_date ? new Date(c.last_received_date) : null,
+      };
+      // Restore metadata
+      if (c.company_name) companyNameCache[c.domain] = c.company_name;
+      if (c.company_type) companyTypes[c.domain] = c.company_type.charAt(0).toUpperCase() + c.company_type.slice(1);
+      if (c.is_starred) starredCompanies.add(c.domain);
+      if (c.is_archived) archivedCompanies.add(c.domain);
+      if (c.is_flagged) flaggedCompanies.add(c.domain);
+      if (c.is_blocked) blockedDomains.add(c.domain);
+      if (c.is_followup) followUpCompanies.add(c.domain);
+      if (c.followup_date) followUpDates[c.domain] = c.followup_date;
+      if (c.proposal_stage) proposalStages[c.domain] = c.proposal_stage;
+      if (c.proposal_notes) proposalNotes[c.domain] = c.proposal_notes;
+      if (c.merged_into) mergedDomains[c.domain] = c.merged_into;
+      if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[c.domain] = c.enrichment;
+      if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
+    }
+
+    // Add contacts to their companies
+    if (contactData) {
+      for (const ct of contactData) {
+        const domain = companyIdToDomain[ct.company_id];
+        if (!domain || !newDomainMap[domain]) continue;
+        newDomainMap[domain].contacts[ct.email] = {
+          name: ct.name || ct.email,
+          email: ct.email,
+          sentIds: new Set(),
+          receivedIds: new Set(),
+          lastDate: ct.last_activity_date ? new Date(ct.last_activity_date) : null,
+        };
+        if (ct.is_starred) starredContacts[domain] = ct.email;
+        if (ct.enrichment && Object.keys(ct.enrichment).length > 0) {
+          contactEnrichment[ct.email] = ct.enrichment;
+        }
+      }
+    }
+
+    // Apply settings
+    if (settingsData) {
+      for (const s of settingsData) {
+        try {
+          const val = typeof s.value === 'string' ? JSON.parse(s.value) : s.value;
+          switch (s.key) {
+            case 'column_config': if (val && val.length > 0) columnConfig = val; break;
+            case 'email_signature': if (val) saveEmailSignature(val); break;
+            case 'email_throttle': if (val) saveThrottleSettingsToStorage(val); break;
+            case 'openai_key': if (val) localStorage.setItem('kennion_openai_key', val); break;
+            case 'client_id': if (val) localStorage.setItem('relateflow_client_id', val); break;
+            case 'contact_name_overrides': if (val) Object.assign(contactNameOverrides, val); break;
+            case 'company_name_cache': if (val) Object.assign(companyNameCache, val); break;
+            case 'blocked_domains': if (val && val.length > 0) val.forEach(d => blockedDomains.add(d)); break;
+          }
+        } catch(e) { console.warn('Supabase: setting parse error for ' + s.key + ':', e); }
+      }
+    }
+
+    // Scan metadata
+    let scanMeta = null;
+    if (scanData) {
+      scanMeta = {
+        lastScanTime: scanData.last_scan_time ? new Date(scanData.last_scan_time) : null,
+        fullScanDone: scanData.full_scan_done || false,
+        deltaLink: scanData.delta_link || null,
+      };
+    }
+
+    const elapsed = ((Date.now() - loadStart) / 1000).toFixed(1);
+    console.log('Supabase: loaded ' + companyData.length + ' companies, ' + (contactData ? contactData.length : 0) + ' contacts in ' + elapsed + 's');
+    return { domainMap: newDomainMap, scanMeta: scanMeta };
+  } catch(e) {
+    console.warn('Supabase: load error:', e);
+    return null;
+  }
+}
+
+// ── INDIVIDUAL FIELD SAVES (instant updates) ──
+async function supabaseSaveCompanyField(domain, field, value) {
+  if (!supabaseReady || !supabaseUserId) return;
+  try {
+    await supabaseClient
+      .from('companies')
+      .update({ [field]: value })
+      .eq('user_id', supabaseUserId)
+      .eq('domain', domain);
+  } catch(e) { console.warn('Supabase: field save failed:', e); }
+}
+
+async function supabaseSaveSetting(key, value) {
+  if (!supabaseReady || !supabaseUserId) return;
+  try {
+    await supabaseClient
+      .from('user_settings')
+      .upsert({ user_id: supabaseUserId, key: key, value: JSON.stringify(value) },
+              { onConflict: 'user_id,key' });
+  } catch(e) { console.warn('Supabase: setting save failed:', e); }
+}
+
+function updateSupabaseBadge(status) {
+  const el = document.getElementById('supabaseSyncBadge');
+  if (!el) return;
+  if (status === 'success') {
+    el.style.background = 'rgba(52,168,83,.08)';
+    el.style.borderColor = 'rgba(52,168,83,.2)';
+    el.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#34a853"></div><span style="font-size:11px;color:#34a853">Database synced</span>';
+  } else if (status === 'error') {
+    el.style.background = 'rgba(217,48,37,.08)';
+    el.style.borderColor = 'rgba(217,48,37,.2)';
+    el.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#d93025"></div><span style="font-size:11px;color:#d93025">Sync error</span>';
+  } else {
+    el.style.background = 'rgba(26,115,232,.08)';
+    el.style.borderColor = 'rgba(26,115,232,.2)';
+    el.innerHTML = '<div style="width:6px;height:6px;border-radius:50%;background:#1a73e8"></div><span style="font-size:11px;color:#1a73e8">Syncing...</span>';
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -2925,6 +3337,8 @@ function scheduleCloudSync() {
   if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
   // 2-second debounce, then save. Badge updates when upload actually starts.
   cloudSyncTimer = setTimeout(() => { saveToCloud(); }, 2000);
+  // Also sync to Supabase database (source of truth)
+  scheduleSupabaseSync();
 }
 
 // ──────────────────────────────────────────────
@@ -3906,10 +4320,66 @@ async function onSignedIn() {
   document.getElementById('userName').textContent = userEmail;
   document.getElementById('settingsNavItem').style.display = '';
 
-  // ── FAST STARTUP: Local first, cloud merge in background ──
-  // Step 1: Load local cache INSTANTLY (same browser = fast)
+  // ── SUPABASE: Initialize and register user ──
+  if (initSupabase()) {
+    const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+    await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+  }
+
+  // ── FAST STARTUP: Database first, then local cache, then cloud ──
+  // Step 0: Try loading from Supabase (source of truth)
   let hasData = false;
   let cloudOnlyRestore = false;
+
+  if (supabaseReady && supabaseUserId) {
+    try {
+      const sbData = await loadFromSupabase();
+      if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
+        domainMap = sbData.domainMap;
+        if (sbData.scanMeta) {
+          lastScanTime = sbData.scanMeta.lastScanTime;
+          fullScanDone = sbData.scanMeta.fullScanDone || false;
+          deltaLink = sbData.scanMeta.deltaLink || null;
+        }
+        seenMsgIds = new Set();
+        // Rebuild seenMsgIds from domainMap
+        for (const d of Object.values(domainMap)) {
+          for (const id of d.sentIds) seenMsgIds.add(id);
+          for (const id of d.receivedIds) seenMsgIds.add(id);
+        }
+        hasData = true;
+        // Save settings that came from Supabase to localStorage for offline use
+        saveCompanyTypes();
+        saveBlockedDomains();
+        saveStarredCompanies();
+        saveArchivedCompanies();
+        saveFlaggedCompanies();
+        saveFollowUpCompanies();
+        saveFollowUpDates();
+        saveMergedDomains();
+        saveColumnConfig();
+        saveCompanyNameCache();
+        saveContactNameOverrides();
+        saveProposalNotes();
+        saveProposalStages();
+        buildCompaniesFromDomainMap();
+        renderTableHeader();
+        renderTable();
+        updateStats();
+        updateLastSyncDisplay();
+        resolveCompanyNames();
+        runEnrichment();
+        persistData(); // cache locally for offline
+        updateSupabaseBadge('success');
+        console.log('Startup: loaded ' + Object.keys(domainMap).length + ' domains from Supabase database');
+      }
+    } catch(e) {
+      console.warn('Startup: Supabase load failed, falling back to local:', e);
+    }
+  }
+
+  // Step 1: If Supabase had no data, load local cache (same browser = fast)
+  if (!hasData) {
   const cached = await loadPersistedData();
   const hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
   if (hasLocalData) {
@@ -3958,7 +4428,12 @@ async function onSignedIn() {
     runEnrichment();
     hasData = true;
     console.log('Startup: loaded ' + Object.keys(domainMap).length + ' domains from local cache (instant)');
+    // If we loaded from local but Supabase is ready, sync local data up to Supabase
+    if (supabaseReady && supabaseUserId) {
+      scheduleSupabaseSync();
+    }
   }
+  } // end if (!hasData) from Supabase check
 
   // Step 2: Merge cloud data in background (adds-only, never removes)
   // This ensures data from other browsers/devices gets merged in
@@ -8129,6 +8604,55 @@ async function saveSettings() {
   await signIn();
 }
 
+async function saveSupabaseSettings() {
+  const url = document.getElementById('settingsSupabaseUrl').value.trim();
+  const key = document.getElementById('settingsSupabaseKey').value.trim();
+  if (!url || !key) { alert('Please enter both the Supabase URL and Anon Key.'); return; }
+  if (!url.startsWith('https://')) { alert('Supabase URL must start with https://'); return; }
+  saveSupabaseConfig(url, key);
+  if (initSupabase()) {
+    // Register user if signed in
+    if (currentAccount) {
+      const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+      await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+      if (supabaseUserId) {
+        // Do initial sync of all existing data to Supabase
+        updateSupabaseBadge('syncing');
+        await syncToSupabase();
+        updateSupabaseBadge('success');
+        alert('Connected to Supabase! All your data has been synced to the database.');
+      } else {
+        updateSupabaseBadge('error');
+        alert('Could not register user. Check your Supabase URL and key, and make sure you ran the migration SQL.');
+      }
+    } else {
+      updateSupabaseBadge('success');
+      alert('Supabase configured. Data will sync when you sign in.');
+    }
+  } else {
+    updateSupabaseBadge('error');
+    alert('Failed to connect to Supabase. Check your URL and key.');
+  }
+}
+
+async function testSupabaseConnection() {
+  const url = document.getElementById('settingsSupabaseUrl').value.trim();
+  const key = document.getElementById('settingsSupabaseKey').value.trim();
+  if (!url || !key) { alert('Please enter both URL and key first.'); return; }
+  try {
+    const testClient = supabase.createClient(url, key);
+    const { data, error } = await testClient.from('users').select('id').limit(1);
+    if (error) {
+      alert('Connection failed: ' + error.message + '\n\nMake sure you ran the migration SQL in the Supabase SQL Editor.');
+    } else {
+      alert('Connection successful! The database is ready.');
+      updateSupabaseBadge('success');
+    }
+  } catch(e) {
+    alert('Connection failed: ' + e.message);
+  }
+}
+
 function showSettingsView() {
   showingProposals = false;
   showingArchived = false;
@@ -8151,6 +8675,11 @@ function showSettingsView() {
   updateBlockedSyncStatus();
   loadAISettings();
   loadThrottleSettings();
+  // Populate Supabase settings
+  const sbConfig = getSupabaseConfig();
+  document.getElementById('settingsSupabaseUrl').value = sbConfig.url;
+  document.getElementById('settingsSupabaseKey').value = sbConfig.key;
+  if (supabaseReady) updateSupabaseBadge('success');
   // Show connected state or setup state
   if (currentAccount) {
     document.getElementById('settingsConnectedState').style.display = '';
