@@ -1484,7 +1484,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 
     <label>Application (Client) ID</label>
     <input type="text" id="clientIdInput" placeholder="e.g. 12345678-abcd-1234-abcd-123456789abc">
-    <p class="help-text">This is stored only in your browser's localStorage. Nothing is sent to any server.</p>
+    <p class="help-text">This is stored securely in your cloud database.</p>
 
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
       <label style="font-size:12px;color:var(--text2);margin-bottom:6px;display:block">Protected Domains &amp; Emails</label>
@@ -1836,12 +1836,8 @@ function saveContactEnrichment() {
 
 // Company logo: Google Favicon API (reliable, free) with Clearbit fallback
 let logoFailedCache = {};
-function loadLogoFailedCache() {
-  try { const r = localStorage.getItem('kennion_logo_failed_v2'); if (r) logoFailedCache = JSON.parse(r); } catch(e) {}
-}
-function saveLogoFailedCache() {
-  localStorage.setItem('kennion_logo_failed_v2', JSON.stringify(logoFailedCache));
-}
+function loadLogoFailedCache() { /* in-memory only */ }
+function saveLogoFailedCache() { /* in-memory only */ }
 function markLogoFailed(img, domain) {
   // Google favicon failed — try Clearbit as fallback
   var clearbitSrc = 'https://logo.clearbit.com/' + encodeURIComponent(domain);
@@ -2101,7 +2097,7 @@ function getPrimaryContact(domain, contacts) {
 }
 
 // ──────────────────────────────────────────────
-// BLOCKED DOMAINS PERSISTENCE (localStorage)
+// BLOCKED DOMAINS PERSISTENCE (Supabase)
 // ──────────────────────────────────────────────
 function loadBlockedDomains() {
   blockedDomains = new Set();
@@ -2379,125 +2375,20 @@ async function lookupCompanyName(domain) {
 // ──────────────────────────────────────────────
 // INDEXEDDB PERSISTENCE
 // ──────────────────────────────────────────────
-const DB_NAME = 'relateflow';
-const DB_VERSION = 1;
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('domainData')) db.createObjectStore('domainData', { keyPath: 'domain' });
-      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function persistData() {
-  try {
-    if (Object.keys(domainMap).length === 0) return;
-    const db = await openDB();
-    const tx = db.transaction(['domainData', 'meta'], 'readwrite');
-    const domainStore = tx.objectStore('domainData');
-    const metaStore = tx.objectStore('meta');
-    domainStore.clear();
-    for (const [domain, data] of Object.entries(domainMap)) {
-      const rec = { domain, contacts: {}, sentIds: Array.from(data.sentIds), receivedIds: Array.from(data.receivedIds), lastDate: data.lastDate ? data.lastDate.toISOString() : null, lastSentDate: data.lastSentDate ? data.lastSentDate.toISOString() : null, lastReceivedDate: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null };
-      for (const [email, c] of Object.entries(data.contacts)) {
-        rec.contacts[email] = { name: c.name, email: c.email, sentIds: Array.from(c.sentIds), receivedIds: Array.from(c.receivedIds), lastDate: c.lastDate ? c.lastDate.toISOString() : null };
-      }
-      domainStore.put(rec);
-    }
-    metaStore.put({ key: 'lastScanTime', value: lastScanTime ? lastScanTime.toISOString() : null });
-    metaStore.put({ key: 'userEmail', value: userEmail });
-    metaStore.put({ key: 'fullScanDone', value: fullScanDone });
-    metaStore.put({ key: 'seenMsgIds', value: Array.from(seenMsgIds) });
-    metaStore.put({ key: 'deltaLink', value: deltaLink });
-    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
-  } catch(e) { console.warn('Persist failed:', e); }
-}
-
-async function loadPersistedData() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(['domainData', 'meta'], 'readonly');
-    const ds = tx.objectStore('domainData');
-    const ms = tx.objectStore('meta');
-    const [domains, scanRec, emailRec, fullScanRec, seenRec, deltaRec] = await Promise.all([
-      new Promise((r, j) => { const q = ds.getAll(); q.onsuccess = () => r(q.result); q.onerror = j; }),
-      new Promise((r, j) => { const q = ms.get('lastScanTime'); q.onsuccess = () => r(q.result); q.onerror = j; }),
-      new Promise((r, j) => { const q = ms.get('userEmail'); q.onsuccess = () => r(q.result); q.onerror = j; }),
-      new Promise((r, j) => { const q = ms.get('fullScanDone'); q.onsuccess = () => r(q.result); q.onerror = j; }),
-      new Promise((r, j) => { const q = ms.get('seenMsgIds'); q.onsuccess = () => r(q.result); q.onerror = j; }),
-      new Promise((r, j) => { const q = ms.get('deltaLink'); q.onsuccess = () => r(q.result); q.onerror = j; }),
-    ]);
-    if (!domains || domains.length === 0) return null;
-    if (emailRec?.value && emailRec.value !== userEmail) return null;
-    const map = {};
-    for (const d of domains) {
-      const key = d.domain.toLowerCase();
-      if (!map[key]) {
-        map[key] = { contacts: {}, sentIds: new Set(), receivedIds: new Set(), lastDate: null, lastSentDate: null, lastReceivedDate: null };
-      }
-      const entry = map[key];
-      // Restore Sets from arrays (new format) or rebuild from old counter format
-      const dSentIds = Array.isArray(d.sentIds) ? d.sentIds : [];
-      const dRecvIds = Array.isArray(d.receivedIds) ? d.receivedIds : [];
-      for (const id of dSentIds) entry.sentIds.add(id);
-      for (const id of dRecvIds) entry.receivedIds.add(id);
-      if (d.lastDate) {
-        const dt = new Date(d.lastDate);
-        if (!entry.lastDate || dt > entry.lastDate) entry.lastDate = dt;
-      }
-      if (d.lastSentDate) {
-        const sd = new Date(d.lastSentDate);
-        if (!entry.lastSentDate || sd > entry.lastSentDate) entry.lastSentDate = sd;
-      }
-      if (d.lastReceivedDate) {
-        const rd = new Date(d.lastReceivedDate);
-        if (!entry.lastReceivedDate || rd > entry.lastReceivedDate) entry.lastReceivedDate = rd;
-      }
-      for (const [email, c] of Object.entries(d.contacts)) {
-        const le = email.toLowerCase();
-        if (!entry.contacts[le]) {
-          const cSentIds = Array.isArray(c.sentIds) ? c.sentIds : [];
-          const cRecvIds = Array.isArray(c.receivedIds) ? c.receivedIds : [];
-          entry.contacts[le] = { name: c.name, email: le, sentIds: new Set(cSentIds), receivedIds: new Set(cRecvIds), lastDate: c.lastDate ? new Date(c.lastDate) : null };
-        } else {
-          const cSentIds = Array.isArray(c.sentIds) ? c.sentIds : [];
-          const cRecvIds = Array.isArray(c.receivedIds) ? c.receivedIds : [];
-          for (const id of cSentIds) entry.contacts[le].sentIds.add(id);
-          for (const id of cRecvIds) entry.contacts[le].receivedIds.add(id);
-          if (c.lastDate) {
-            const cdt = new Date(c.lastDate);
-            if (!entry.contacts[le].lastDate || cdt > entry.contacts[le].lastDate) entry.contacts[le].lastDate = cdt;
-          }
-        }
-      }
-    }
-    const restoredSeenIds = seenRec?.value ? new Set(seenRec.value) : new Set();
-    const restoredDeltaLink = deltaRec?.value || null;
-    return { domainMap: map, lastScanTime: scanRec?.value ? new Date(scanRec.value) : null, fullScanDone: !!fullScanRec?.value, seenMsgIds: restoredSeenIds, deltaLink: restoredDeltaLink };
-  } catch(e) { console.warn('Load failed:', e); return null; }
-}
-
-async function clearPersistedData() {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(['domainData', 'meta'], 'readwrite');
-    tx.objectStore('domainData').clear();
-    tx.objectStore('meta').clear();
-    await new Promise(r => { tx.oncomplete = r; });
-  } catch(e) { console.warn('Clear failed:', e); }
-}
+// IndexedDB removed — Supabase is the sole source of truth.
+// All data lives in the cloud database, nothing stored locally.
+function persistData() { /* no-op: all data in Supabase */ }
+function loadPersistedData() { return null; /* no-op */ }
+function clearPersistedData() { /* no-op */ }
 
 // ──────────────────────────────────────────────
 // SUPABASE DATABASE LAYER
-// All data writes go to Supabase (PostgreSQL) first,
-// then update local cache. This is the source of truth.
+// All data lives in Supabase (PostgreSQL). Nothing stored locally.
+// In-memory state is populated from the database on sign-in.
 // ──────────────────────────────────────────────
+let _sidebarCollapsed = false;
+let _domainScanLastTs = '0';
+const _deviceId = crypto.randomUUID(); // ephemeral per-session device ID
 let supabaseClient = null;
 let supabaseUserId = null;
 let supabaseReady = false;
@@ -2509,15 +2400,11 @@ const SUPABASE_URL = 'https://hkfdapvulzpnrwcgxyrx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrZmRhcHZ1bHpwbnJ3Y2d4eXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MzIwNzEsImV4cCI6MjA4ODIwODA3MX0.qaTBjpbFmqFqYyrNYQMNmnOcMcW8Aarww93hTG0cmfs';
 
 function getSupabaseConfig() {
-  // Hardcoded values take priority, fall back to localStorage for overrides
-  const url = SUPABASE_URL || localStorage.getItem('kennion_supabase_url') || '';
-  const key = SUPABASE_ANON_KEY || localStorage.getItem('kennion_supabase_key') || '';
-  return { url, key };
+  return { url: SUPABASE_URL, key: SUPABASE_ANON_KEY };
 }
 
 function saveSupabaseConfig(url, key) {
-  localStorage.setItem('kennion_supabase_url', url.trim());
-  localStorage.setItem('kennion_supabase_key', key.trim());
+  // Config is hardcoded — no local storage needed
 }
 
 function initSupabase() {
@@ -2580,22 +2467,18 @@ async function syncToSupabase() {
         'domain, company_type, is_starred, is_archived, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into',
         { user_id: supabaseUserId });
       if (remoteCompanies && remoteCompanies.length > 0) {
-        // Skip domains with pending local edits — those take priority
-        const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
         for (const rc of remoteCompanies) {
           const d = rc.domain;
           if (!domainMap[d]) continue;
-          const domainPending = pending[d] || {};
-          // Only adopt remote value for fields that don't have pending local edits
-          if (rc.company_type && !domainPending.company_type) {
+          if (rc.company_type) {
             companyTypes[d] = rc.company_type.replace(/\b\w/g, l => l.toUpperCase());
           }
-          if (!domainPending.is_starred) { if (rc.is_starred) starredCompanies.add(d); else starredCompanies.delete(d); }
-          if (!domainPending.is_archived) { if (rc.is_archived) archivedCompanies.add(d); else archivedCompanies.delete(d); }
-          if (!domainPending.is_flagged) { if (rc.is_flagged) flaggedCompanies.add(d); else flaggedCompanies.delete(d); }
-          if (!domainPending.is_blocked) { if (rc.is_blocked) blockedDomains.add(d); else blockedDomains.delete(d); }
-          if (!domainPending.is_followup) { if (rc.is_followup) followUpCompanies.add(d); else followUpCompanies.delete(d); }
-          if (!domainPending.followup_date) { if (rc.followup_date) followUpDates[d] = rc.followup_date; else delete followUpDates[d]; }
+          if (rc.is_starred) starredCompanies.add(d); else starredCompanies.delete(d);
+          if (rc.is_archived) archivedCompanies.add(d); else archivedCompanies.delete(d);
+          if (rc.is_flagged) flaggedCompanies.add(d); else flaggedCompanies.delete(d);
+          if (rc.is_blocked) blockedDomains.add(d); else blockedDomains.delete(d);
+          if (rc.is_followup) followUpCompanies.add(d); else followUpCompanies.delete(d);
+          if (rc.followup_date) followUpDates[d] = rc.followup_date; else delete followUpDates[d];
           if (rc.proposal_stage) proposalStages[d] = rc.proposal_stage;
           if (rc.proposal_notes) proposalNotes[d] = rc.proposal_notes;
           if (rc.merged_into) mergedDomains[d] = rc.merged_into;
@@ -2695,6 +2578,7 @@ async function syncToSupabase() {
       custom_column_data: customColumnData,
       enrichment_cache: enrichmentCache,
       contact_enrichment: contactEnrichment,
+      sidebar_collapsed: _sidebarCollapsed,
     };
     for (const [key, value] of Object.entries(settingsToSync)) {
       const { error } = await supabaseClient
@@ -2705,11 +2589,7 @@ async function syncToSupabase() {
     }
 
     // Sync scan metadata
-    const deviceId = localStorage.getItem('kennion_device_id') || (() => {
-      const id = crypto.randomUUID();
-      localStorage.setItem('kennion_device_id', id);
-      return id;
-    })();
+    const deviceId = _deviceId;
     await supabaseClient
       .from('scan_metadata')
       .upsert({
@@ -2758,7 +2638,7 @@ async function loadFromSupabase() {
   try {
     console.log('Supabase: loading data...');
     const loadStart = Date.now();
-    const deviceId = localStorage.getItem('kennion_device_id') || '';
+    const deviceId = _deviceId;
 
     // Run all 4 queries in parallel — companies and contacts use pagination
     // to overcome Supabase's default 1000-row limit
@@ -2852,7 +2732,8 @@ async function loadFromSupabase() {
             case 'email_signature': if (val) _emailSignature = val; break;
             case 'email_throttle': if (val) _throttleSettings = val; break;
             case 'openai_key': if (val) _openaiKey = val; break;
-            case 'client_id': break; // client_id is pre-auth, handled separately
+            case 'client_id': if (val) _clientId = val; break;
+            case 'sidebar_collapsed': _sidebarCollapsed = !!val; break;
             case 'contact_name_overrides': if (val) Object.assign(contactNameOverrides, val); break;
             case 'company_name_cache': if (val) Object.assign(companyNameCache, val); break;
             // Note: blocked_domains, starred/archived/flagged/followup companies, proposal data,
@@ -2883,88 +2764,11 @@ async function loadFromSupabase() {
   }
 }
 
-// ── PENDING EDITS: track local changes that may not have reached Supabase yet ──
-// When the user edits a field and immediately refreshes, the async Supabase save
-// may still be in-flight. We record pending edits in localStorage (synchronous)
-// and clear them once confirmed saved. On startup we re-apply any that survived.
-function addPendingEdit(domain, field, value) {
-  try {
-    const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
-    if (!pending[domain]) pending[domain] = {};
-    pending[domain][field] = { value: value, ts: Date.now() };
-    localStorage.setItem('kennion_pending_edits', JSON.stringify(pending));
-  } catch(e) {}
-}
-
-function clearPendingEdit(domain, field) {
-  try {
-    const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
-    if (pending[domain]) {
-      delete pending[domain][field];
-      if (Object.keys(pending[domain]).length === 0) delete pending[domain];
-    }
-    localStorage.setItem('kennion_pending_edits', JSON.stringify(pending));
-  } catch(e) {}
-}
-
-function reapplyPendingEdits() {
-  try {
-    const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
-    if (Object.keys(pending).length === 0) return;
-    const MAX_AGE = 5 * 60 * 1000; // ignore edits older than 5 minutes (stale)
-    const now = Date.now();
-    let anyApplied = false;
-    for (const [domain, fields] of Object.entries(pending)) {
-      for (const [field, entry] of Object.entries(fields)) {
-        if (now - entry.ts > MAX_AGE) { clearPendingEdit(domain, field); continue; }
-        // Re-apply to in-memory state
-        const v = entry.value;
-        switch (field) {
-          case 'company_type':
-            if (v) companyTypes[domain] = v.replace(/\b\w/g, l => l.toUpperCase());
-            else delete companyTypes[domain];
-            break;
-          case 'is_starred':
-            if (v) starredCompanies.add(domain); else starredCompanies.delete(domain);
-            break;
-          case 'is_archived':
-            if (v) archivedCompanies.add(domain); else archivedCompanies.delete(domain);
-            break;
-          case 'is_flagged':
-            if (v) flaggedCompanies.add(domain); else flaggedCompanies.delete(domain);
-            break;
-          case 'is_blocked':
-            if (v) blockedDomains.add(domain); else blockedDomains.delete(domain);
-            break;
-          case 'is_followup':
-            if (v) followUpCompanies.add(domain); else followUpCompanies.delete(domain);
-            break;
-          case 'followup_date':
-            if (v) followUpDates[domain] = v; else delete followUpDates[domain];
-            break;
-          case 'proposal_notes':
-            if (v) proposalNotes[domain] = v; else delete proposalNotes[domain];
-            break;
-          case 'proposal_stage':
-            if (v) proposalStages[domain] = v; else delete proposalStages[domain];
-            break;
-          case 'company_name':
-            if (v) companyNameCache[domain] = v;
-            break;
-        }
-        // Re-push to Supabase (this time the page won't unload immediately)
-        supabaseSaveCompanyField(domain, field, v);
-        anyApplied = true;
-      }
-    }
-    if (anyApplied) {
-      console.log('Pending edits re-applied after refresh');
-      buildCompaniesFromDomainMap();
-      renderTable();
-      updateStats();
-    }
-  } catch(e) { console.warn('reapplyPendingEdits error:', e); }
-}
+// Pending edits removed — Supabase saves are immediate (await),
+// and syncToSupabase() fires on beforeunload as a safety net.
+function addPendingEdit() { /* no-op */ }
+function clearPendingEdit() { /* no-op */ }
+function reapplyPendingEdits() { /* no-op */ }
 
 // ── INDIVIDUAL FIELD SAVES (instant updates) ──
 async function supabaseSaveCompanyField(domain, field, value) {
@@ -3059,18 +2863,7 @@ function startRealtimeSubscription() {
         if (supabaseSyncInProgress) return;
         const row = payload.new || payload.old;
         if (!row) return;
-        const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
-        const domainPending = pending[row.domain] || {};
-        // Don't overwrite fields with pending local edits
-        if (Object.keys(domainPending).length > 0) {
-          const filtered = { ...row };
-          for (const field of Object.keys(domainPending)) {
-            delete filtered[field];
-          }
-          applyCompanyChange(filtered);
-        } else {
-          applyCompanyChange(row);
-        }
+        applyCompanyChange(row);
         // Re-render to show the change
         buildCompaniesFromDomainMap();
         renderTable();
@@ -3117,16 +2910,9 @@ async function refreshFromSupabase() {
       { user_id: supabaseUserId });
     if (!remoteCompanies || remoteCompanies.length === 0) throw new Error('no data');
 
-    const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
     let changed = false;
     for (const row of remoteCompanies) {
-      const domainPending = pending[row.domain] || {};
-      // Apply each field only if no pending local edit
-      const filtered = { ...row };
-      for (const field of Object.keys(domainPending)) {
-        delete filtered[field];
-      }
-      applyCompanyChange(filtered);
+      applyCompanyChange(row);
       changed = true;
     }
     if (changed) {
@@ -3204,8 +2990,9 @@ async function ensureMSALLoaded() {
 }
 
 const DEFAULT_CLIENT_ID = 'ea376f6c-94ff-468a-b252-570f4a970bb4';
+let _clientId = DEFAULT_CLIENT_ID;
 function getClientId() {
-  return localStorage.getItem('relateflow_client_id') || DEFAULT_CLIENT_ID;
+  return _clientId || DEFAULT_CLIENT_ID;
 }
 
 async function initMSAL() {
@@ -4164,7 +3951,7 @@ async function onSignedIn() {
   setViewTitle('All Companies', true);
   const sb = document.getElementById('sidebar');
   sb.style.display = 'flex';
-  if (localStorage.getItem('relateflow_sidebar') === 'collapsed') {
+  if (_sidebarCollapsed) {
     sb.classList.add('collapsed');
   } else {
     sb.classList.remove('collapsed');
@@ -4212,7 +3999,7 @@ async function onSignedIn() {
         updateLastSyncDisplay();
         resolveCompanyNames();
         runEnrichment();
-        persistData(); // cache to IndexedDB for email scanning support
+        // Data persisted to Supabase via syncToSupabase
         updateSupabaseBadge('success');
         console.log('Startup: loaded from Supabase — ' + Object.keys(domainMap).length + ' domains');
       }
@@ -4221,59 +4008,8 @@ async function onSignedIn() {
     }
   }
 
-  // Step 2: If Supabase had no data, fall back to IndexedDB (for email scanning metadata)
-  if (!hasData) {
-    const cached = await loadPersistedData();
-    const hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
-    if (hasLocalData) {
-      domainMap = cached.domainMap;
-      lastScanTime = cached.lastScanTime;
-      fullScanDone = cached.fullScanDone || false;
-      deltaLink = cached.deltaLink || null;
-      if (cached.seenMsgIds && cached.seenMsgIds.size > 0) {
-        seenMsgIds = cached.seenMsgIds;
-      } else {
-        seenMsgIds = new Set();
-        deltaLink = null;
-        fullScanDone = false;
-      }
-      if (!deltaLink && fullScanDone) {
-        seenMsgIds = new Set();
-        for (const d of Object.values(domainMap)) {
-          if (d.sentIds instanceof Set) d.sentIds.clear(); else d.sentIds = new Set();
-          if (d.receivedIds instanceof Set) d.receivedIds.clear(); else d.receivedIds = new Set();
-          for (const c of Object.values(d.contacts)) {
-            if (c.sentIds instanceof Set) c.sentIds.clear(); else c.sentIds = new Set();
-            if (c.receivedIds instanceof Set) c.receivedIds.clear(); else c.receivedIds = new Set();
-          }
-        }
-        fullScanDone = false;
-      }
-      const needsSetUpgrade = Object.values(domainMap).some(d => !(d.sentIds instanceof Set));
-      if (needsSetUpgrade) {
-        for (const d of Object.values(domainMap)) {
-          if (!(d.sentIds instanceof Set)) d.sentIds = new Set();
-          if (!(d.receivedIds instanceof Set)) d.receivedIds = new Set();
-          for (const c of Object.values(d.contacts)) {
-            if (!(c.sentIds instanceof Set)) c.sentIds = new Set();
-            if (!(c.receivedIds instanceof Set)) c.receivedIds = new Set();
-          }
-        }
-        fullScanDone = false;
-        deltaLink = null;
-      }
-      buildCompaniesFromDomainMap();
-      renderTableHeader();
-      renderTable();
-      updateStats();
-      hasData = true;
-      // Sync IndexedDB data up to Supabase
-      scheduleSupabaseSync();
-      resolveCompanyNames();
-      runEnrichment();
-      console.log('Startup: fell back to IndexedDB — ' + Object.keys(domainMap).length + ' domains');
-    }
-  }
+  // No local fallback — Supabase is the sole source of truth.
+  // If no data in Supabase, email scan will populate it.
 
   // OneDrive cloud merge removed — Supabase is now the source of truth
 
@@ -5138,7 +4874,8 @@ document.addEventListener('click', function(e) {
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
   sb.classList.toggle('collapsed');
-  localStorage.setItem('relateflow_sidebar', sb.classList.contains('collapsed') ? 'collapsed' : '');
+  _sidebarCollapsed = sb.classList.contains('collapsed');
+  supabaseSaveSetting('sidebar_collapsed', _sidebarCollapsed);
 }
 
 function filterByStatus(status, el) {
@@ -5532,7 +5269,7 @@ function showFlaggedView() {
     tableEl.parentElement.insertBefore(scanBar, tableEl);
   }
   scanBar.style.display = 'flex';
-  var scanTs = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
+  var scanTs = parseInt((_domainScanLastTs || '0') || '0');
   var scanTsHtml = '';
   if (scanTs) {
     var scanDate = new Date(scanTs);
@@ -5981,7 +5718,7 @@ async function scanDomainValidity() {
     updateStats();
     renderTable();
   }
-  localStorage.setItem('kennion_domain_scan_last', Date.now().toString());
+  _domainScanLastTs = Date.now().toString();
   updateLastScanLabel();
   _domainScanRunning = false;
   console.log('[DomainScan] Complete. Checked ' + domainsToCheck.length + ' domains, flagged ' + newlyFlagged + ' new.');
@@ -5997,10 +5734,10 @@ function scheduleDomainScan() {
     saveFlaggedCompanies();
     updateFlaggedCount();
     // Force immediate re-scan
-    localStorage.removeItem('kennion_domain_scan_last');
+    _domainScanLastTs = '0';
   }
 
-  const lastScan = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
+  const lastScan = parseInt((_domainScanLastTs || '0') || '0');
   const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
 
@@ -6031,7 +5768,7 @@ function _formatScanAgo(ts) {
 function updateLastScanLabel() {
   var tsEl = document.querySelector('.flagged-scan-bar .fsb-timestamp');
   if (!tsEl) return;
-  var ts = parseInt(localStorage.getItem('kennion_domain_scan_last') || '0');
+  var ts = parseInt((_domainScanLastTs || '0') || '0');
   if (ts) {
     var scanDate = new Date(ts);
     tsEl.innerHTML = '<b>Last scanned:</b> ' + _formatScanAgo(ts) + '<br><span style="font-size:10px;opacity:.7">' + scanDate.toLocaleString() + '</span>';
@@ -6063,7 +5800,7 @@ async function fullDomainRescan() {
   flaggedCompanies.clear();
   saveFlaggedCompanies();
   updateFlaggedCount();
-  localStorage.removeItem('kennion_domain_scan_last');
+  _domainScanLastTs = '0';
 
   // Enable live UI updates during scan
   _domainScanLive = true;
@@ -8227,20 +7964,16 @@ function saveThrottleSettingsToStorage(settings) {
   scheduleSupabaseSync();
 }
 
+let _emailSendLog = [];
 function getEmailSendLog() {
-  try {
-    var raw = localStorage.getItem('kennion_email_send_log');
-    return raw ? JSON.parse(raw) : [];
-  } catch(e) { return []; }
+  return _emailSendLog;
 }
 
 function logEmailSend() {
-  var log = getEmailSendLog();
-  log.push(Date.now());
+  _emailSendLog.push(Date.now());
   // Keep only the last 24 hours of entries
   var cutoff = Date.now() - 24 * 60 * 60 * 1000;
-  log = log.filter(function(t) { return t > cutoff; });
-  localStorage.setItem('kennion_email_send_log', JSON.stringify(log));
+  _emailSendLog = _emailSendLog.filter(function(t) { return t > cutoff; });
 }
 
 function checkEmailThrottle() {
@@ -8407,7 +8140,8 @@ async function saveSettings() {
   if (!/^[a-f0-9-]{36}$/i.test(clientId)) {
     if (!confirm('That doesn\'t look like a standard Azure Client ID (should be a UUID). Save anyway?')) return;
   }
-  localStorage.setItem('relateflow_client_id', clientId);
+  _clientId = clientId;
+  supabaseSaveSetting('client_id', clientId);
   const sigEl = document.getElementById('signatureInput');
   if (sigEl) saveEmailSignature(sigEl.value);
   closeSettings();
@@ -8552,7 +8286,8 @@ async function saveSettingsClientId() {
   if (!/^[a-f0-9-]{36}$/i.test(clientId)) {
     if (!confirm('That doesn\'t look like a standard Azure Client ID (should be a UUID). Save anyway?')) return;
   }
-  localStorage.setItem('relateflow_client_id', clientId);
+  _clientId = clientId;
+  supabaseSaveSetting('client_id', clientId);
   msalInstance = null;
   await initMSAL();
   await signIn();
@@ -9705,80 +9440,22 @@ function esc(text) {
       }
     }
   }
-  // MSAL failed or no session — try IndexedDB as offline fallback.
-  const alreadyRendered = companies.length > 0;
-  if (!alreadyRendered) {
-    const cachedData = await loadPersistedData();
-    if (cachedData && cachedData.domainMap && Object.keys(cachedData.domainMap).length > 0) {
-      document.getElementById('authLoading').style.display = 'none';
-      document.getElementById('welcomeScreen').style.display = 'none';
-      document.getElementById('crmContent').classList.add('active');
-      const sb = document.getElementById('sidebar');
-      sb.style.display = 'flex';
-      if (localStorage.getItem('relateflow_sidebar') === 'collapsed') sb.classList.add('collapsed');
-      setViewTitle('All Companies', true);
-      domainMap = cachedData.domainMap;
-      buildCompaniesFromDomainMap();
-      renderTableHeader();
-      renderTable();
-      updateStats();
-    }
-  }
-  if (companies.length > 0) {
-    document.getElementById('settingsBtn').style.display = '';
-    // Show a non-blocking banner so user knows they're in offline mode
-    const banner = document.createElement('div');
-    banner.id = 'offlineBanner';
-    banner.style.cssText = 'position:fixed;top:56px;left:0;right:0;z-index:999;background:#e8710a;color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;';
-    banner.textContent = 'Offline mode — showing cached data. Tap here to retry sign-in.';
-    banner.onclick = () => { banner.remove(); location.reload(); };
-    document.body.appendChild(banner);
-    // Retry MSAL in background — auto-reconnect if network recovers
-    setTimeout(async () => {
-      await initMSAL();
-      if (msalInstance) {
-        const accounts = msalInstance.getAllAccounts();
-        if (accounts.length > 0) {
-          currentAccount = accounts[0];
-          userEmail = currentAccount.username;
-          const el = document.getElementById('offlineBanner');
-          if (el) el.remove();
-          // Silently reconnect Supabase
-          if (initSupabase()) {
-            const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
-            await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
-          }
-          document.getElementById('signOutBtn').style.display = '';
-          document.getElementById('userPill').style.display = 'flex';
-          document.getElementById('userName').textContent = userEmail;
-          document.getElementById('settingsNavItem').style.display = '';
-          startSupabasePolling();
-          scanOutlookEmails();
-        }
-      }
-    }, 10000);
-    return;
-  }
+  // MSAL failed or no session — show welcome/sign-in screen.
+  // No local data fallback — everything comes from the database.
   document.getElementById('settingsBtn').style.display = '';
   showWelcome();
 })();
 
-// Save data on page close/hide to prevent data loss
+// Flush to Supabase on page close/hide
 window.addEventListener('beforeunload', () => {
   if (currentAccount && Object.keys(domainMap).length > 0) {
-    persistData();
-    // Flush pending Supabase sync on page close — use direct call so the
-    // browser's keepalive mechanism has the best chance of completing it
     syncToSupabase();
   }
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && currentAccount && Object.keys(domainMap).length > 0) {
-    persistData();
-    // Fire Supabase sync immediately so other devices see latest data
     syncToSupabase();
   } else if (!document.hidden && currentAccount) {
-    // Tab became visible — pull latest data from Supabase (other device may have changed it)
     refreshFromSupabase();
   }
 });
