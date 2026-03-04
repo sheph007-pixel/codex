@@ -749,7 +749,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   .ev-attachments{padding:10px 16px}
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 
@@ -1592,6 +1592,43 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     <button onclick="sendAI()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
   </div>
 </div>
+
+<!-- INSTANT RENDER: show cached snapshot BEFORE parsing the main 8000-line script -->
+<script>
+(function() {
+  try {
+    var raw = localStorage.getItem('kennion_snapshot_v2');
+    if (!raw) return;
+    var snap = JSON.parse(raw);
+    if (!snap || !snap.tableBody) return;
+    // Only use snapshots less than 24 hours old
+    if (snap.savedAt && (Date.now() - snap.savedAt) > 86400000) return;
+    // Inject cached HTML into DOM immediately
+    var tb = document.getElementById('tableBody');
+    var th = document.getElementById('tableHead');
+    if (tb) tb.innerHTML = snap.tableBody;
+    if (th && snap.tableHead) th.innerHTML = snap.tableHead;
+    // Populate stats + sidebar counts
+    var ids = ['statCompanies','statLeads','statExisting','statOld',
+               'hotCount','warmCount','coldCount','leadsCount',
+               'currentClientCount','oldClientCount','clientsCount'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = document.getElementById(ids[i]);
+      if (el && snap[ids[i]]) el.textContent = snap[ids[i]];
+    }
+    // Show CRM UI immediately — hide loading spinner
+    document.getElementById('authLoading').style.display = 'none';
+    document.getElementById('welcomeScreen').style.display = 'none';
+    document.getElementById('crmContent').className = 'crm-content active';
+    var sb = document.getElementById('sidebar');
+    if (sb) sb.style.display = 'flex';
+    var vtb = document.getElementById('viewTitleBar');
+    if (vtb) vtb.style.display = '';
+    window.__snapshotRendered = true;
+    console.log('INSTANT: snapshot rendered before main JS parse');
+  } catch(e) { /* silent — main init() will handle everything */ }
+})();
+</script>
 
 <script>
 // Global error handler — if any uncaught error occurs, show welcome screen
@@ -2543,13 +2580,25 @@ function saveSupabaseConfig(url, key) {
   // Config is hardcoded — no local storage needed
 }
 
-function initSupabase() {
+async function initSupabase() {
   if (supabaseReady && supabaseClient) return true; // already initialized
   const { url, key } = getSupabaseConfig();
   if (!url || !key) {
     supabaseReady = false;
     supabaseClient = null;
     return false;
+  }
+  // Wait for async-loaded Supabase library (up to 10s)
+  if (typeof supabase === 'undefined') {
+    for (let i = 0; i < 100; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (typeof supabase !== 'undefined') break;
+    }
+    if (typeof supabase === 'undefined') {
+      console.warn('Supabase: library failed to load');
+      supabaseReady = false;
+      return false;
+    }
   }
   try {
     supabaseClient = supabase.createClient(url, key);
@@ -4180,7 +4229,7 @@ async function onSignedIn(cacheRendered) {
   }
 
   // ── SUPABASE — register user + load fresh data in background ──
-  if (!supabaseReady) initSupabase();
+  if (!supabaseReady) await initSupabase();
   // Background Supabase sync — fetches latest data without blocking the UI
   const supabaseSync = async () => {
     if (!supabaseReady) return;
@@ -4767,8 +4816,31 @@ function updateTypeCounts() {
 
 // Snapshot removed — Supabase is the sole source of truth.
 // No more localStorage snapshots; data loads directly from the database.
-function saveInstantSnapshot() { /* no-op: Supabase is source of truth */ }
-function loadInstantSnapshot() { return false; /* no-op: Supabase is source of truth */ }
+function saveInstantSnapshot() {
+  try {
+    var tb = document.getElementById('tableBody');
+    var th = document.getElementById('tableHead');
+    if (!tb || !th || !tb.innerHTML) return;
+    var snap = {
+      tableBody: tb.innerHTML,
+      tableHead: th.innerHTML,
+      statCompanies: document.getElementById('statCompanies').textContent,
+      statLeads: document.getElementById('statLeads').textContent,
+      statExisting: document.getElementById('statExisting').textContent,
+      statOld: document.getElementById('statOld').textContent,
+      hotCount: document.getElementById('hotCount').textContent,
+      warmCount: document.getElementById('warmCount').textContent,
+      coldCount: document.getElementById('coldCount').textContent,
+      leadsCount: document.getElementById('leadsCount').textContent,
+      currentClientCount: document.getElementById('currentClientCount').textContent,
+      oldClientCount: document.getElementById('oldClientCount').textContent,
+      clientsCount: document.getElementById('clientsCount').textContent,
+      savedAt: Date.now()
+    };
+    localStorage.setItem('kennion_snapshot_v2', JSON.stringify(snap));
+  } catch(e) { /* ignore */ }
+}
+function loadInstantSnapshot() { return false; /* handled by early inline script */ }
 
 function setViewTitle(title, showDashboard) {
   var bar = document.getElementById('viewTitleBar');
@@ -8410,7 +8482,7 @@ async function saveSupabaseSettings() {
   if (!url || !key) { alert('Please enter both the Supabase URL and Anon Key.'); return; }
   if (!url.startsWith('https://')) { alert('Supabase URL must start with https://'); return; }
   saveSupabaseConfig(url, key);
-  if (initSupabase()) {
+  if (await initSupabase()) {
     // Register user if signed in
     if (currentAccount) {
       const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
@@ -9685,12 +9757,14 @@ function esc(text) {
   loadLogoFailedCache();
   renderTableHeader();
 
-  // Initialize Supabase client early (no network call — just creates the JS client)
+  // Initialize Supabase client early (waits for async-loaded library)
+  // Don't await here — let it load in background while we render cache
   initSupabase();
 
   // ── INSTANT RENDER: load from localStorage cache BEFORE any network calls ──
-  // This shows data immediately while MSAL + Supabase initialize in parallel.
-  let cacheRendered = false;
+  // The early inline script already showed the snapshot HTML.
+  // Now we load the actual domainMap so the data model is correct.
+  let cacheRendered = !!window.__snapshotRendered;
   const cached = loadLocalCache();
   if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
     domainMap = cached.domainMap;
@@ -9705,6 +9779,9 @@ function esc(text) {
     document.getElementById('crmContent').classList.add('active');
     cacheRendered = true;
     console.log('INIT: rendered ' + companies.length + ' companies from cache in ' + (Date.now() - pageStart) + 'ms');
+  } else if (cacheRendered) {
+    // Snapshot was shown but no domainMap cache — snapshot is stale, hide it
+    console.log('INIT: snapshot was shown but no cache data — will wait for Supabase');
   }
 
   // Safety timeout — if MSAL loading takes too long, show welcome screen
