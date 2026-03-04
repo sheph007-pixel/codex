@@ -2573,9 +2573,12 @@ async function supabaseFetchAll(table, selectCols, filters) {
     for (const [key, val] of Object.entries(filters || {})) {
       query = query.eq(key, val);
     }
+    const fetchStart = Date.now();
     const { data, error } = await query;
+    const elapsed = Date.now() - fetchStart;
     if (error) { console.warn('Supabase: paginated fetch error on ' + table + ':', error.message); break; }
     if (!data || data.length === 0) break;
+    console.log('Supabase: fetched ' + data.length + ' rows from ' + table + ' (page ' + (from / PAGE_SIZE + 1) + ', ' + elapsed + 'ms)');
     allData = allData.concat(data);
     if (data.length < PAGE_SIZE) break; // last page
     from += PAGE_SIZE;
@@ -2589,12 +2592,14 @@ async function loadFromSupabase() {
     console.log('Supabase: loading data...');
     const loadStart = Date.now();
 
-    // Load all data in parallel for fastest possible load from database
+    // Phase 1: Load core data (no heavy JSONB) for fast initial render
+    const companyCols = 'id,domain,company_name,company_type,is_starred,is_archived,is_flagged,is_blocked,is_followup,followup_date,last_activity_date,last_sent_date,last_received_date,sent_count,received_count,proposal_stage,proposal_notes,merged_into';
+    const contactCols = 'company_id,email,name,is_starred,last_activity_date,sent_count,received_count';
     const [companyData, contactData, settingsResult, scanResult] = await Promise.all([
-      supabaseFetchAll('companies', '*', { user_id: supabaseUserId }),
-      supabaseFetchAll('contacts', '*', { user_id: supabaseUserId }),
+      supabaseFetchAll('companies', companyCols, { user_id: supabaseUserId }),
+      supabaseFetchAll('contacts', contactCols, { user_id: supabaseUserId }),
       supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId),
-      supabaseClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      supabaseClient.from('scan_metadata').select('last_scan_time,full_scan_done,delta_link').eq('user_id', supabaseUserId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
     ]);
 
     if (!companyData || companyData.length === 0) {
@@ -2640,10 +2645,9 @@ async function loadFromSupabase() {
         followup_date: c.followup_date || null,
         merged_into: c.merged_into || null,
       };
-      // Restore non-domainMap caches from company row
+      // Restore company name cache from company row
       if (c.company_name) companyNameCache[c.domain] = c.company_name;
-      if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[c.domain] = c.enrichment;
-      if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
+      // enrichment and custom_data loaded in Phase 2 (deferred) to speed up initial render
     }
 
     // Add contacts to their companies
@@ -2661,9 +2665,7 @@ async function loadFromSupabase() {
           _dbReceivedCount: ct.received_count || 0,
         };
         if (ct.is_starred) starredContacts[domain] = ct.email;
-        if (ct.enrichment && Object.keys(ct.enrichment).length > 0) {
-          contactEnrichment[ct.email] = ct.enrichment;
-        }
+        // contact enrichment loaded in Phase 2 (deferred)
       }
     }
 
@@ -2712,7 +2714,30 @@ async function loadFromSupabase() {
 
     const elapsed = ((Date.now() - loadStart) / 1000).toFixed(1);
     console.log('Supabase: loaded ' + companyData.length + ' companies, ' + (contactData ? contactData.length : 0) + ' contacts in ' + elapsed + 's');
-    return { domainMap: newDomainMap, scanMeta: scanMeta };
+
+    // Phase 2 loader: fetch enrichment/custom JSONB data in background (heavy payload)
+    const loadEnrichment = async function() {
+      try {
+        const [enrichData, ctEnrichData] = await Promise.all([
+          supabaseFetchAll('companies', 'domain,enrichment,custom_data', { user_id: supabaseUserId }),
+          supabaseFetchAll('contacts', 'email,enrichment', { user_id: supabaseUserId })
+        ]);
+        if (enrichData) {
+          for (const c of enrichData) {
+            if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[c.domain] = c.enrichment;
+            if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
+          }
+        }
+        if (ctEnrichData) {
+          for (const ct of ctEnrichData) {
+            if (ct.enrichment && Object.keys(ct.enrichment).length > 0) contactEnrichment[ct.email] = ct.enrichment;
+          }
+        }
+        console.log('Supabase: enrichment data loaded in background');
+      } catch(e) { console.warn('Supabase: enrichment load error:', e); }
+    };
+
+    return { domainMap: newDomainMap, scanMeta: scanMeta, loadEnrichment: loadEnrichment };
   } catch(e) {
     console.warn('Supabase: load error:', e);
     return null;
@@ -3995,9 +4020,11 @@ async function onSignedIn() {
   if (loadingOverlay) { loadingOverlay.style.display = ''; document.querySelector('.table-wrap').style.display = 'none'; }
 
   // ── SUPABASE: Initialize and register user (network) ──
+  const startupTime = Date.now();
   if (initSupabase()) {
     const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
     await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+    console.log('Startup: Supabase user registered in ' + (Date.now() - startupTime) + 'ms');
   }
 
   // Step 1: Load ALL data from Supabase (sole source of truth)
@@ -4028,11 +4055,14 @@ async function onSignedIn() {
         updateLastSyncDisplay();
         // Hide loading overlay, show table
         if (loadingOverlay) { loadingOverlay.style.display = 'none'; document.querySelector('.table-wrap').style.display = ''; }
+        // Load enrichment/custom data in background (doesn't block table render)
+        if (sbData.loadEnrichment) {
+          sbData.loadEnrichment().then(() => { renderTable(); });
+        }
         resolveCompanyNames();
-        runEnrichment();
         // Data persisted to Supabase via syncToSupabase
         updateSupabaseBadge('success');
-        console.log('Startup: loaded from Supabase — ' + Object.keys(domainMap).length + ' domains');
+        console.log('Startup: loaded from Supabase — ' + Object.keys(domainMap).length + ' domains, ' + companies.length + ' companies rendered in ' + (Date.now() - startupTime) + 'ms');
       }
     } catch(e) {
       console.warn('Startup: Supabase load failed:', e);
@@ -4463,7 +4493,7 @@ function renderTable() {
   const colCount = cols.length + 1; // +1 for checkbox
   const tbody = document.getElementById('tableBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;padding:40px;color:var(--text2)">No companies found. Your emails are syncing automatically.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center;padding:40px;color:var(--text2)">' + (fullScanDone ? 'No companies match current filters.' : 'Loading data... Your first email scan may take a moment.') + '</td></tr>';
     updateBulkBar();
     updateViewTitleCount(0);
     return;
