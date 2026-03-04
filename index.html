@@ -2825,40 +2825,45 @@ async function loadFromSupabase() {
   try {
     console.log('Supabase: loading data...');
     const loadStart = Date.now();
+    const deviceId = localStorage.getItem('kennion_device_id') || '';
 
-    // Load companies
-    const { data: companyData, error: companyErr } = await supabaseClient
-      .from('companies')
-      .select('*')
-      .eq('user_id', supabaseUserId);
+    // Run all 4 queries in parallel for maximum speed
+    const [companyResult, contactResult, settingsResult, scanResult] = await Promise.all([
+      supabaseClient.from('companies').select('*').eq('user_id', supabaseUserId),
+      supabaseClient.from('contacts').select('*').eq('user_id', supabaseUserId),
+      supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId),
+      supabaseClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).eq('device_id', deviceId).single()
+    ]);
+
+    const { data: companyData, error: companyErr } = companyResult;
     if (companyErr) { console.warn('Supabase: load companies failed:', companyErr.message); return null; }
     if (!companyData || companyData.length === 0) {
       console.log('Supabase: no companies found (first time)');
       return null;
     }
-
-    // Load contacts
-    const { data: contactData } = await supabaseClient
-      .from('contacts')
-      .select('*')
-      .eq('user_id', supabaseUserId);
-
-    // Load settings
-    const { data: settingsData } = await supabaseClient
-      .from('user_settings')
-      .select('key, value')
-      .eq('user_id', supabaseUserId);
-
-    // Load scan metadata for this device
-    const deviceId = localStorage.getItem('kennion_device_id') || '';
-    const { data: scanData } = await supabaseClient
-      .from('scan_metadata')
-      .select('*')
-      .eq('user_id', supabaseUserId)
-      .eq('device_id', deviceId)
-      .single();
+    const { data: contactData } = contactResult;
+    const { data: settingsData } = settingsResult;
+    const { data: scanData } = scanResult;
 
     // Build domainMap from companies + contacts
+    // Clear mutable state so Supabase is authoritative (no stale leftovers)
+    Object.keys(companyTypes).forEach(k => delete companyTypes[k]);
+    starredCompanies.clear();
+    archivedCompanies.clear();
+    flaggedCompanies.clear();
+    blockedDomains.clear();
+    followUpCompanies.clear();
+    Object.keys(followUpDates).forEach(k => delete followUpDates[k]);
+    Object.keys(proposalNotes).forEach(k => delete proposalNotes[k]);
+    Object.keys(proposalStages).forEach(k => delete proposalStages[k]);
+    Object.keys(mergedDomains).forEach(k => delete mergedDomains[k]);
+    Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
+    Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
+    Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
+    Object.keys(enrichmentCache).forEach(k => delete enrichmentCache[k]);
+    Object.keys(contactEnrichment).forEach(k => delete contactEnrichment[k]);
+    Object.keys(contactNameOverrides).forEach(k => delete contactNameOverrides[k]);
+
     const newDomainMap = {};
     const companyIdToDomain = {};
     for (const c of companyData) {
@@ -2871,20 +2876,8 @@ async function loadFromSupabase() {
         lastSentDate: c.last_sent_date ? new Date(c.last_sent_date) : null,
         lastReceivedDate: c.last_received_date ? new Date(c.last_received_date) : null,
       };
-      // Restore metadata
-      if (c.company_name) companyNameCache[c.domain] = c.company_name;
-      if (c.company_type) companyTypes[c.domain] = c.company_type.replace(/\b\w/g, l => l.toUpperCase());
-      if (c.is_starred) starredCompanies.add(c.domain);
-      if (c.is_archived) archivedCompanies.add(c.domain);
-      if (c.is_flagged) flaggedCompanies.add(c.domain);
-      if (c.is_blocked) blockedDomains.add(c.domain);
-      if (c.is_followup) followUpCompanies.add(c.domain);
-      if (c.followup_date) followUpDates[c.domain] = c.followup_date;
-      if (c.proposal_stage) proposalStages[c.domain] = c.proposal_stage;
-      if (c.proposal_notes) proposalNotes[c.domain] = c.proposal_notes;
-      if (c.merged_into) mergedDomains[c.domain] = c.merged_into;
-      if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[c.domain] = c.enrichment;
-      if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
+      // Restore metadata — use applyCompanyChange for consistent add/remove logic
+      applyCompanyChange(c);
     }
 
     // Add contacts to their companies
@@ -3070,39 +3063,144 @@ function updateSupabaseBadge(status) {
   }
 }
 
-// ── REAL-TIME REFRESH (pull changes from other devices) ──
+// ── REAL-TIME SYNC (Supabase Realtime + fallback polling) ──
 let lastRefreshTime = 0;
 let refreshInProgress = false;
 let supabaseRefreshTimer = null;
+let supabaseChannel = null;
+let realtimeConnected = false;
 
+// Apply a single company row change from Supabase (realtime or poll)
+function applyCompanyChange(row) {
+  if (!row || !row.domain) return;
+  const d = row.domain;
+  // Update metadata in-place (no full state clear needed)
+  if (row.company_name) companyNameCache[d] = row.company_name;
+  if (row.company_type !== undefined) {
+    if (row.company_type) companyTypes[d] = row.company_type.replace(/\b\w/g, l => l.toUpperCase());
+    else delete companyTypes[d];
+  }
+  // Boolean flags — set or remove from Sets
+  if (row.is_starred !== undefined) { if (row.is_starred) starredCompanies.add(d); else starredCompanies.delete(d); }
+  if (row.is_archived !== undefined) { if (row.is_archived) archivedCompanies.add(d); else archivedCompanies.delete(d); }
+  if (row.is_flagged !== undefined) { if (row.is_flagged) flaggedCompanies.add(d); else flaggedCompanies.delete(d); }
+  if (row.is_blocked !== undefined) { if (row.is_blocked) blockedDomains.add(d); else blockedDomains.delete(d); }
+  if (row.is_followup !== undefined) { if (row.is_followup) followUpCompanies.add(d); else followUpCompanies.delete(d); }
+  if (row.followup_date !== undefined) { if (row.followup_date) followUpDates[d] = row.followup_date; else delete followUpDates[d]; }
+  if (row.proposal_stage !== undefined) { if (row.proposal_stage) proposalStages[d] = row.proposal_stage; else delete proposalStages[d]; }
+  if (row.proposal_notes !== undefined) { if (row.proposal_notes) proposalNotes[d] = row.proposal_notes; else delete proposalNotes[d]; }
+  if (row.merged_into !== undefined) { if (row.merged_into) mergedDomains[d] = row.merged_into; else delete mergedDomains[d]; }
+  if (row.enrichment && Object.keys(row.enrichment).length > 0) enrichmentCache[d] = row.enrichment;
+  if (row.custom_data && Object.keys(row.custom_data).length > 0) customColumnData[d] = row.custom_data;
+}
+
+// Cache current metadata to localStorage for instant snapshot
+function cacheMetadataToLocalStorage() {
+  try {
+    localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
+    localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
+    localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
+    localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
+    localStorage.setItem('kennion_flagged_companies', JSON.stringify([...flaggedCompanies]));
+    localStorage.setItem('kennion_followup_companies', JSON.stringify([...followUpCompanies]));
+    localStorage.setItem('kennion_followup_dates', JSON.stringify(followUpDates));
+    localStorage.setItem('kennion_merged_domains', JSON.stringify(mergedDomains));
+    localStorage.setItem('relateflow_company_names', JSON.stringify(companyNameCache));
+    localStorage.setItem('kennion_proposal_notes', JSON.stringify(proposalNotes));
+    localStorage.setItem('kennion_proposal_stages', JSON.stringify(proposalStages));
+  } catch(e) {}
+}
+
+// ── SUPABASE REALTIME: instant cross-device sync via WebSocket ──
+function startRealtimeSubscription() {
+  if (!supabaseReady || !supabaseClient || !supabaseUserId) return;
+  if (supabaseChannel) return; // already subscribed
+
+  try {
+    supabaseChannel = supabaseClient
+      .channel('companies-realtime')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'companies',
+        filter: 'user_id=eq.' + supabaseUserId
+      }, (payload) => {
+        // Skip if we're mid-sync (we're the one writing)
+        if (supabaseSyncInProgress) return;
+        const row = payload.new || payload.old;
+        if (!row) return;
+        const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
+        const domainPending = pending[row.domain] || {};
+        // Don't overwrite fields with pending local edits
+        if (Object.keys(domainPending).length > 0) {
+          const filtered = { ...row };
+          for (const field of Object.keys(domainPending)) {
+            delete filtered[field];
+          }
+          applyCompanyChange(filtered);
+        } else {
+          applyCompanyChange(row);
+        }
+        // Re-render to show the change
+        buildCompaniesFromDomainMap();
+        renderTable();
+        updateStats();
+        updateBlockedCount();
+        updateFlaggedCount();
+        cacheMetadataToLocalStorage();
+        console.log('Realtime: applied change for ' + row.domain);
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          realtimeConnected = true;
+          console.log('Supabase Realtime: connected');
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          realtimeConnected = false;
+          console.warn('Supabase Realtime: disconnected, falling back to polling');
+        }
+      });
+  } catch(e) {
+    console.warn('Supabase Realtime: setup failed:', e);
+    realtimeConnected = false;
+  }
+}
+
+function stopRealtimeSubscription() {
+  if (supabaseChannel && supabaseClient) {
+    try { supabaseClient.removeChannel(supabaseChannel); } catch(e) {}
+    supabaseChannel = null;
+    realtimeConnected = false;
+  }
+}
+
+// ── INCREMENTAL REFRESH: merge changes without clearing state ──
 async function refreshFromSupabase() {
   if (!supabaseReady || !supabaseUserId || refreshInProgress) return;
-  if (supabaseSyncInProgress) return; // don't refresh while syncing
-  if (isScanning) return; // don't overwrite data while email scan is adding companies
-  // Throttle: at most once every 10 seconds
+  if (supabaseSyncInProgress) return;
+  if (isScanning) return;
   if (Date.now() - lastRefreshTime < 10000) return;
   refreshInProgress = true;
   try {
-    // Clear all mutable state before reload
-    Object.keys(companyTypes).forEach(k => delete companyTypes[k]);
-    starredCompanies.clear();
-    archivedCompanies.clear();
-    flaggedCompanies.clear();
-    blockedDomains.clear();
-    followUpCompanies.clear();
-    Object.keys(followUpDates).forEach(k => delete followUpDates[k]);
-    Object.keys(proposalNotes).forEach(k => delete proposalNotes[k]);
-    Object.keys(proposalStages).forEach(k => delete proposalStages[k]);
-    Object.keys(mergedDomains).forEach(k => delete mergedDomains[k]);
-    Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
-    Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
-    Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
-    Object.keys(enrichmentCache).forEach(k => delete enrichmentCache[k]);
-    Object.keys(contactEnrichment).forEach(k => delete contactEnrichment[k]);
+    // Fetch only company metadata (not contacts/settings — those are heavy)
+    const { data: remoteCompanies, error } = await supabaseClient
+      .from('companies')
+      .select('domain, company_name, company_type, is_starred, is_archived, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date')
+      .eq('user_id', supabaseUserId);
+    if (error || !remoteCompanies) throw error || new Error('no data');
 
-    const result = await loadFromSupabase();
-    if (result && result.domainMap && Object.keys(result.domainMap).length > 0) {
-      domainMap = result.domainMap;
+    const pending = JSON.parse(localStorage.getItem('kennion_pending_edits') || '{}');
+    let changed = false;
+    for (const row of remoteCompanies) {
+      const domainPending = pending[row.domain] || {};
+      // Apply each field only if no pending local edit
+      const filtered = { ...row };
+      for (const field of Object.keys(domainPending)) {
+        delete filtered[field];
+      }
+      applyCompanyChange(filtered);
+      changed = true;
+    }
+    if (changed) {
       buildCompaniesFromDomainMap();
       renderTable();
       updateStats();
@@ -3110,15 +3208,7 @@ async function refreshFromSupabase() {
       updateFlaggedCount();
       updateLastSyncDisplay();
       updateSupabaseBadge('success');
-      // Cache Supabase data to localStorage so page refresh shows consistent data
-      localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
-      localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
-      localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
-      localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
-      localStorage.setItem('kennion_flagged_companies', JSON.stringify([...flaggedCompanies]));
-      localStorage.setItem('kennion_followup_companies', JSON.stringify([...followUpCompanies]));
-      localStorage.setItem('kennion_followup_dates', JSON.stringify(followUpDates));
-      localStorage.setItem('kennion_merged_domains', JSON.stringify(mergedDomains));
+      cacheMetadataToLocalStorage();
     }
     lastRefreshTime = Date.now();
   } catch(e) {
@@ -3128,14 +3218,18 @@ async function refreshFromSupabase() {
   }
 }
 
-// Auto-refresh every 30 seconds when page is visible
+// Fallback polling — longer interval since Realtime handles instant sync
 function startSupabasePolling() {
   if (supabaseRefreshTimer) return;
+  // Start realtime subscription first
+  startRealtimeSubscription();
+  // Fallback poll every 2 minutes (in case realtime disconnects)
   supabaseRefreshTimer = setInterval(() => {
     if (!document.hidden && supabaseReady && supabaseUserId) {
+      // Only poll if realtime is disconnected, or every 2 min as safety net
       refreshFromSupabase();
     }
-  }, 30000);
+  }, 120000);
 }
 
 // Legacy stubs (no-op)
@@ -4215,27 +4309,11 @@ async function onSignedIn() {
     await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
   }
 
-  // Step 1: Load latest from Supabase (source of truth) and update UI
+  // Step 1: Load latest from Supabase (source of truth)
+  // NOTE: Do NOT clear state before loading — snapshot is already displayed.
+  // loadFromSupabase() populates metadata directly via applyCompanyChange pattern.
   if (supabaseReady && supabaseUserId) {
     try {
-      // Clear all state so Supabase is truly the source of truth
-      Object.keys(companyTypes).forEach(k => delete companyTypes[k]);
-      starredCompanies.clear();
-      archivedCompanies.clear();
-      flaggedCompanies.clear();
-      blockedDomains.clear();
-      followUpCompanies.clear();
-      Object.keys(followUpDates).forEach(k => delete followUpDates[k]);
-      Object.keys(proposalNotes).forEach(k => delete proposalNotes[k]);
-      Object.keys(proposalStages).forEach(k => delete proposalStages[k]);
-      Object.keys(mergedDomains).forEach(k => delete mergedDomains[k]);
-      Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
-      Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
-      Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
-      Object.keys(enrichmentCache).forEach(k => delete enrichmentCache[k]);
-      Object.keys(contactEnrichment).forEach(k => delete contactEnrichment[k]);
-      Object.keys(contactNameOverrides).forEach(k => delete contactNameOverrides[k]);
-
       const sbData = await loadFromSupabase();
       if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
         domainMap = sbData.domainMap;
@@ -4250,21 +4328,13 @@ async function onSignedIn() {
           for (const id of d.receivedIds) seenMsgIds.add(id);
         }
         hasData = true;
-        // Cache Supabase data to localStorage for next instant load
-        localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
-        localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
-        localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
-        localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
-        localStorage.setItem('kennion_flagged_companies', JSON.stringify([...flaggedCompanies]));
-        localStorage.setItem('kennion_followup_companies', JSON.stringify([...followUpCompanies]));
-        localStorage.setItem('kennion_followup_dates', JSON.stringify(followUpDates));
-        localStorage.setItem('kennion_merged_domains', JSON.stringify(mergedDomains));
+        // Re-apply pending local edits over Supabase data
+        reapplyPendingEdits();
+        // Cache to localStorage for next instant load
+        cacheMetadataToLocalStorage();
         localStorage.setItem('kennion_columns', JSON.stringify(columnConfig));
-        localStorage.setItem('relateflow_company_names', JSON.stringify(companyNameCache));
         localStorage.setItem('relateflow_contact_names', JSON.stringify(contactNameOverrides));
-        localStorage.setItem('kennion_proposal_notes', JSON.stringify(proposalNotes));
-        localStorage.setItem('kennion_proposal_stages', JSON.stringify(proposalStages));
-        // Update UI with fresh Supabase data
+        // Silently update UI with fresh data
         buildCompaniesFromDomainMap();
         renderTableHeader();
         renderTable();
@@ -4275,7 +4345,6 @@ async function onSignedIn() {
         persistData();
         updateSupabaseBadge('success');
         console.log('Startup: updated from Supabase — ' + Object.keys(domainMap).length + ' domains');
-        reapplyPendingEdits();
       } else if (renderedFromCache) {
         // Supabase had no data but we showed cache — sync cache up to Supabase
         scheduleSupabaseSync();
