@@ -3585,7 +3585,15 @@ async function fetchEmailsProgressively(token, useDelta) {
           }
           throw new Error('Request timed out after ' + (MAX_RETRIES + 1) + ' attempts — please try again later');
         }
-        throw e;
+        // Retry network errors (e.g. "Failed to fetch") with exponential backoff
+        if (attempt < MAX_RETRIES) {
+          const wait = Math.pow(2, attempt + 1) * 1000;
+          console.warn('Network error (attempt ' + (attempt + 1) + '/' + (MAX_RETRIES + 1) + '): ' + e.message + ', retrying in ' + (wait / 1000) + 's...');
+          updateScanBanner('Network error — retrying in ' + (wait / 1000) + 's...');
+          await new Promise(r => setTimeout(r, wait));
+          continue;
+        }
+        throw new Error('Network error after ' + (MAX_RETRIES + 1) + ' attempts: ' + e.message + '. Check your internet connection and try again.');
       }
       clearTimeout(timeout);
 
@@ -3790,6 +3798,8 @@ async function scanOutlookEmails(forceFullScan) {
       alert('Your session has expired. Please sign out and sign back in.');
     } else if (msg.includes('401') || msg.includes('InvalidAuthenticationToken') || msg.includes('token is expired') || msg.includes('re-authentication failed')) {
       alert('Your authentication token has expired. Please sign out and sign back in to reconnect.');
+    } else if (msg.includes('Failed to fetch') || msg.includes('Network error') || msg.includes('NetworkError') || msg.includes('network')) {
+      alert('Network connection error — unable to reach Microsoft servers. Please check your internet connection and try again.');
     } else {
       alert('Email scan failed: ' + msg);
     }
