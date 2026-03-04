@@ -2356,7 +2356,13 @@ function saveLocalCache() {
   try {
     // Serialize domainMap to a compact format (skip Sets, only store counts/dates/flags)
     const cached = {};
-    for (const [domain, d] of Object.entries(domainMap)) {
+    const domainKeys = Object.keys(domainMap);
+    if (domainKeys.length === 0) {
+      console.log('Cache: skip save — domainMap is empty');
+      return;
+    }
+    for (const domain of domainKeys) {
+      const d = domainMap[domain];
       const contacts = {};
       for (const [email, ct] of Object.entries(d.contacts || {})) {
         contacts[email] = {
@@ -2393,8 +2399,58 @@ function saveLocalCache() {
       lastScanTime: lastScanTime ? lastScanTime.toISOString() : null,
       savedAt: new Date().toISOString(),
     });
+    // Check payload size — localStorage limit is ~5MB
+    const sizeMB = (payload.length * 2) / (1024 * 1024); // UTF-16 chars = 2 bytes each
+    if (sizeMB > 4.5) {
+      console.warn('Cache: payload too large (' + sizeMB.toFixed(1) + 'MB) — trimming old contacts');
+      // Save without contact details to fit under limit
+      for (const domain of domainKeys) {
+        if (cached[domain] && cached[domain].contacts) {
+          const contactEntries = Object.entries(cached[domain].contacts);
+          if (contactEntries.length > 10) {
+            // Keep only top 10 contacts per domain
+            const trimmed = {};
+            contactEntries.slice(0, 10).forEach(([e, c]) => { trimmed[e] = c; });
+            cached[domain].contacts = trimmed;
+          }
+        }
+      }
+      const trimmedPayload = JSON.stringify({
+        domainMap: cached,
+        companyNameCache: companyNameCache,
+        fullScanDone: fullScanDone,
+        lastScanTime: lastScanTime ? lastScanTime.toISOString() : null,
+        savedAt: new Date().toISOString(),
+      });
+      localStorage.setItem(LOCAL_CACHE_KEY, trimmedPayload);
+      console.log('Cache: saved trimmed (' + (trimmedPayload.length * 2 / 1024 / 1024).toFixed(1) + 'MB, ' + domainKeys.length + ' domains)');
+      return;
+    }
     localStorage.setItem(LOCAL_CACHE_KEY, payload);
-  } catch(e) { /* localStorage full or unavailable — not critical */ }
+    console.log('Cache: saved ' + domainKeys.length + ' domains (' + sizeMB.toFixed(1) + 'MB)');
+  } catch(e) {
+    console.error('Cache: SAVE FAILED:', e.name, e.message);
+    // If quota exceeded, try clearing old data and saving a minimal version
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      try {
+        // Remove enrichment caches and other non-essential items to free space
+        localStorage.removeItem('enrichmentCache');
+        localStorage.removeItem('contactEnrichment');
+        localStorage.removeItem('logoFailedCache');
+        localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify({
+          domainMap: {},
+          companyNameCache: companyNameCache,
+          fullScanDone: fullScanDone,
+          lastScanTime: lastScanTime ? lastScanTime.toISOString() : null,
+          savedAt: new Date().toISOString(),
+          _trimmedDueToQuota: true,
+        }));
+        console.warn('Cache: saved minimal version after quota error');
+      } catch(e2) {
+        console.error('Cache: even minimal save failed:', e2.message);
+      }
+    }
+  }
 }
 
 function loadLocalCache() {
@@ -9579,6 +9635,9 @@ function esc(text) {
   loadLogoFailedCache();
   renderTableHeader();
 
+  // Initialize Supabase client early (no network call — just creates the JS client)
+  initSupabase();
+
   // ── INSTANT RENDER: load from localStorage cache BEFORE any network calls ──
   // This shows data immediately while MSAL + Supabase initialize in parallel.
   let cacheRendered = false;
@@ -9636,15 +9695,19 @@ function esc(text) {
   }
 })();
 
-// Flush to Supabase on page close/hide
+// Save cache + flush to Supabase on page close/hide
 window.addEventListener('beforeunload', () => {
+  if (Object.keys(domainMap).length > 0) {
+    saveLocalCache(); // synchronous — ensures cache is saved before page unloads
+  }
   if (currentAccount && Object.keys(domainMap).length > 0) {
     syncToSupabase();
   }
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && currentAccount && Object.keys(domainMap).length > 0) {
-    syncToSupabase();
+  if (document.hidden && Object.keys(domainMap).length > 0) {
+    saveLocalCache(); // synchronous — cache saved immediately when tab hidden
+    if (currentAccount) syncToSupabase();
   } else if (!document.hidden && currentAccount) {
     refreshFromSupabase();
   }

@@ -3,6 +3,7 @@
   "outputDirectory": ".",
   "framework": null,
   "rewrites": [
+    { "source": "/api/keepalive", "destination": "/api/keepalive.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
@@ -19,6 +20,12 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
