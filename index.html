@@ -8396,6 +8396,24 @@ async function restoreCloudVersion(fileId, versionId, dateLabel) {
     const blockedBefore = blockedDomains.size;
     const domainsBefore = Object.keys(domainMap).length;
 
+    // Clear existing data so restore REPLACES instead of just merging.
+    // The apply* functions only add/merge — without clearing first,
+    // restoring an older version would have no visible effect.
+    blockedDomains.clear();
+    starredCompanies.clear();
+    archivedCompanies.clear();
+    flaggedCompanies.clear();
+    followUpCompanies.clear();
+    Object.keys(companyTypes).forEach(k => delete companyTypes[k]);
+    Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
+    Object.keys(proposalNotes).forEach(k => delete proposalNotes[k]);
+    Object.keys(proposalStages).forEach(k => delete proposalStages[k]);
+    Object.keys(followUpDates).forEach(k => delete followUpDates[k]);
+    Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
+    Object.keys(contactNameOverrides).forEach(k => delete contactNameOverrides[k]);
+    Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
+    Object.keys(domainMap).forEach(k => delete domainMap[k]);
+
     applyCloudSettings(data);
     applyCloudDomainData(data);
     buildCompaniesFromDomainMap();
