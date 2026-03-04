@@ -2642,18 +2642,20 @@ async function syncToSupabase() {
         last_activity_date: data.lastDate ? data.lastDate.toISOString() : null,
         last_sent_date: data.lastSentDate ? data.lastSentDate.toISOString() : null,
         last_received_date: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null,
-        // Use max of Set size and DB-stored count to prevent overwriting with smaller values
         sent_count: Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0),
         received_count: Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0),
         proposal_stage: data.proposal_stage || null,
         proposal_notes: data.proposal_notes || null,
         merged_into: data.merged_into || null,
-        enrichment: enrichmentCache[domain] || {},
-        custom_data: customColumnData[domain] || {},
       };
+      // Only include JSONB fields when they have actual data (saves payload size)
+      const enrich = enrichmentCache[domain];
+      if (enrich && Object.keys(enrich).length > 0) row.enrichment = enrich;
+      const custom = customColumnData[domain];
+      if (custom && Object.keys(custom).length > 0) row.custom_data = custom;
       companyRows.push(row);
       for (const [email, c] of Object.entries(data.contacts)) {
-        contactRows.push({
+        const ctRow = {
           user_id: supabaseUserId,
           email: email,
           name: c.name,
@@ -2661,16 +2663,18 @@ async function syncToSupabase() {
           last_activity_date: c.lastDate ? c.lastDate.toISOString() : null,
           sent_count: Math.max(c.sentIds ? c.sentIds.size : 0, c._dbSentCount || 0),
           received_count: Math.max(c.receivedIds ? c.receivedIds.size : 0, c._dbReceivedCount || 0),
-          enrichment: contactEnrichment[email] || {},
-          _domain: domain, // temp field for company lookup
-        });
+          _domain: domain,
+        };
+        const ctEnrich = contactEnrichment[email];
+        if (ctEnrich && Object.keys(ctEnrich).length > 0) ctRow.enrichment = ctEnrich;
+        contactRows.push(ctRow);
       }
     }
 
-    // Batch upsert companies (chunks of 500)
+    // Batch upsert companies (chunks of 200)
     let companyFails = 0;
-    for (let i = 0; i < companyRows.length; i += 500) {
-      const batch = companyRows.slice(i, i + 500);
+    for (let i = 0; i < companyRows.length; i += 200) {
+      const batch = companyRows.slice(i, i + 200);
       const { error } = await supabaseClient
         .from('companies')
         .upsert(batch, { onConflict: 'user_id,domain' });
@@ -2694,9 +2698,9 @@ async function syncToSupabase() {
     const domainToCompanyId = {};
     for (const r of companyIdRows) domainToCompanyId[r.domain] = r.id;
 
-    // Batch upsert contacts (chunks of 500)
-    for (let i = 0; i < contactRows.length; i += 500) {
-      const batch = contactRows.slice(i, i + 500).map(c => {
+    // Batch upsert contacts (chunks of 200)
+    for (let i = 0; i < contactRows.length; i += 200) {
+      const batch = contactRows.slice(i, i + 200).map(c => {
         const { _domain, ...rest } = c;
         rest.company_id = domainToCompanyId[_domain] || null;
         return rest;
@@ -4185,7 +4189,7 @@ function showWelcome() {
   aiChatOpen = false;
 }
 
-async function onSignedIn(cacheRendered, earlySbData) {
+async function onSignedIn(unused, supabasePromise) {
   document.getElementById('authLoading').style.display = 'none';
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
@@ -4205,17 +4209,11 @@ async function onSignedIn(cacheRendered, earlySbData) {
   document.getElementById('globalSearchWrap').style.display = '';
   document.getElementById('aiFab').classList.remove('hidden');
 
-  let hasData = !!cacheRendered;
+  let hasData = false;
   let cloudOnlyRestore = false;
   const startupTime = Date.now();
 
-  // Cache was already rendered in init() BEFORE MSAL auth — data is visible now.
-  if (hasData) {
-    renderTableHeader();
-    updateLastSyncDisplay();
-  }
-
-  // ── SUPABASE — register user + load fresh data ──
+  // ── SUPABASE — use pre-loaded data or fetch fresh ──
   if (!supabaseReady) await initSupabase();
   const supabaseSync = async () => {
     if (!supabaseReady) return;
@@ -4223,15 +4221,8 @@ async function onSignedIn(cacheRendered, earlySbData) {
       const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
       await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
       if (!supabaseUserId) return;
-      // If early Supabase load already rendered data, don't re-fetch
-      if (earlySbData && hasData) {
-        console.log('Startup: Supabase data already loaded and rendered — skipping re-fetch');
-        updateLastSyncDisplay();
-        resolveCompanyNames();
-        updateSupabaseBadge('success');
-        return;
-      }
-      const sbData = await loadFromSupabase();
+      // Use data already loaded in parallel with MSAL, or fetch fresh
+      const sbData = supabasePromise ? await supabasePromise : await loadFromSupabase();
       if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
         if (sbData.scanMeta) {
           lastScanTime = sbData.scanMeta.lastScanTime;
@@ -9729,18 +9720,15 @@ function esc(text) {
   loadLogoFailedCache();
   renderTableHeader();
 
-  // ── LOAD SUPABASE + MSAL IN PARALLEL ──
+  // ── START SUPABASE LOAD IN PARALLEL WITH MSAL ──
+  // Don't render early — wait for MSAL so we render once with full UI
   const cachedUid = localStorage.getItem('kennion_sb_uid');
-
-  // Start both in parallel
   const supabasePromise = cachedUid ? (async () => {
     await initSupabase();
     if (!supabaseReady) return null;
     supabaseUserId = cachedUid;
     return await loadFromSupabase();
-  })() : Promise.resolve(null);
-
-  const msalPromise = getClientId() ? initMSAL() : Promise.resolve(null);
+  })() : null;
 
   let welcomed = false;
   const safetyTimer = setTimeout(() => {
@@ -9751,58 +9739,23 @@ function esc(text) {
     }
   }, 12000);
 
-  // Wait for Supabase data first (usually faster than MSAL)
-  let sbData = null;
-  let dataRendered = false;
   try {
-    sbData = await supabasePromise;
-    if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
-      if (sbData.scanMeta) {
-        lastScanTime = sbData.scanMeta.lastScanTime;
-        fullScanDone = sbData.scanMeta.fullScanDone || false;
-        deltaLink = sbData.scanMeta.deltaLink || null;
-      }
-      domainMap = sbData.domainMap;
-      buildCompaniesFromDomainMap();
-      renderTableHeader();
-      renderTable();
-      updateStats();
-      updateBlockedCount();
-      updateFlaggedCount();
-      updateFollowUpCount();
-      document.getElementById('authLoading').style.display = 'none';
-      document.getElementById('welcomeScreen').style.display = 'none';
-      document.getElementById('crmContent').classList.add('active');
-      document.getElementById('sidebar').style.display = 'flex';
-      dataRendered = true;
-      console.log('INIT: rendered from Supabase in ' + (Date.now() - pageStart) + 'ms — ' + Object.keys(sbData.domainMap).length + ' domains');
-    }
-  } catch(e) { console.warn('Supabase load failed:', e); }
-
-  // Now wait for MSAL (may already be done)
-  try {
-    await msalPromise;
-    if (msalInstance) {
-      const accounts = msalInstance.getAllAccounts();
-      if (accounts.length > 0) {
-        currentAccount = accounts[0];
-        userEmail = currentAccount.username;
-        clearTimeout(safetyTimer);
-        welcomed = true;
-        await onSignedIn(dataRendered, dataRendered ? sbData : null);
-        return;
+    if (getClientId()) {
+      await initMSAL();
+      if (msalInstance) {
+        const accounts = msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+          currentAccount = accounts[0];
+          userEmail = currentAccount.username;
+          clearTimeout(safetyTimer);
+          welcomed = true;
+          await onSignedIn(false, supabasePromise);
+          return;
+        }
       }
     }
   } catch(e) {
-    console.error('MSAL init error:', e);
-  }
-
-  // If Supabase rendered data but MSAL failed, keep showing data
-  if (dataRendered) {
-    clearTimeout(safetyTimer);
-    welcomed = true;
-    document.getElementById('settingsBtn').style.display = '';
-    return;
+    console.error('Init error:', e);
   }
 
   clearTimeout(safetyTimer);
