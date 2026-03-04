@@ -4092,7 +4092,7 @@ function showWelcome() {
   aiChatOpen = false;
 }
 
-async function onSignedIn() {
+async function onSignedIn(cacheRendered) {
   document.getElementById('authLoading').style.display = 'none';
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
@@ -4112,35 +4112,25 @@ async function onSignedIn() {
   document.getElementById('globalSearchWrap').style.display = '';
   document.getElementById('aiFab').classList.remove('hidden');
 
-  let hasData = false;
+  let hasData = !!cacheRendered;
   let cloudOnlyRestore = false;
   const startupTime = Date.now();
 
-  // ── STEP 1: INSTANT RENDER FROM LOCAL CACHE ──
-  const cached = loadLocalCache();
-  if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
-    domainMap = cached.domainMap;
-    fullScanDone = cached.fullScanDone || false;
-    lastScanTime = cached.lastScanTime || null;
-    hasData = true;
-    buildCompaniesFromDomainMap();
+  // Cache was already rendered in init() BEFORE MSAL auth — data is visible now.
+  if (hasData) {
     renderTableHeader();
-    renderTable();
-    updateStats();
     updateLastSyncDisplay();
-    console.log('Startup: rendered ' + companies.length + ' companies from cache in ' + (Date.now() - startupTime) + 'ms');
   }
 
-  // ── STEP 2: SUPABASE — register user + load fresh data ──
-  // initSupabase() already called in init() warmup ping
+  // ── SUPABASE — register user + load fresh data in background ──
   if (!supabaseReady) initSupabase();
-  if (supabaseReady) {
-    const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
-    await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
-  }
-
-  if (supabaseReady && supabaseUserId) {
+  // Background Supabase sync — fetches latest data without blocking the UI
+  const supabaseSync = async () => {
+    if (!supabaseReady) return;
     try {
+      const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+      await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+      if (!supabaseUserId) return;
       const sbData = await loadFromSupabase();
       if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
         domainMap = sbData.domainMap;
@@ -4159,12 +4149,19 @@ async function onSignedIn() {
         saveLocalCache();
         resolveCompanyNames();
         updateSupabaseBadge('success');
-        console.log('Startup: loaded from Supabase — ' + Object.keys(domainMap).length + ' domains in ' + (Date.now() - startupTime) + 'ms');
+        console.log('Startup: Supabase sync done — ' + Object.keys(domainMap).length + ' domains in ' + (Date.now() - startupTime) + 'ms');
       }
     } catch(e) {
-      console.warn('Startup: Supabase load failed:', e);
-      // If cache was loaded, we're fine — just using cached data
+      console.warn('Startup: Supabase sync failed:', e);
     }
+  };
+
+  if (hasData) {
+    // Data already visible from cache — sync Supabase quietly in background
+    supabaseSync();
+  } else {
+    // No cache — must wait for Supabase
+    await supabaseSync();
   }
 
   updateBlockedCount();
@@ -9561,6 +9558,7 @@ function esc(text) {
 // INIT — check for existing session
 // ──────────────────────────────────────────────
 (async function init() {
+  const pageStart = Date.now();
   loadBlockedDomains();
   loadStarredCompanies();
   loadProposalData();
@@ -9580,6 +9578,25 @@ function esc(text) {
   loadContactEnrichment();
   loadLogoFailedCache();
   renderTableHeader();
+
+  // ── INSTANT RENDER: load from localStorage cache BEFORE any network calls ──
+  // This shows data immediately while MSAL + Supabase initialize in parallel.
+  let cacheRendered = false;
+  const cached = loadLocalCache();
+  if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
+    domainMap = cached.domainMap;
+    fullScanDone = cached.fullScanDone || false;
+    lastScanTime = cached.lastScanTime || null;
+    buildCompaniesFromDomainMap();
+    renderTable();
+    updateStats();
+    // Show the CRM UI immediately with cached data
+    document.getElementById('authLoading').style.display = 'none';
+    document.getElementById('welcomeScreen').style.display = 'none';
+    document.getElementById('crmContent').classList.add('active');
+    cacheRendered = true;
+    console.log('INIT: rendered ' + companies.length + ' companies from cache in ' + (Date.now() - pageStart) + 'ms');
+  }
 
   // Safety timeout — if MSAL loading takes too long, show welcome screen
   let welcomed = false;
@@ -9602,7 +9619,7 @@ function esc(text) {
           userEmail = currentAccount.username;
           clearTimeout(safetyTimer);
           welcomed = true;
-          await onSignedIn();
+          await onSignedIn(cacheRendered);
           return;
         }
       }
