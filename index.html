@@ -4008,23 +4008,40 @@ async function scanOutlookEmails(forceFullScan) {
     setTimeout(() => { hideScanBanner(); }, needsFullScan ? 4000 : 2000);
 
   } catch(e) {
-    hideScanBanner();
     setSyncBadge('error', 'Sync Failed');
     console.error('Scan error:', e);
-    // Show user-friendly message for common transient errors
     const msg = e.message || '';
-    if (msg.includes('504') || msg.includes('502') || msg.includes('503') || msg.includes('timed out')) {
-      alert('Email sync temporarily unavailable — Microsoft servers are slow or unreachable. Please try again in a few minutes.');
-    } else if (msg.includes('429')) {
-      alert('Too many requests — Microsoft is rate-limiting your account. Please wait a few minutes before syncing again.');
-    } else if (msg.includes('Not signed in') || msg.includes('interaction_required')) {
-      alert('Your session has expired. Please sign out and sign back in.');
-    } else if (msg.includes('401') || msg.includes('InvalidAuthenticationToken') || msg.includes('token is expired') || msg.includes('re-authentication failed')) {
-      alert('Your authentication token has expired. Please sign out and sign back in to reconnect.');
-    } else if (msg.includes('Failed to fetch') || msg.includes('Network error') || msg.includes('NetworkError') || msg.includes('network')) {
-      alert('Network connection error — unable to reach Microsoft servers. Please check your internet connection and try again.');
+    // If we already have data displayed, show a non-intrusive banner instead of alert
+    // Alerts are jarring on mobile and block the UI when data is already visible
+    if (companies.length > 0) {
+      let bannerMsg = 'Email sync failed — using cached data.';
+      if (msg.includes('504') || msg.includes('502') || msg.includes('503') || msg.includes('timed out')) {
+        bannerMsg = 'Microsoft servers temporarily unavailable — showing cached data.';
+      } else if (msg.includes('429')) {
+        bannerMsg = 'Rate limited by Microsoft — showing cached data. Will retry automatically.';
+      } else if (msg.includes('Not signed in') || msg.includes('interaction_required') || msg.includes('401') || msg.includes('InvalidAuthenticationToken') || msg.includes('token is expired') || msg.includes('re-authentication failed')) {
+        bannerMsg = 'Session expired — please sign out and sign back in to sync new emails.';
+      } else if (msg.includes('Failed to fetch') || msg.includes('Network error') || msg.includes('NetworkError') || msg.includes('network') || msg.includes('Load failed')) {
+        bannerMsg = 'No internet connection — showing cached data. Will sync when online.';
+      }
+      updateScanBanner(bannerMsg);
+      setTimeout(() => { hideScanBanner(); }, 6000);
     } else {
-      alert('Email scan failed: ' + msg);
+      // No cached data — must show alert so user knows to take action
+      if (msg.includes('504') || msg.includes('502') || msg.includes('503') || msg.includes('timed out')) {
+        alert('Email sync temporarily unavailable — Microsoft servers are slow or unreachable. Please try again in a few minutes.');
+      } else if (msg.includes('429')) {
+        alert('Too many requests — Microsoft is rate-limiting your account. Please wait a few minutes before syncing again.');
+      } else if (msg.includes('Not signed in') || msg.includes('interaction_required')) {
+        alert('Your session has expired. Please sign out and sign back in.');
+      } else if (msg.includes('401') || msg.includes('InvalidAuthenticationToken') || msg.includes('token is expired') || msg.includes('re-authentication failed')) {
+        alert('Your authentication token has expired. Please sign out and sign back in to reconnect.');
+      } else if (msg.includes('Failed to fetch') || msg.includes('Network error') || msg.includes('NetworkError') || msg.includes('network') || msg.includes('Load failed')) {
+        alert('Network connection error — unable to reach Microsoft servers. Please check your internet connection and try again.');
+      } else {
+        alert('Email scan failed: ' + msg);
+      }
+      hideScanBanner();
     }
   } finally {
     isScanning = false;
