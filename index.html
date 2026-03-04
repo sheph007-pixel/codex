@@ -1593,43 +1593,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   </div>
 </div>
 
-<!-- INSTANT RENDER: show cached snapshot BEFORE parsing the main 8000-line script -->
-<script>
-(function() {
-  try {
-    var raw = localStorage.getItem('kennion_snapshot_v2');
-    if (!raw) return;
-    var snap = JSON.parse(raw);
-    if (!snap || !snap.tableBody) return;
-    // Only use snapshots less than 24 hours old
-    if (snap.savedAt && (Date.now() - snap.savedAt) > 86400000) return;
-    // Inject cached HTML into DOM immediately
-    var tb = document.getElementById('tableBody');
-    var th = document.getElementById('tableHead');
-    if (tb) tb.innerHTML = snap.tableBody;
-    if (th && snap.tableHead) th.innerHTML = snap.tableHead;
-    // Populate stats + sidebar counts
-    var ids = ['statCompanies','statLeads','statExisting','statOld',
-               'hotCount','warmCount','coldCount','leadsCount',
-               'currentClientCount','oldClientCount','clientsCount'];
-    for (var i = 0; i < ids.length; i++) {
-      var el = document.getElementById(ids[i]);
-      if (el && snap[ids[i]]) el.textContent = snap[ids[i]];
-    }
-    // Show CRM UI immediately — hide loading spinner
-    document.getElementById('authLoading').style.display = 'none';
-    document.getElementById('welcomeScreen').style.display = 'none';
-    document.getElementById('crmContent').className = 'crm-content active';
-    var sb = document.getElementById('sidebar');
-    if (sb) sb.style.display = 'flex';
-    var vtb = document.getElementById('viewTitleBar');
-    if (vtb) vtb.style.display = '';
-    window.__snapshotRendered = true;
-    console.log('INSTANT: snapshot rendered before main JS parse');
-  } catch(e) { /* silent — main init() will handle everything */ }
-})();
-</script>
-
 <script>
 // Global error handler — if any uncaught error occurs, show welcome screen
 window.onerror = function(msg, src, line, col, err) {
@@ -4199,7 +4162,7 @@ function showWelcome() {
   aiChatOpen = false;
 }
 
-async function onSignedIn(cacheRendered, earlySupabasePromise) {
+async function onSignedIn(cacheRendered, earlySbData) {
   document.getElementById('authLoading').style.display = 'none';
   document.getElementById('welcomeScreen').style.display = 'none';
   document.getElementById('crmContent').classList.add('active');
@@ -4231,15 +4194,21 @@ async function onSignedIn(cacheRendered, earlySupabasePromise) {
 
   // ── SUPABASE — register user + load fresh data ──
   if (!supabaseReady) await initSupabase();
-  // Background Supabase sync — uses early-loaded data if available
   const supabaseSync = async () => {
     if (!supabaseReady) return;
     try {
       const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
       await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
       if (!supabaseUserId) return;
-      // Use data already loaded in parallel during MSAL init, or fetch fresh
-      const sbData = earlySupabasePromise ? await earlySupabasePromise : await loadFromSupabase();
+      // If early Supabase load already rendered data, don't re-fetch
+      if (earlySbData && hasData) {
+        console.log('Startup: Supabase data already loaded and rendered — skipping re-fetch');
+        updateLastSyncDisplay();
+        resolveCompanyNames();
+        updateSupabaseBadge('success');
+        return;
+      }
+      const sbData = await loadFromSupabase();
       if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
         if (sbData.scanMeta) {
           lastScanTime = sbData.scanMeta.lastScanTime;
@@ -4818,31 +4787,8 @@ function updateTypeCounts() {
 
 // Snapshot removed — Supabase is the sole source of truth.
 // No more localStorage snapshots; data loads directly from the database.
-function saveInstantSnapshot() {
-  try {
-    var tb = document.getElementById('tableBody');
-    var th = document.getElementById('tableHead');
-    if (!tb || !th || !tb.innerHTML) return;
-    var snap = {
-      tableBody: tb.innerHTML,
-      tableHead: th.innerHTML,
-      statCompanies: document.getElementById('statCompanies').textContent,
-      statLeads: document.getElementById('statLeads').textContent,
-      statExisting: document.getElementById('statExisting').textContent,
-      statOld: document.getElementById('statOld').textContent,
-      hotCount: document.getElementById('hotCount').textContent,
-      warmCount: document.getElementById('warmCount').textContent,
-      coldCount: document.getElementById('coldCount').textContent,
-      leadsCount: document.getElementById('leadsCount').textContent,
-      currentClientCount: document.getElementById('currentClientCount').textContent,
-      oldClientCount: document.getElementById('oldClientCount').textContent,
-      clientsCount: document.getElementById('clientsCount').textContent,
-      savedAt: Date.now()
-    };
-    localStorage.setItem('kennion_snapshot_v2', JSON.stringify(snap));
-  } catch(e) { /* ignore */ }
-}
-function loadInstantSnapshot() { return false; /* handled by early inline script */ }
+function saveInstantSnapshot() { /* no-op */ }
+function loadInstantSnapshot() { return false; }
 
 function setViewTitle(title, showDashboard) {
   var bar = document.getElementById('viewTitleBar');
@@ -9759,68 +9705,80 @@ function esc(text) {
   loadLogoFailedCache();
   renderTableHeader();
 
-  // ── INSTANT RENDER: load from localStorage cache BEFORE any network calls ──
-  let cacheRendered = !!window.__snapshotRendered;
-  const cached = loadLocalCache();
-  if (cached && cached.domainMap && Object.keys(cached.domainMap).length > 0) {
-    domainMap = cached.domainMap;
-    fullScanDone = cached.fullScanDone || false;
-    lastScanTime = cached.lastScanTime || null;
-    buildCompaniesFromDomainMap();
-    renderTable();
-    updateStats();
-    document.getElementById('authLoading').style.display = 'none';
-    document.getElementById('welcomeScreen').style.display = 'none';
-    document.getElementById('crmContent').classList.add('active');
-    document.getElementById('sidebar').style.display = 'flex';
-    cacheRendered = true;
-    console.log('INIT: rendered ' + companies.length + ' companies from cache in ' + (Date.now() - pageStart) + 'ms');
-  }
-
-  // ── START SUPABASE LOAD IMMEDIATELY using cached userId (don't wait for MSAL) ──
+  // ── LOAD SUPABASE + MSAL IN PARALLEL ──
   const cachedUid = localStorage.getItem('kennion_sb_uid');
-  let earlySupabasePromise = null;
-  if (cachedUid) {
-    // Start Supabase init + data load right away, in parallel with MSAL
-    earlySupabasePromise = (async () => {
-      await initSupabase();
-      if (!supabaseReady) return null;
-      supabaseUserId = cachedUid;
-      const sbData = await loadFromSupabase();
-      return sbData;
-    })();
-  } else {
-    initSupabase(); // just start loading the library
-  }
 
-  // ── MSAL AUTH (runs in parallel with Supabase load above) ──
+  // Start both in parallel
+  const supabasePromise = cachedUid ? (async () => {
+    await initSupabase();
+    if (!supabaseReady) return null;
+    supabaseUserId = cachedUid;
+    return await loadFromSupabase();
+  })() : Promise.resolve(null);
+
+  const msalPromise = getClientId() ? initMSAL() : Promise.resolve(null);
+
   let welcomed = false;
   const safetyTimer = setTimeout(() => {
     if (!welcomed) {
       welcomed = true;
-      console.warn('MSAL loading timed out — showing welcome screen');
       document.getElementById('settingsBtn').style.display = '';
       showWelcome();
     }
   }, 12000);
 
+  // Wait for Supabase data first (usually faster than MSAL)
+  let sbData = null;
+  let dataRendered = false;
   try {
-    if (getClientId()) {
-      await initMSAL();
-      if (msalInstance) {
-        const accounts = msalInstance.getAllAccounts();
-        if (accounts.length > 0) {
-          currentAccount = accounts[0];
-          userEmail = currentAccount.username;
-          clearTimeout(safetyTimer);
-          welcomed = true;
-          await onSignedIn(cacheRendered, earlySupabasePromise);
-          return;
-        }
+    sbData = await supabasePromise;
+    if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
+      if (sbData.scanMeta) {
+        lastScanTime = sbData.scanMeta.lastScanTime;
+        fullScanDone = sbData.scanMeta.fullScanDone || false;
+        deltaLink = sbData.scanMeta.deltaLink || null;
+      }
+      domainMap = sbData.domainMap;
+      buildCompaniesFromDomainMap();
+      renderTableHeader();
+      renderTable();
+      updateStats();
+      updateBlockedCount();
+      updateFlaggedCount();
+      updateFollowUpCount();
+      document.getElementById('authLoading').style.display = 'none';
+      document.getElementById('welcomeScreen').style.display = 'none';
+      document.getElementById('crmContent').classList.add('active');
+      document.getElementById('sidebar').style.display = 'flex';
+      dataRendered = true;
+      console.log('INIT: rendered from Supabase in ' + (Date.now() - pageStart) + 'ms — ' + Object.keys(sbData.domainMap).length + ' domains');
+    }
+  } catch(e) { console.warn('Supabase load failed:', e); }
+
+  // Now wait for MSAL (may already be done)
+  try {
+    await msalPromise;
+    if (msalInstance) {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        currentAccount = accounts[0];
+        userEmail = currentAccount.username;
+        clearTimeout(safetyTimer);
+        welcomed = true;
+        await onSignedIn(dataRendered, dataRendered ? sbData : null);
+        return;
       }
     }
   } catch(e) {
-    console.error('Init error:', e);
+    console.error('MSAL init error:', e);
+  }
+
+  // If Supabase rendered data but MSAL failed, keep showing data
+  if (dataRendered) {
+    clearTimeout(safetyTimer);
+    welcomed = true;
+    document.getElementById('settingsBtn').style.display = '';
+    return;
   }
 
   clearTimeout(safetyTimer);
