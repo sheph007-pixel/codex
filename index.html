@@ -2771,9 +2771,18 @@ async function supabaseFetchAll(table, selectCols, filters) {
       query = query.eq(key, val);
     }
     const fetchStart = Date.now();
-    const { data, error } = await query;
+    let data, error;
+    // Retry up to 3 times on errors (free tier can timeout on large tables)
+    for (let attempt = 0; attempt <= 2; attempt++) {
+      const result = await query;
+      data = result.data;
+      error = result.error;
+      if (!error) break;
+      console.warn('Supabase: fetch error on ' + table + ' page ' + (from / PAGE_SIZE + 1) + ' (attempt ' + (attempt + 1) + '):', error.message);
+      if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
     const elapsed = Date.now() - fetchStart;
-    if (error) { console.warn('Supabase: paginated fetch error on ' + table + ':', error.message); break; }
+    if (error) { console.error('Supabase: giving up on ' + table + ' after 3 attempts:', error.message); break; }
     if (!data || data.length === 0) break;
     console.log('Supabase: fetched ' + data.length + ' rows from ' + table + ' (page ' + (from / PAGE_SIZE + 1) + ', ' + elapsed + 'ms)');
     allData = allData.concat(data);
@@ -3535,7 +3544,8 @@ function buildCompaniesFromDomainMap() {
     }
 
     const contactArr = Object.values(mergedContacts);
-    if (contactArr.length === 0) continue;
+    // DB-loaded companies should always show, even if contacts didn't fully load
+    if (contactArr.length === 0 && !data._fromDb) continue;
 
     // Per-contact counts from individual Sets (use DB counts as floor)
     for (const ct of contactArr) {
@@ -3562,7 +3572,7 @@ function buildCompaniesFromDomainMap() {
     if (uniqueSent === 0 && !data._fromDb) continue;
 
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
-    const primary = getPrimaryContact(domain, contactArr);
+    const primary = getPrimaryContact(domain, contactArr) || { name: domain, email: '' };
     const totalEmails = uniqueSent + uniqueReceived;
 
     // ── AI SEGMENT SCORING ──
@@ -4174,10 +4184,8 @@ function showWelcome() {
 }
 
 async function onSignedIn(unused, supabasePromise) {
-  document.getElementById('authLoading').style.display = 'none';
-  document.getElementById('welcomeScreen').style.display = 'none';
-  document.getElementById('crmContent').classList.add('active');
-  setViewTitle('All Companies', true);
+  // Set up sidebar FIRST (while content is still hidden) to prevent
+  // a flash of full-width content before sidebar appears.
   const sb = document.getElementById('sidebar');
   sb.style.display = 'flex';
   if (_sidebarCollapsed) {
@@ -4192,6 +4200,11 @@ async function onSignedIn(unused, supabasePromise) {
   document.getElementById('settingsNavItem').style.display = '';
   document.getElementById('globalSearchWrap').style.display = '';
   document.getElementById('aiFab').classList.remove('hidden');
+  // NOW reveal content — sidebar is already positioned
+  document.getElementById('authLoading').style.display = 'none';
+  document.getElementById('welcomeScreen').style.display = 'none';
+  document.getElementById('crmContent').classList.add('active');
+  setViewTitle('All Companies', true);
 
   let hasData = false;
   const startupTime = Date.now();
