@@ -3378,8 +3378,9 @@ async function ensureMSALLoaded() {
   return false;
 }
 
+const DEFAULT_CLIENT_ID = 'ea376f6c-94ff-468a-b252-570f4a970bb4';
 function getClientId() {
-  return localStorage.getItem('relateflow_client_id') || '';
+  return localStorage.getItem('relateflow_client_id') || DEFAULT_CLIENT_ID;
 }
 
 async function initMSAL() {
