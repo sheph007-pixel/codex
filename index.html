@@ -2607,13 +2607,12 @@ async function syncToSupabase() {
       if (error) console.warn('Supabase: setting ' + key + ' failed:', error.message);
     }
 
-    // Sync scan metadata
-    const deviceId = _deviceId;
+    // Sync scan metadata (use fixed device_id 'primary' — one scan state per user)
     await supabaseClient
       .from('scan_metadata')
       .upsert({
         user_id: supabaseUserId,
-        device_id: deviceId,
+        device_id: 'primary',
         last_scan_time: lastScanTime ? lastScanTime.toISOString() : null,
         full_scan_done: fullScanDone,
         delta_link: deltaLink,
@@ -2657,7 +2656,6 @@ async function loadFromSupabase() {
   try {
     console.log('Supabase: loading data...');
     const loadStart = Date.now();
-    const deviceId = _deviceId;
 
     // Run all 4 queries in parallel — companies and contacts use pagination
     // to overcome Supabase's default 1000-row limit
@@ -2665,7 +2663,7 @@ async function loadFromSupabase() {
       supabaseFetchAll('companies', '*', { user_id: supabaseUserId }),
       supabaseFetchAll('contacts', '*', { user_id: supabaseUserId }),
       supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId),
-      supabaseClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).eq('device_id', deviceId).single()
+      supabaseClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
     ]);
 
     if (!companyData || companyData.length === 0) {
