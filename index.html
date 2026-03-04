@@ -2589,10 +2589,10 @@ async function loadFromSupabase() {
     console.log('Supabase: loading data...');
     const loadStart = Date.now();
 
-    // Load companies, settings, and scan metadata first (fast render)
-    // Contacts are loaded in a second pass to reduce initial wait time
-    const [companyData, settingsResult, scanResult] = await Promise.all([
+    // Load all data in parallel for fastest possible load from database
+    const [companyData, contactData, settingsResult, scanResult] = await Promise.all([
       supabaseFetchAll('companies', '*', { user_id: supabaseUserId }),
+      supabaseFetchAll('contacts', '*', { user_id: supabaseUserId }),
       supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId),
       supabaseClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
     ]);
@@ -2646,9 +2646,26 @@ async function loadFromSupabase() {
       if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
     }
 
-    // Contacts are loaded after initial render for faster startup
-    // Store companyIdToDomain for deferred contact loading
-    const _companyIdToDomain = companyIdToDomain;
+    // Add contacts to their companies
+    if (contactData) {
+      for (const ct of contactData) {
+        const domain = companyIdToDomain[ct.company_id];
+        if (!domain || !newDomainMap[domain]) continue;
+        newDomainMap[domain].contacts[ct.email] = {
+          name: ct.name || ct.email,
+          email: ct.email,
+          sentIds: new Set(),
+          receivedIds: new Set(),
+          lastDate: ct.last_activity_date ? new Date(ct.last_activity_date) : null,
+          _dbSentCount: ct.sent_count || 0,
+          _dbReceivedCount: ct.received_count || 0,
+        };
+        if (ct.is_starred) starredContacts[domain] = ct.email;
+        if (ct.enrichment && Object.keys(ct.enrichment).length > 0) {
+          contactEnrichment[ct.email] = ct.enrichment;
+        }
+      }
+    }
 
     // Apply settings (settingsData already destructured above)
     if (settingsData) {
@@ -2694,34 +2711,8 @@ async function loadFromSupabase() {
     }
 
     const elapsed = ((Date.now() - loadStart) / 1000).toFixed(1);
-    console.log('Supabase: loaded ' + companyData.length + ' companies in ' + elapsed + 's (contacts deferred)');
-
-    // Deferred contact loader — call after initial render for faster startup
-    const loadContacts = async function() {
-      const contactData = await supabaseFetchAll('contacts', '*', { user_id: supabaseUserId });
-      if (contactData) {
-        for (const ct of contactData) {
-          const domain = _companyIdToDomain[ct.company_id];
-          if (!domain || !newDomainMap[domain]) continue;
-          newDomainMap[domain].contacts[ct.email] = {
-            name: ct.name || ct.email,
-            email: ct.email,
-            sentIds: new Set(),
-            receivedIds: new Set(),
-            lastDate: ct.last_activity_date ? new Date(ct.last_activity_date) : null,
-            _dbSentCount: ct.sent_count || 0,
-            _dbReceivedCount: ct.received_count || 0,
-          };
-          if (ct.is_starred) starredContacts[domain] = ct.email;
-          if (ct.enrichment && Object.keys(ct.enrichment).length > 0) {
-            contactEnrichment[ct.email] = ct.enrichment;
-          }
-        }
-        console.log('Supabase: loaded ' + contactData.length + ' contacts (deferred)');
-      }
-    };
-
-    return { domainMap: newDomainMap, scanMeta: scanMeta, loadContacts: loadContacts };
+    console.log('Supabase: loaded ' + companyData.length + ' companies, ' + (contactData ? contactData.length : 0) + ' contacts in ' + elapsed + 's');
+    return { domainMap: newDomainMap, scanMeta: scanMeta };
   } catch(e) {
     console.warn('Supabase: load error:', e);
     return null;
@@ -3604,8 +3595,11 @@ async function fetchEmailsProgressively(token, useDelta) {
   } else {
     // Fallback: timestamp-based polling (delta not supported by this mailbox)
     url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&' + MSG_SELECT + '&$orderby=receivedDateTime desc';
-    if (useDelta && lastScanTime) {
-      url += '&$filter=receivedDateTime ge ' + lastScanTime.toISOString();
+    if (useDelta) {
+      // Limit incremental sync to last 7 days max (or since last scan if more recent)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const sinceDate = lastScanTime && lastScanTime > sevenDaysAgo ? lastScanTime : sevenDaysAgo;
+      url += '&$filter=receivedDateTime ge ' + sinceDate.toISOString();
     }
   }
 
@@ -3615,7 +3609,10 @@ async function fetchEmailsProgressively(token, useDelta) {
 
   while (url) {
     page++;
-    updateScanBanner('Scanning' + (useDelta ? ' changes' : ' all mail') + '... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
+    // Only show progress banner during full scans (incremental is silent)
+    if (!useDelta) {
+      updateScanBanner('Scanning all mail... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
+    }
 
     // Fetch with 30s timeout and retry for transient errors
     let resp;
@@ -3733,9 +3730,12 @@ async function fetchEmailsProgressively(token, useDelta) {
         renderTable();
         updateStats();
       }
-      updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails' + (totalRemoved > 0 ? ', ' + totalRemoved + ' removed' : '') + ' — ' + companies.length + ' companies');
+      // Only show progress during full scans
+      if (!useDelta) {
+        updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails' + (totalRemoved > 0 ? ', ' + totalRemoved + ' removed' : '') + ' — ' + companies.length + ' companies');
+      }
 
-      // Persist every 10 pages (reduced from 5 to lower DB write frequency)
+      // Persist every 10 pages
       if (page === 1 || page % 10 === 0) {
         lastScanTime = new Date();
         persistData();
@@ -3795,7 +3795,6 @@ async function scanOutlookEmails(forceFullScan) {
   if (isScanning) return;
   isScanning = true;
   try {
-    showScanBanner('Connecting to Outlook...');
     const token = await getAccessToken();
 
     // Decide: full scan or delta sync
@@ -3809,12 +3808,11 @@ async function scanOutlookEmails(forceFullScan) {
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
     } else {
-      showScanBanner('Live sync — checking recent emails...');
+      // Quiet incremental sync — no banner unless new data found
       totalFetched = await fetchEmailsProgressively(token, true); // incremental (delta or timestamp fallback)
       if (totalFetched > 0) {
-        updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails — ' + companies.length + ' companies');
-      } else {
-        updateScanBanner('All caught up — no new emails');
+        updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails');
+        setTimeout(() => { hideScanBanner(); }, 2000);
       }
     }
 
@@ -3824,19 +3822,26 @@ async function scanOutlookEmails(forceFullScan) {
 
     lastScanTime = new Date();
     await persistData();
-    // Sync to Supabase immediately after scan (major data event) — use direct
-    // call instead of debounced schedule so other devices see updated data ASAP
+    // Sync to Supabase immediately after scan (major data event)
     await syncToSupabase();
     setSyncBadge('success', 'Saved');
     updateLastSyncDisplay();
-    scheduleDomainScan(); // check domain validity after sync
 
-    resolveCompanyNames();
-    runEnrichment();
-    // Kick off background AI email scan for full email access
-    setTimeout(function() { aiScanAllEmails(); }, 2000);
-
-    setTimeout(() => { hideScanBanner(); }, needsFullScan ? 4000 : 2000);
+    if (needsFullScan) {
+      // Full scan: run all enrichment tasks
+      scheduleDomainScan();
+      resolveCompanyNames();
+      runEnrichment();
+      setTimeout(function() { aiScanAllEmails(); }, 2000);
+      setTimeout(() => { hideScanBanner(); }, 4000);
+    } else {
+      // Incremental sync: just update the table quietly, skip heavy enrichment
+      if (totalFetched > 0) {
+        buildCompaniesFromDomainMap();
+        renderTable();
+        updateStats();
+      }
+    }
 
   } catch(e) {
     setSyncBadge('error', 'Sync Failed');
@@ -4023,13 +4028,6 @@ async function onSignedIn() {
         updateLastSyncDisplay();
         // Hide loading overlay, show table
         if (loadingOverlay) { loadingOverlay.style.display = 'none'; document.querySelector('.table-wrap').style.display = ''; }
-        // Load contacts in background after table is visible
-        if (sbData.loadContacts) {
-          sbData.loadContacts().then(() => {
-            buildCompaniesFromDomainMap();
-            renderTable();
-          });
-        }
         resolveCompanyNames();
         runEnrichment();
         // Data persisted to Supabase via syncToSupabase
@@ -4078,8 +4076,6 @@ async function onSignedIn() {
 
   if (cloudOnlyRestore) {
     // Cloud-only restore: need full rescan to get real email IDs (cloud v3 only has counts)
-    // NOTE: don't pass forceFullScan=true — that clears domainMap. We already set
-    // fullScanDone=false + deltaLink=null so it'll do a full scan while keeping cloud data.
     console.log('Startup: cloud-only restore detected — running full email rescan');
     await scanOutlookEmails();
   } else if (needsCountRecovery) {
@@ -4087,8 +4083,10 @@ async function onSignedIn() {
     console.log('Startup: running full rescan to recover email counts...');
     await scanOutlookEmails();
   } else if (hasData) {
-    // Have data already — scan for new emails in background (fast, incremental)
-    scanOutlookEmails();
+    // Data loaded from DB — UI is already showing. Run a quiet background sync
+    // after a short delay so the UI stays responsive. No banners, no blocking.
+    console.log('Startup: data loaded from DB — scheduling quiet background sync');
+    setTimeout(() => { scanOutlookEmails(); }, 3000);
   } else {
     // First time ever — need full scan to populate
     await scanOutlookEmails();
