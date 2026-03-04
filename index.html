@@ -2523,8 +2523,9 @@ async function syncToSupabase() {
         last_activity_date: data.lastDate ? data.lastDate.toISOString() : null,
         last_sent_date: data.lastSentDate ? data.lastSentDate.toISOString() : null,
         last_received_date: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null,
-        sent_count: data.sentIds ? data.sentIds.size : 0,
-        received_count: data.receivedIds ? data.receivedIds.size : 0,
+        // Use max of Set size and DB-stored count to prevent overwriting with smaller values
+        sent_count: Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0),
+        received_count: Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0),
         proposal_stage: proposalStages[domain] || null,
         proposal_notes: proposalNotes[domain] || null,
         merged_into: mergedDomains[domain] || null,
@@ -2539,8 +2540,8 @@ async function syncToSupabase() {
           name: c.name,
           is_starred: starredContacts[domain] === email,
           last_activity_date: c.lastDate ? c.lastDate.toISOString() : null,
-          sent_count: c.sentIds ? c.sentIds.size : 0,
-          received_count: c.receivedIds ? c.receivedIds.size : 0,
+          sent_count: Math.max(c.sentIds ? c.sentIds.size : 0, c._dbSentCount || 0),
+          received_count: Math.max(c.receivedIds ? c.receivedIds.size : 0, c._dbReceivedCount || 0),
           enrichment: contactEnrichment[email] || {},
           _domain: domain, // temp field for company lookup
         });
@@ -2696,19 +2697,17 @@ async function loadFromSupabase() {
     const companyIdToDomain = {};
     for (const c of companyData) {
       companyIdToDomain[c.id] = c.domain;
-      // Populate sentIds/receivedIds with placeholder IDs from stored counts
-      // so buildCompaniesFromDomainMap() doesn't filter them out (uniqueSent === 0 check)
-      const sentPlaceholders = new Set();
-      for (let i = 0; i < (c.sent_count || 0); i++) sentPlaceholders.add('__db_sent_' + c.domain + '_' + i);
-      const recvPlaceholders = new Set();
-      for (let i = 0; i < (c.received_count || 0); i++) recvPlaceholders.add('__db_recv_' + c.domain + '_' + i);
       newDomainMap[c.domain] = {
         contacts: {},
-        sentIds: sentPlaceholders,
-        receivedIds: recvPlaceholders,
+        sentIds: new Set(),
+        receivedIds: new Set(),
         lastDate: c.last_activity_date ? new Date(c.last_activity_date) : null,
         lastSentDate: c.last_sent_date ? new Date(c.last_sent_date) : null,
         lastReceivedDate: c.last_received_date ? new Date(c.last_received_date) : null,
+        // DB-loaded: flag + original counts so we never filter these out or lose counts
+        _fromDb: true,
+        _dbSentCount: c.sent_count || 0,
+        _dbReceivedCount: c.received_count || 0,
       };
       // Restore metadata — use applyCompanyChange for consistent add/remove logic
       applyCompanyChange(c);
@@ -2719,17 +2718,14 @@ async function loadFromSupabase() {
       for (const ct of contactData) {
         const domain = companyIdToDomain[ct.company_id];
         if (!domain || !newDomainMap[domain]) continue;
-        // Populate contact sentIds/receivedIds with placeholders from stored counts
-        const ctSent = new Set();
-        for (let i = 0; i < (ct.sent_count || 0); i++) ctSent.add('__db_ct_sent_' + ct.email + '_' + i);
-        const ctRecv = new Set();
-        for (let i = 0; i < (ct.received_count || 0); i++) ctRecv.add('__db_ct_recv_' + ct.email + '_' + i);
         newDomainMap[domain].contacts[ct.email] = {
           name: ct.name || ct.email,
           email: ct.email,
-          sentIds: ctSent,
-          receivedIds: ctRecv,
+          sentIds: new Set(),
+          receivedIds: new Set(),
           lastDate: ct.last_activity_date ? new Date(ct.last_activity_date) : null,
+          _dbSentCount: ct.sent_count || 0,
+          _dbReceivedCount: ct.received_count || 0,
         };
         if (ct.is_starred) starredContacts[domain] = ct.email;
         if (ct.enrichment && Object.keys(ct.enrichment).length > 0) {
@@ -3359,19 +3355,24 @@ function buildCompaniesFromDomainMap() {
     const contactArr = Object.values(mergedContacts);
     if (contactArr.length === 0) continue;
 
-    // Per-contact counts from individual Sets
-    for (const ct of contactArr) { ct.sent = ct.sentIds.size; ct.received = ct.receivedIds.size; }
+    // Per-contact counts from individual Sets (use DB counts as floor)
+    for (const ct of contactArr) {
+      ct.sent = Math.max(ct.sentIds.size, ct._dbSentCount || 0);
+      ct.received = Math.max(ct.receivedIds.size, ct._dbReceivedCount || 0);
+    }
 
     // Unique email counts (Set-based, for scoring — CC'd emails count once)
-    const uniqueSent = mergedSentIds.size;
-    const uniqueReceived = mergedReceivedIds.size;
+    // Fall back to DB-stored counts when Sets are empty (loaded from Supabase)
+    const uniqueSent = mergedSentIds.size || (data._dbSentCount || 0);
+    const uniqueReceived = mergedReceivedIds.size || (data._dbReceivedCount || 0);
 
     // Display counts = sum of contacts (matches what user sees in contact cards)
     const domainSent = contactArr.reduce(function(s, ct) { return s + ct.sent; }, 0);
     const domainReceived = contactArr.reduce(function(s, ct) { return s + ct.received; }, 0);
 
     // SELECTIVE: only create company if user has sent at least 1 email to this domain
-    if (uniqueSent === 0) continue;
+    // Skip filter for DB-loaded domains — they were already vetted
+    if (uniqueSent === 0 && !data._fromDb) continue;
 
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
     const primary = getPrimaryContact(domain, contactArr);
@@ -4051,11 +4052,30 @@ async function onSignedIn() {
   updateLastScanLabel();
 
   // Step 3: Email scan — only ADDS new emails, never removes existing data
+  // Detect corrupted counts: if DB has companies but most have sent_count=0,
+  // a previous bug wiped the counts. Force full rescan to recover real counts.
+  let needsCountRecovery = false;
+  if (hasData) {
+    const domains = Object.values(domainMap);
+    const dbDomains = domains.filter(d => d._fromDb);
+    const zeroCountDomains = dbDomains.filter(d => d._dbSentCount === 0 && d._dbReceivedCount === 0);
+    if (dbDomains.length > 4 && zeroCountDomains.length > dbDomains.length * 0.5) {
+      console.log('Startup: detected corrupted counts (' + zeroCountDomains.length + '/' + dbDomains.length + ' have zero counts) — forcing full rescan');
+      needsCountRecovery = true;
+      fullScanDone = false;
+      deltaLink = null;
+    }
+  }
+
   if (cloudOnlyRestore) {
     // Cloud-only restore: need full rescan to get real email IDs (cloud v3 only has counts)
     // NOTE: don't pass forceFullScan=true — that clears domainMap. We already set
     // fullScanDone=false + deltaLink=null so it'll do a full scan while keeping cloud data.
     console.log('Startup: cloud-only restore detected — running full email rescan');
+    await scanOutlookEmails();
+  } else if (needsCountRecovery) {
+    // Corrupted counts detected — full rescan to rebuild (keeps existing domainMap data)
+    console.log('Startup: running full rescan to recover email counts...');
     await scanOutlookEmails();
   } else if (hasData) {
     // Have data already — scan for new emails in background (fast, incremental)
