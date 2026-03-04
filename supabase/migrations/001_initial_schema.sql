@@ -105,7 +105,10 @@ CREATE INDEX idx_settings_user ON user_settings(user_id);
 
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS)
--- Users can only access their own data
+-- Since we use Microsoft OAuth (not Supabase Auth), we use
+-- permissive policies with the anon key. The app filters by
+-- user_id client-side. For tighter security, switch to
+-- Supabase Auth or use a service_role key server-side.
 -- ============================================================
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE companies ENABLE ROW LEVEL SECURITY;
@@ -113,25 +116,12 @@ ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scan_metadata ENABLE ROW LEVEL SECURITY;
 
--- Policy: users can only see/edit their own row
-CREATE POLICY users_own ON users
-  FOR ALL USING (id = auth.uid());
-
--- Policy: users can only access their own companies
-CREATE POLICY companies_own ON companies
-  FOR ALL USING (user_id = auth.uid());
-
--- Policy: users can only access their own contacts
-CREATE POLICY contacts_own ON contacts
-  FOR ALL USING (user_id = auth.uid());
-
--- Policy: users can only access their own settings
-CREATE POLICY settings_own ON user_settings
-  FOR ALL USING (user_id = auth.uid());
-
--- Policy: users can only access their own scan metadata
-CREATE POLICY scan_own ON scan_metadata
-  FOR ALL USING (user_id = auth.uid());
+-- Allow full access via anon key (app handles user scoping)
+CREATE POLICY users_anon ON users FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY companies_anon ON companies FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY contacts_anon ON contacts FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY settings_anon ON user_settings FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY scan_anon ON scan_metadata FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ============================================================
 -- AUTO-UPDATE updated_at TRIGGER
