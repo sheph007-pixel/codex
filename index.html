@@ -4146,12 +4146,12 @@ async function onSignedIn() {
   document.getElementById('userName').textContent = userEmail;
   document.getElementById('settingsNavItem').style.display = '';
 
-  // ── INSTANT RENDER: Show cached data immediately while network loads ──
-  let hasData = false;
+  // Snapshot was already rendered in init() — now load full data
+  let hasData = companies.length > 0; // true if snapshot rendered
   let cloudOnlyRestore = false;
-  let renderedFromCache = false;
+  let renderedFromCache = hasData;
 
-  // Step 0: Load from IndexedDB + localStorage FIRST (instant, no network)
+  // Load full domainMap from IndexedDB (needed for email scanning, contacts, etc.)
   const cached = await loadPersistedData();
   const hasLocalData = cached && cached.domainMap && Object.keys(cached.domainMap).length > 0;
   if (hasLocalData) {
@@ -4191,15 +4191,16 @@ async function onSignedIn() {
       fullScanDone = false;
       deltaLink = null;
     }
-    // Render instantly from cache — user sees data immediately
-    buildCompaniesFromDomainMap();
-    renderTableHeader();
-    renderTable();
-    updateStats();
-    updateLastSyncDisplay();
+    if (!renderedFromCache) {
+      // No snapshot existed — render from IndexedDB (still faster than network)
+      buildCompaniesFromDomainMap();
+      renderTableHeader();
+      renderTable();
+      updateStats();
+    }
     hasData = true;
     renderedFromCache = true;
-    console.log('Startup: instant render from cache — ' + Object.keys(domainMap).length + ' domains');
+    console.log('Startup: domainMap loaded from IndexedDB — ' + Object.keys(domainMap).length + ' domains');
   }
 
   // ── SUPABASE: Initialize and register user (network) ──
@@ -4758,10 +4759,47 @@ function updateStats() {
   document.getElementById('clientsCount').textContent = (existing + old).toLocaleString();
   updateProposalCount();
   updateArchivedCount();
+  // Save snapshot for instant render on next page load
+  saveInstantSnapshot();
 }
 
 function updateTypeCounts() {
   updateStats();
+}
+
+// ── INSTANT SNAPSHOT: save compact company list to localStorage for zero-delay render ──
+// Big apps (Salesforce, HubSpot) render from a local cache instantly, then refresh in background.
+// We save a lightweight snapshot of the companies array (no allContacts, no Sets) so init()
+// can render the table and stats synchronously — before any async work.
+function saveInstantSnapshot() {
+  try {
+    if (companies.length === 0) return;
+    const snap = companies.map(c => ({
+      domain: c.domain, name: c.name, contact: c.contact, contactEmail: c.contactEmail,
+      sent: c.sent, received: c.received, status: c.status, score: c.score,
+      lastDate: c.lastDate ? c.lastDate.toISOString() : null,
+      lastActivity: c.lastActivity, mergedAliases: c.mergedAliases || null,
+    }));
+    localStorage.setItem('kennion_snapshot', JSON.stringify(snap));
+    localStorage.setItem('kennion_snapshot_ts', Date.now().toString());
+  } catch(e) { /* quota exceeded — not critical */ }
+}
+
+function loadInstantSnapshot() {
+  try {
+    const raw = localStorage.getItem('kennion_snapshot');
+    if (!raw) return false;
+    const snap = JSON.parse(raw);
+    if (!snap || snap.length === 0) return false;
+    companies = snap.map((c, i) => ({
+      id: i + 1, domain: c.domain, name: c.name, contact: c.contact,
+      contactEmail: c.contactEmail, sent: c.sent, received: c.received,
+      status: c.status, score: c.score,
+      lastDate: c.lastDate ? new Date(c.lastDate) : null,
+      lastActivity: c.lastActivity, allContacts: [], mergedAliases: c.mergedAliases,
+    }));
+    return true;
+  } catch(e) { return false; }
 }
 
 function setViewTitle(title, showDashboard) {
@@ -9703,12 +9741,10 @@ function esc(text) {
   loadLogoFailedCache();
   renderTableHeader();
 
-  // Show cached data INSTANTLY before MSAL/network loads
-  // This prevents the blank "0" numbers flash on refresh
-  const cachedForInstant = await loadPersistedData();
-  const hasInstantData = cachedForInstant && cachedForInstant.domainMap && Object.keys(cachedForInstant.domainMap).length > 0;
-  if (hasInstantData && getClientId()) {
-    // Show the CRM layout immediately with cached data
+  // ── INSTANT RENDER: zero-delay from localStorage snapshot ──
+  // This is synchronous — no network, no IndexedDB, no awaits.
+  // Data appears before the browser even finishes parsing the rest of the page.
+  if (getClientId() && loadInstantSnapshot()) {
     document.getElementById('authLoading').style.display = 'none';
     document.getElementById('welcomeScreen').style.display = 'none';
     document.getElementById('crmContent').classList.add('active');
@@ -9716,21 +9752,9 @@ function esc(text) {
     const sbInit = document.getElementById('sidebar');
     sbInit.style.display = 'flex';
     if (localStorage.getItem('relateflow_sidebar') === 'collapsed') sbInit.classList.add('collapsed');
-    domainMap = cachedForInstant.domainMap;
-    // Upgrade Sets if needed
-    for (const d of Object.values(domainMap)) {
-      if (!(d.sentIds instanceof Set)) d.sentIds = new Set();
-      if (!(d.receivedIds instanceof Set)) d.receivedIds = new Set();
-      for (const c of Object.values(d.contacts)) {
-        if (!(c.sentIds instanceof Set)) c.sentIds = new Set();
-        if (!(c.receivedIds instanceof Set)) c.receivedIds = new Set();
-      }
-    }
-    buildCompaniesFromDomainMap();
     renderTable();
     updateStats();
-    updateLastSyncDisplay();
-    console.log('Startup: instant render — ' + companies.length + ' companies visible');
+    console.log('Startup: instant render from snapshot — ' + companies.length + ' companies');
   }
 
   if (getClientId()) {
@@ -9745,26 +9769,27 @@ function esc(text) {
       }
     }
   }
-  // MSAL failed or no session — check if we have cached data to show
-  // (e.g. mobile with flaky connection). Show CRM in read-only mode
-  // so the user doesn't lose access to their data.
-  const cachedData = await loadPersistedData();
-  const hasCachedData = cachedData && cachedData.domainMap && Object.keys(cachedData.domainMap).length > 0;
-  if (hasCachedData) {
-    document.getElementById('authLoading').style.display = 'none';
-    document.getElementById('welcomeScreen').style.display = 'none';
-    document.getElementById('crmContent').classList.add('active');
-    const sb = document.getElementById('sidebar');
-    sb.style.display = 'flex';
-    if (localStorage.getItem('relateflow_sidebar') === 'collapsed') sb.classList.add('collapsed');
-    setViewTitle('All Companies', true);
-    domainMap = cachedData.domainMap;
-    buildCompaniesFromDomainMap();
-    renderTableHeader();
-    renderTable();
-    updateStats();
-    updateLastSyncDisplay();
-    resolveCompanyNames();
+  // MSAL failed or no session — if snapshot already rendered, just show offline banner.
+  // Otherwise try IndexedDB as fallback.
+  const alreadyRendered = companies.length > 0;
+  if (!alreadyRendered) {
+    const cachedData = await loadPersistedData();
+    if (cachedData && cachedData.domainMap && Object.keys(cachedData.domainMap).length > 0) {
+      document.getElementById('authLoading').style.display = 'none';
+      document.getElementById('welcomeScreen').style.display = 'none';
+      document.getElementById('crmContent').classList.add('active');
+      const sb = document.getElementById('sidebar');
+      sb.style.display = 'flex';
+      if (localStorage.getItem('relateflow_sidebar') === 'collapsed') sb.classList.add('collapsed');
+      setViewTitle('All Companies', true);
+      domainMap = cachedData.domainMap;
+      buildCompaniesFromDomainMap();
+      renderTableHeader();
+      renderTable();
+      updateStats();
+    }
+  }
+  if (companies.length > 0) {
     document.getElementById('settingsBtn').style.display = '';
     // Show a non-blocking banner so user knows they're in offline mode
     const banner = document.createElement('div');
