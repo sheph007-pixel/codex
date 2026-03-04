@@ -2960,6 +2960,7 @@ let supabaseRefreshTimer = null;
 async function refreshFromSupabase() {
   if (!supabaseReady || !supabaseUserId || refreshInProgress) return;
   if (supabaseSyncInProgress) return; // don't refresh while syncing
+  if (isScanning) return; // don't overwrite data while email scan is adding companies
   // Throttle: at most once every 10 seconds
   if (Date.now() - lastRefreshTime < 10000) return;
   refreshInProgress = true;
@@ -2991,6 +2992,15 @@ async function refreshFromSupabase() {
       updateFlaggedCount();
       updateLastSyncDisplay();
       updateSupabaseBadge('success');
+      // Cache Supabase data to localStorage so page refresh shows consistent data
+      localStorage.setItem('kennion_company_types', JSON.stringify(companyTypes));
+      localStorage.setItem('relateflow_blocked_domains', JSON.stringify([...blockedDomains]));
+      localStorage.setItem('kennion_starred_companies', JSON.stringify([...starredCompanies]));
+      localStorage.setItem('kennion_archived_companies', JSON.stringify([...archivedCompanies]));
+      localStorage.setItem('kennion_flagged_companies', JSON.stringify([...flaggedCompanies]));
+      localStorage.setItem('kennion_followup_companies', JSON.stringify([...followUpCompanies]));
+      localStorage.setItem('kennion_followup_dates', JSON.stringify(followUpDates));
+      localStorage.setItem('kennion_merged_domains', JSON.stringify(mergedDomains));
     }
     lastRefreshTime = Date.now();
   } catch(e) {
@@ -3859,8 +3869,9 @@ async function scanOutlookEmails(forceFullScan) {
 
     lastScanTime = new Date();
     await persistData();
-    // Sync to Supabase immediately after scan (major data event)
-    scheduleSupabaseSync();
+    // Sync to Supabase immediately after scan (major data event) — use direct
+    // call instead of debounced schedule so other devices see updated data ASAP
+    await syncToSupabase();
     setSyncBadge('success', 'Saved');
     updateLastSyncDisplay();
     scheduleDomainScan(); // check domain validity after sync
@@ -9542,15 +9553,16 @@ function esc(text) {
 window.addEventListener('beforeunload', () => {
   if (currentAccount && Object.keys(domainMap).length > 0) {
     persistData();
-    // Flush pending Supabase sync on page close
-    scheduleSupabaseSync();
+    // Flush pending Supabase sync on page close — use direct call so the
+    // browser's keepalive mechanism has the best chance of completing it
+    syncToSupabase();
   }
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && currentAccount && Object.keys(domainMap).length > 0) {
     persistData();
-    // Fire Supabase sync immediately if changes pending
-    scheduleSupabaseSync();
+    // Fire Supabase sync immediately so other devices see latest data
+    syncToSupabase();
   } else if (!document.hidden && currentAccount) {
     // Tab became visible — pull latest data from Supabase (other device may have changed it)
     refreshFromSupabase();
