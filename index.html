@@ -1615,13 +1615,18 @@ const SKIP_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com
 
 let companies = [];
 let domainMap = {};
+// ── All per-company metadata lives directly on domainMap[domain] entries ──
+// Each entry has: contacts, sentIds, receivedIds, lastDate, lastSentDate, lastReceivedDate,
+//   is_starred, is_blocked, is_flagged, is_followup, is_archived,
+//   company_type, proposal_stage, proposal_notes, followup_date, merged_into,
+//   _fromDb, _dbSentCount, _dbReceivedCount
+// This eliminates the sync bugs caused by separate Sets/Objects getting out of sync with the DB.
 let seenMsgIds = new Set(); // track processed email IDs to prevent double-counting
 let lastScanTime = null;
 let deltaLink = null; // Microsoft Graph delta sync token — tracks last sync position
 let currentSort = {key:'sent',asc:false};
 let currentFilter = 'all';
 let currentTypeFilter = 'all';
-let companyTypes = {}; // { "domain": "Lead" } — all companies are leads
 let activeFilters = []; // [{ column, operator, value }]
 let activeSorts = [];   // [{ column, direction:'asc'|'desc' }]
 let msalInstance = null;
@@ -1631,13 +1636,6 @@ let isScanning = false;
 let fullScanDone = false;
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let autoSyncTimer = null;
-let blockedDomains = new Set();
-let starredCompanies = new Set();   // domains starred for Proposals
-let archivedCompanies = new Set();  // domains archived
-let flaggedCompanies = new Set();   // domains flagged as invalid/not working
-let followUpCompanies = new Set();  // domains marked for follow-up
-var followUpDates = {};             // { domain: "YYYY-MM-DD" }
-let mergedDomains = {};  // { "secondary-domain.com": "primary-domain.com" } — merged company aliases
 let selectedIds = new Set();
 let starredContacts = {};  // { "domain": "email@example.com" }
 let currentCompanyOverlay = null;  // company object for open overlay
@@ -2067,21 +2065,16 @@ function saveStarredContacts() {
   supabaseSaveSetting('starred_contacts', starredContacts);
 }
 
-function loadCompanyTypes() {
-  companyTypes = {};
-}
-
-function saveCompanyTypes() {
-  // Data saved via supabaseSaveCompanyField in setCompanyType
-}
+function loadCompanyTypes() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveCompanyTypes() { /* no-op: saved via dmSet / supabaseSaveCompanyField */ }
 
 function getCompanyType(domain) {
-  return companyTypes[domain] || 'Lead';
+  return (domainMap[domain] && domainMap[domain].company_type) || 'Lead';
 }
 
 function setCompanyType(domain, type, selectEl) {
-  companyTypes[domain] = type;
-  saveCompanyTypes();
+  ensureDomain(domain);
+  domainMap[domain].company_type = type;
   // Instant Supabase save for this specific domain
   supabaseSaveCompanyField(domain, 'company_type', type ? type.toLowerCase() : null);
   scheduleSupabaseSync();
@@ -2116,115 +2109,67 @@ function getPrimaryContact(domain, contacts) {
 }
 
 // ──────────────────────────────────────────────
-// BLOCKED DOMAINS PERSISTENCE (Supabase)
+// BLOCKED DOMAINS (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
-function loadBlockedDomains() {
-  blockedDomains = new Set();
-}
-
-function saveBlockedDomains() {
-  supabaseSaveSetting('blocked_domains', [...blockedDomains]);
-}
+function loadBlockedDomains() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveBlockedDomains() { /* no-op: individual saves via dmSet / supabaseSaveCompanyField */ }
 
 function isBlockedDomain(domain) {
-  return SKIP_DOMAINS.has(domain) || blockedDomains.has(domain);
+  return SKIP_DOMAINS.has(domain) || !!(domainMap[domain] && domainMap[domain].is_blocked);
 }
 
 // ──────────────────────────────────────────────
-// STARRED COMPANIES (Proposals) PERSISTENCE
+// STARRED COMPANIES / PROPOSALS (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
-function loadStarredCompanies() {
-  starredCompanies = new Set();
-}
-function saveStarredCompanies() {
-  supabaseSaveSetting('starred_companies', [...starredCompanies]);
-  scheduleSupabaseSync();
-}
+function loadStarredCompanies() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveStarredCompanies() { scheduleSupabaseSync(); }
 
-// PROPOSAL NOTES & STAGES PERSISTENCE
-var proposalNotes = {};   // { domain: "note text" }
-var proposalStages = {};  // { domain: "Proposal Due" | "Proposal Sent" | "Onboarding" }
-
-function loadProposalData() {
-  proposalNotes = {};
-  proposalStages = {};
-}
-
-function saveProposalNotes() {
-  supabaseSaveSetting('proposal_notes', proposalNotes);
-  scheduleSupabaseSync();
-}
-
-function saveProposalStages() {
-  supabaseSaveSetting('proposal_stages', proposalStages);
-  scheduleSupabaseSync();
-}
+function loadProposalData() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveProposalNotes() { scheduleSupabaseSync(); }
+function saveProposalStages() { scheduleSupabaseSync(); }
 
 // ──────────────────────────────────────────────
-// FOLLOW UP COMPANIES PERSISTENCE
+// FOLLOW UP COMPANIES (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
-function loadFollowUpData() {
-  followUpCompanies = new Set();
-  followUpDates = {};
-}
-function saveFollowUpCompanies() {
-  supabaseSaveSetting('followup_companies', [...followUpCompanies]);
-  scheduleSupabaseSync();
-}
-function saveFollowUpDates() {
-  supabaseSaveSetting('followup_dates', followUpDates);
-}
+function loadFollowUpData() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveFollowUpCompanies() { scheduleSupabaseSync(); }
+function saveFollowUpDates() { /* no-op: followup_date saved via supabaseSaveCompanyField */ }
 
 // ──────────────────────────────────────────────
-// ARCHIVED COMPANIES PERSISTENCE
+// ARCHIVED COMPANIES (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
-function loadArchivedCompanies() {
-  archivedCompanies = new Set();
-}
-function saveArchivedCompanies() {
-  supabaseSaveSetting('archived_companies', [...archivedCompanies]);
-  scheduleSupabaseSync();
-}
+function loadArchivedCompanies() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveArchivedCompanies() { scheduleSupabaseSync(); }
 
 // ──────────────────────────────────────────────
-// MERGED DOMAINS PERSISTENCE
+// MERGED DOMAINS (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
-function loadMergedDomains() {
-  mergedDomains = {};
-}
-function saveMergedDomains() {
-  supabaseSaveSetting('merged_domains', mergedDomains);
-  scheduleSupabaseSync();
-}
+function loadMergedDomains() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveMergedDomains() { scheduleSupabaseSync(); }
 // Resolve a domain to its primary (follow chain)
 function resolveMergedDomain(domain) {
   var seen = new Set();
   var d = domain;
-  while (mergedDomains[d] && !seen.has(d)) {
+  while (domainMap[d] && domainMap[d].merged_into && !seen.has(d)) {
     seen.add(d);
-    d = mergedDomains[d];
+    d = domainMap[d].merged_into;
   }
   return d;
 }
 // Get all secondary domains that map to a primary
 function getMergedAliases(primaryDomain) {
   var aliases = [];
-  for (var sec in mergedDomains) {
-    if (mergedDomains[sec] === primaryDomain) aliases.push(sec);
+  for (var d in domainMap) {
+    if (domainMap[d].merged_into === primaryDomain) aliases.push(d);
   }
   return aliases;
 }
 
 // ──────────────────────────────────────────────
-// FLAGGED COMPANIES PERSISTENCE (invalid domains)
+// FLAGGED COMPANIES (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
-function loadFlaggedCompanies() {
-  flaggedCompanies = new Set();
-}
-function saveFlaggedCompanies() {
-  supabaseSaveSetting('flagged_companies', [...flaggedCompanies]);
-  scheduleSupabaseSync();
-}
+function loadFlaggedCompanies() { /* no-op: metadata loaded from DB onto domainMap entries */ }
+function saveFlaggedCompanies() { scheduleSupabaseSync(); }
 
 // ──────────────────────────────────────────────
 // SMART NAME FORMATTING
@@ -2487,25 +2432,13 @@ async function syncToSupabase() {
         { user_id: supabaseUserId });
       if (remoteCompanies && remoteCompanies.length > 0) {
         for (const rc of remoteCompanies) {
-          const d = rc.domain;
-          if (!domainMap[d]) continue;
-          if (rc.company_type) {
-            companyTypes[d] = rc.company_type.replace(/\b\w/g, l => l.toUpperCase());
-          }
-          if (rc.is_starred) starredCompanies.add(d); else starredCompanies.delete(d);
-          if (rc.is_archived) archivedCompanies.add(d); else archivedCompanies.delete(d);
-          if (rc.is_flagged) flaggedCompanies.add(d); else flaggedCompanies.delete(d);
-          if (rc.is_blocked) blockedDomains.add(d); else blockedDomains.delete(d);
-          if (rc.is_followup) followUpCompanies.add(d); else followUpCompanies.delete(d);
-          if (rc.followup_date) followUpDates[d] = rc.followup_date; else delete followUpDates[d];
-          if (rc.proposal_stage) proposalStages[d] = rc.proposal_stage;
-          if (rc.proposal_notes) proposalNotes[d] = rc.proposal_notes;
-          if (rc.merged_into) mergedDomains[d] = rc.merged_into;
+          if (!domainMap[rc.domain]) continue;
+          applyCompanyChange(rc);
         }
       }
     } catch(e) { console.warn('Supabase: pull-before-push failed (continuing):', e); }
 
-    // Sync companies + contacts in batches
+    // Sync companies + contacts in batches — read all metadata from domainMap (single source of truth)
     const companyRows = [];
     const contactRows = [];
     for (const [domain, data] of Object.entries(domainMap)) {
@@ -2513,22 +2446,22 @@ async function syncToSupabase() {
         user_id: supabaseUserId,
         domain: domain,
         company_name: companyNameCache[domain] || null,
-        company_type: companyTypes[domain] ? companyTypes[domain].toLowerCase() : null,
-        is_starred: starredCompanies.has(domain),
-        is_archived: archivedCompanies.has(domain),
-        is_flagged: flaggedCompanies.has(domain),
-        is_blocked: blockedDomains.has(domain),
-        is_followup: followUpCompanies.has(domain),
-        followup_date: followUpDates[domain] || null,
+        company_type: data.company_type ? data.company_type.toLowerCase() : null,
+        is_starred: !!data.is_starred,
+        is_archived: !!data.is_archived,
+        is_flagged: !!data.is_flagged,
+        is_blocked: !!data.is_blocked,
+        is_followup: !!data.is_followup,
+        followup_date: data.followup_date || null,
         last_activity_date: data.lastDate ? data.lastDate.toISOString() : null,
         last_sent_date: data.lastSentDate ? data.lastSentDate.toISOString() : null,
         last_received_date: data.lastReceivedDate ? data.lastReceivedDate.toISOString() : null,
         // Use max of Set size and DB-stored count to prevent overwriting with smaller values
         sent_count: Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0),
         received_count: Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0),
-        proposal_stage: proposalStages[domain] || null,
-        proposal_notes: proposalNotes[domain] || null,
-        merged_into: mergedDomains[domain] || null,
+        proposal_stage: data.proposal_stage || null,
+        proposal_notes: data.proposal_notes || null,
+        merged_into: data.merged_into || null,
         enrichment: enrichmentCache[domain] || {},
         custom_data: customColumnData[domain] || {},
       };
@@ -2576,7 +2509,8 @@ async function syncToSupabase() {
       if (error) console.warn('Supabase: contact batch ' + i + ' failed:', error.message);
     }
 
-    // Sync user settings
+    // Sync user settings — only settings that DON'T live on companies table
+    // (company metadata like starred/blocked/flagged/etc. is already in the companies rows above)
     const settingsToSync = {
       column_config: columnConfig,
       email_signature: getEmailSignature(),
@@ -2585,16 +2519,7 @@ async function syncToSupabase() {
       client_id: getClientId(),
       contact_name_overrides: contactNameOverrides,
       company_name_cache: companyNameCache,
-      blocked_domains: [...blockedDomains],
       starred_contacts: starredContacts,
-      starred_companies: [...starredCompanies],
-      proposal_notes: proposalNotes,
-      proposal_stages: proposalStages,
-      followup_companies: [...followUpCompanies],
-      followup_dates: followUpDates,
-      archived_companies: [...archivedCompanies],
-      flagged_companies: [...flaggedCompanies],
-      merged_domains: mergedDomains,
       custom_column_data: customColumnData,
       enrichment_cache: enrichmentCache,
       contact_enrichment: contactEnrichment,
@@ -2676,16 +2601,6 @@ async function loadFromSupabase() {
 
     // Build domainMap from companies + contacts
     // Clear mutable state so Supabase is authoritative (no stale leftovers)
-    Object.keys(companyTypes).forEach(k => delete companyTypes[k]);
-    starredCompanies.clear();
-    archivedCompanies.clear();
-    flaggedCompanies.clear();
-    blockedDomains.clear();
-    followUpCompanies.clear();
-    Object.keys(followUpDates).forEach(k => delete followUpDates[k]);
-    Object.keys(proposalNotes).forEach(k => delete proposalNotes[k]);
-    Object.keys(proposalStages).forEach(k => delete proposalStages[k]);
-    Object.keys(mergedDomains).forEach(k => delete mergedDomains[k]);
     Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
     Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
     Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
@@ -2708,9 +2623,22 @@ async function loadFromSupabase() {
         _fromDb: true,
         _dbSentCount: c.sent_count || 0,
         _dbReceivedCount: c.received_count || 0,
+        // ── All metadata lives directly on domainMap entries (single source of truth) ──
+        is_starred: !!c.is_starred,
+        is_blocked: !!c.is_blocked,
+        is_flagged: !!c.is_flagged,
+        is_followup: !!c.is_followup,
+        is_archived: !!c.is_archived,
+        company_type: c.company_type ? c.company_type.replace(/\b\w/g, l => l.toUpperCase()) : null,
+        proposal_stage: c.proposal_stage || null,
+        proposal_notes: c.proposal_notes || null,
+        followup_date: c.followup_date || null,
+        merged_into: c.merged_into || null,
       };
-      // Restore metadata — use applyCompanyChange for consistent add/remove logic
-      applyCompanyChange(c);
+      // Restore non-domainMap caches from company row
+      if (c.company_name) companyNameCache[c.domain] = c.company_name;
+      if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[c.domain] = c.enrichment;
+      if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
     }
 
     // Add contacts to their companies
@@ -2844,35 +2772,34 @@ let realtimeConnected = false;
 function applyCompanyChange(row) {
   if (!row || !row.domain) return;
   const d = row.domain;
-  // Update metadata in-place (no full state clear needed)
+  ensureDomain(d);
+  const entry = domainMap[d];
+  // Update metadata directly on domainMap entry (single source of truth)
   if (row.company_name) companyNameCache[d] = row.company_name;
   if (row.company_type !== undefined) {
-    if (row.company_type) companyTypes[d] = row.company_type.replace(/\b\w/g, l => l.toUpperCase());
-    else delete companyTypes[d];
+    entry.company_type = row.company_type ? row.company_type.replace(/\b\w/g, l => l.toUpperCase()) : null;
   }
-  // Boolean flags — set or remove from Sets
-  if (row.is_starred !== undefined) { if (row.is_starred) starredCompanies.add(d); else starredCompanies.delete(d); }
-  if (row.is_archived !== undefined) { if (row.is_archived) archivedCompanies.add(d); else archivedCompanies.delete(d); }
-  if (row.is_flagged !== undefined) { if (row.is_flagged) flaggedCompanies.add(d); else flaggedCompanies.delete(d); }
-  if (row.is_blocked !== undefined) { if (row.is_blocked) blockedDomains.add(d); else blockedDomains.delete(d); }
-  if (row.is_followup !== undefined) { if (row.is_followup) followUpCompanies.add(d); else followUpCompanies.delete(d); }
-  if (row.followup_date !== undefined) { if (row.followup_date) followUpDates[d] = row.followup_date; else delete followUpDates[d]; }
-  if (row.proposal_stage !== undefined) { if (row.proposal_stage) proposalStages[d] = row.proposal_stage; else delete proposalStages[d]; }
-  if (row.proposal_notes !== undefined) { if (row.proposal_notes) proposalNotes[d] = row.proposal_notes; else delete proposalNotes[d]; }
-  if (row.merged_into !== undefined) { if (row.merged_into) mergedDomains[d] = row.merged_into; else delete mergedDomains[d]; }
+  // Boolean flags — write directly to domainMap entry
+  if (row.is_starred !== undefined) entry.is_starred = !!row.is_starred;
+  if (row.is_archived !== undefined) entry.is_archived = !!row.is_archived;
+  if (row.is_flagged !== undefined) entry.is_flagged = !!row.is_flagged;
+  if (row.is_blocked !== undefined) entry.is_blocked = !!row.is_blocked;
+  if (row.is_followup !== undefined) entry.is_followup = !!row.is_followup;
+  if (row.followup_date !== undefined) entry.followup_date = row.followup_date || null;
+  if (row.proposal_stage !== undefined) entry.proposal_stage = row.proposal_stage || null;
+  if (row.proposal_notes !== undefined) entry.proposal_notes = row.proposal_notes || null;
+  if (row.merged_into !== undefined) entry.merged_into = row.merged_into || null;
   if (row.enrichment && Object.keys(row.enrichment).length > 0) enrichmentCache[d] = row.enrichment;
   if (row.custom_data && Object.keys(row.custom_data).length > 0) customColumnData[d] = row.custom_data;
   // Update DB-cached counts so they survive periodic refreshes
-  if (domainMap[d]) {
-    if (row.sent_count !== undefined) domainMap[d]._dbSentCount = row.sent_count || 0;
-    if (row.received_count !== undefined) domainMap[d]._dbReceivedCount = row.received_count || 0;
-    // Also update contact-level DB counts if contacts table was fetched
-    if (row.contacts && domainMap[d].contacts) {
-      for (var ce in row.contacts) {
-        if (domainMap[d].contacts[ce]) {
-          domainMap[d].contacts[ce]._dbSentCount = row.contacts[ce].sent_count || 0;
-          domainMap[d].contacts[ce]._dbReceivedCount = row.contacts[ce].received_count || 0;
-        }
+  if (row.sent_count !== undefined) entry._dbSentCount = row.sent_count || 0;
+  if (row.received_count !== undefined) entry._dbReceivedCount = row.received_count || 0;
+  // Also update contact-level DB counts if contacts table was fetched
+  if (row.contacts && entry.contacts) {
+    for (var ce in row.contacts) {
+      if (entry.contacts[ce]) {
+        entry.contacts[ce]._dbSentCount = row.contacts[ce].sent_count || 0;
+        entry.contacts[ce]._dbReceivedCount = row.contacts[ce].received_count || 0;
       }
     }
   }
@@ -3152,8 +3079,35 @@ function displayDomain(domain) {
 
 function ensureDomain(domain) {
   if (!domainMap[domain]) {
-    domainMap[domain] = { contacts: {}, sentIds: new Set(), receivedIds: new Set(), lastDate: null, lastSentDate: null, lastReceivedDate: null };
+    domainMap[domain] = {
+      contacts: {}, sentIds: new Set(), receivedIds: new Set(),
+      lastDate: null, lastSentDate: null, lastReceivedDate: null,
+      is_starred: false, is_blocked: false, is_flagged: false,
+      is_followup: false, is_archived: false,
+      company_type: null, proposal_stage: null, proposal_notes: null,
+      followup_date: null, merged_into: null,
+    };
   }
+}
+// Helper: get a metadata property from domainMap (safe for missing domains)
+function dmGet(domain, prop) { return domainMap[domain] ? domainMap[domain][prop] : undefined; }
+// Helper: set a metadata property on domainMap + save to DB
+function dmSet(domain, prop, value) {
+  ensureDomain(domain);
+  domainMap[domain][prop] = value;
+  supabaseSaveCompanyField(domain, prop, value);
+}
+// Helper: count domains matching a metadata predicate
+function dmCount(prop) {
+  let n = 0;
+  for (const d in domainMap) { if (domainMap[d][prop]) n++; }
+  return n;
+}
+// Helper: get all domains matching a metadata predicate
+function dmFilter(prop) {
+  const result = [];
+  for (const d in domainMap) { if (domainMap[d][prop]) result.push(d); }
+  return result;
 }
 
 function ensureContact(domain, email, name) {
@@ -3314,8 +3268,8 @@ function buildCompaniesFromDomainMap() {
 
   // Build set of secondary (merged-away) domains so we skip them in the main loop
   var secondaryDomains = new Set();
-  for (var secDom in mergedDomains) {
-    secondaryDomains.add(secDom);
+  for (var secDom in domainMap) {
+    if (domainMap[secDom].merged_into) secondaryDomains.add(secDom);
   }
 
   companies = [];
@@ -3323,8 +3277,8 @@ function buildCompaniesFromDomainMap() {
   for (const [domain, data] of Object.entries(domainMap)) {
     // Skip blocked, flagged, and archived domains — they have their own views
     if (isBlockedDomain(domain)) continue;
-    if (flaggedCompanies.has(domain)) continue;
-    if (archivedCompanies.has(domain)) continue;
+    if (data.is_flagged) continue;
+    if (data.is_archived) continue;
 
     // Skip secondary domains — their data is merged into their primary
     if (secondaryDomains.has(domain)) continue;
@@ -4190,8 +4144,8 @@ function buildCellHTML(col, c, color) {
   if (col.type === 'builtin') {
     switch (col.id) {
       case 'company':
-        var isStarred = starredCompanies.has(c.domain);
-        var isFollowUp = followUpCompanies.has(c.domain);
+        var isStarred = !!(domainMap[c.domain] && domainMap[c.domain].is_starred);
+        var isFollowUp = !!(domainMap[c.domain] && domainMap[c.domain].is_followup);
         var starDSafe = c.domain.replace(/'/g, "\\'");
         var mergeIndicator = (c.mergedAliases && c.mergedAliases.length > 0)
           ? '<span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:rgba(147,52,230,.1);color:#9334e6;margin-left:4px" title="Merged with: ' + c.mergedAliases.join(', ') + '">+' + c.mergedAliases.length + '</span>'
@@ -4244,10 +4198,9 @@ var PROPOSAL_STAGES = [
 ];
 
 function setProposalStage(domain, value) {
-  if (value) proposalStages[domain] = value;
-  else delete proposalStages[domain];
+  ensureDomain(domain);
+  domainMap[domain].proposal_stage = value || null;
   saveProposalStages();
-  // Instant save to companies table (source of truth for cross-device sync)
   supabaseSaveCompanyField(domain, 'proposal_stage', value || null);
   var sel = document.querySelector('select.proposal-stage[data-domain="' + domain + '"]');
   if (sel) {
@@ -4259,10 +4212,9 @@ function setProposalStage(domain, value) {
 }
 
 function setProposalNote(domain, value) {
-  if (value.trim()) proposalNotes[domain] = value.trim();
-  else delete proposalNotes[domain];
+  ensureDomain(domain);
+  domainMap[domain].proposal_notes = value.trim() || null;
   saveProposalNotes();
-  // Instant save to companies table (source of truth for cross-device sync)
   supabaseSaveCompanyField(domain, 'proposal_notes', value.trim() || null);
 }
 
@@ -4277,15 +4229,17 @@ function renderProposalsTable() {
   thead.innerHTML = '';
 
   var data = companies.filter(function(c) {
-    return starredCompanies.has(c.domain) && !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain);
+    var dm = domainMap[c.domain];
+    return dm && dm.is_starred && !dm.is_archived && !dm.is_flagged;
   });
 
   var q = (document.getElementById('searchInput').value || '').toLowerCase();
   if (q) {
     data = data.filter(function(c) {
+      var dm = domainMap[c.domain];
       return c.name.toLowerCase().includes(q) || c.contact.toLowerCase().includes(q) || c.domain.toLowerCase().includes(q)
-        || (proposalNotes[c.domain] || '').toLowerCase().includes(q)
-        || (proposalStages[c.domain] || '').toLowerCase().includes(q);
+        || ((dm && dm.proposal_notes) || '').toLowerCase().includes(q)
+        || ((dm && dm.proposal_stage) || '').toLowerCase().includes(q);
     });
   }
 
@@ -4314,7 +4268,7 @@ function renderProposalsTable() {
   var groups = {};
   for (var g = 0; g < stageOrder.length; g++) groups[stageOrder[g]] = [];
   for (var i = 0; i < data.length; i++) {
-    var stage = proposalStages[data[i].domain] || '';
+    var stage = (domainMap[data[i].domain] && domainMap[data[i].domain].proposal_stage) || '';
     if (!groups[stage]) groups[stage] = [];
     groups[stage].push(data[i]);
   }
@@ -4342,16 +4296,16 @@ function renderProposalsTable() {
       var color = COLORS[c.id % COLORS.length];
       var sel = selectedIds.has(c.id);
       var dSafe = c.domain.replace(/'/g, "\\'");
-      var curStage = proposalStages[c.domain] || '';
+      var curStage = (domainMap[c.domain] && domainMap[c.domain].proposal_stage) || '';
       var stageDef = PROPOSAL_STAGES.find(function(s) { return s.value === curStage; }) || PROPOSAL_STAGES[0];
-      var note = proposalNotes[c.domain] || '';
+      var note = (domainMap[c.domain] && domainMap[c.domain].proposal_notes) || '';
 
       var row = '<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">';
       row += '<td class="col-check" style="width:30px"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>';
 
       // Company
-      var isStarred = starredCompanies.has(c.domain);
-      var isFollowUpP = followUpCompanies.has(c.domain);
+      var isStarred = !!(domainMap[c.domain] && domainMap[c.domain].is_starred);
+      var isFollowUpP = !!(domainMap[c.domain] && domainMap[c.domain].is_followup);
       row += '<td><div class="company-cell">'
         + '<button class="row-star' + (isStarred ? ' active' : '') + '" onclick="event.stopPropagation();toggleCompanyStar(\'' + dSafe + '\')" title="Remove from Proposals">&#9733;</button>'
         + '<button class="row-flag' + (isFollowUpP ? ' active' : '') + '" onclick="event.stopPropagation();toggleFollowUp(\'' + dSafe + '\')" title="' + (isFollowUpP ? 'Remove from Follow Up' : 'Flag for Follow Up') + '"><svg viewBox="0 0 24 24" fill="' + (isFollowUpP ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button>'
@@ -4429,7 +4383,7 @@ function renderTable() {
   let data = [...companies];
 
   // Hide archived and flagged companies from normal views
-  data = data.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain));
+  data = data.filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_archived && !dm.is_flagged); });
 
   if (currentFilter !== 'all') {
     data = data.filter(c => c.status === currentFilter);
@@ -4517,13 +4471,13 @@ function renderTable() {
   }
 
   updateBulkBar();
-  document.getElementById('companyCount').textContent = companies.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain) && !blockedDomains.has(c.domain)).length;
+  document.getElementById('companyCount').textContent = companies.filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_archived && !dm.is_flagged && !dm.is_blocked); }).length;
   updateViewTitleCount(totalCount);
 }
 
 function updateStats() {
   // Exclude archived, flagged, and blocked from main stats
-  const active = companies.filter(c => !archivedCompanies.has(c.domain) && !flaggedCompanies.has(c.domain) && !blockedDomains.has(c.domain));
+  const active = companies.filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_archived && !dm.is_flagged && !dm.is_blocked); });
   document.getElementById('statCompanies').textContent = active.length.toLocaleString();
   // Count by company type
   let leads = 0, existing = 0, old = 0;
@@ -5036,7 +4990,8 @@ function bulkSetType(type) {
   for (var id of selectedIds) {
     var c = companies.find(function(x) { return x.id === id; });
     if (c) {
-      companyTypes[c.domain] = type;
+      ensureDomain(c.domain);
+      domainMap[c.domain].company_type = type;
       supabaseSaveCompanyField(c.domain, 'company_type', type ? type.toLowerCase() : null);
     }
   }
@@ -5059,7 +5014,8 @@ function bulkBlockSelected() {
   if (!confirm(msg)) return;
 
   for (const d of domains) {
-    blockedDomains.add(d.toLowerCase());
+    ensureDomain(d.toLowerCase());
+    domainMap[d.toLowerCase()].is_blocked = true;
     supabaseSaveCompanyField(d.toLowerCase(), 'is_blocked', true);
   }
   saveBlockedDomains();
@@ -5075,9 +5031,10 @@ function bulkBlockSelected() {
 // ──────────────────────────────────────────────
 function updateBlockedCount() {
   const badge = document.getElementById('blockedCount');
-  if (badge) badge.textContent = blockedDomains.size;
+  var blockedCount = dmCount('is_blocked');
+  if (badge) badge.textContent = blockedCount;
   const settingsBadge = document.getElementById('settingsBlockedCount');
-  if (settingsBadge) settingsBadge.textContent = blockedDomains.size;
+  if (settingsBadge) settingsBadge.textContent = blockedCount;
   updateBlockedSyncStatus();
 }
 
@@ -5085,7 +5042,7 @@ function updateBlockedSyncStatus() {
   const el = document.getElementById("blockedSyncText");
   if (!el) return;
   const statusEl = document.getElementById("blockedSyncStatus");
-  el.textContent = blockedDomains.size + " domains synced to database";
+  el.textContent = dmCount('is_blocked') + " domains synced to database";
   if (statusEl) {
     statusEl.style.background = "rgba(52,168,83,.08)";
     statusEl.style.borderColor = "rgba(52,168,83,.15)";
@@ -5116,10 +5073,11 @@ function hideBlockedView() {
 
 function renderBlockedPage() {
   const q = (document.getElementById('blockedPageSearch').value || '').toLowerCase();
-  const sorted = [...blockedDomains].sort();
+  const sorted = dmFilter('is_blocked').sort();
   const filtered = q ? sorted.filter(d => d.toLowerCase().includes(q)) : sorted;
+  var totalBlocked = sorted.length;
 
-  document.getElementById('blockedPageCount').textContent = blockedDomains.size + ' domain' + (blockedDomains.size !== 1 ? 's' : '') + (q ? ' (' + filtered.length + ' shown)' : '');
+  document.getElementById('blockedPageCount').textContent = totalBlocked + ' domain' + (totalBlocked !== 1 ? 's' : '') + (q ? ' (' + filtered.length + ' shown)' : '');
 
   const list = document.getElementById('blockedPageList');
   if (!filtered.length) {
@@ -5143,8 +5101,7 @@ function renderBlockedPage() {
 }
 
 function unblockDomain(domain) {
-  blockedDomains.delete(domain);
-  saveBlockedDomains();
+  if (domainMap[domain]) domainMap[domain].is_blocked = false;
   supabaseSaveCompanyField(domain, 'is_blocked', false);
   buildCompaniesFromDomainMap();
   updateStats();
@@ -5160,8 +5117,8 @@ function updateFlaggedCount() {
   const el = document.getElementById('flaggedCount');
   if (!el) return;
   var count = 0;
-  for (var d of flaggedCompanies) {
-    if (!blockedDomains.has(d) && !archivedCompanies.has(d)) count++;
+  for (var d in domainMap) {
+    if (domainMap[d].is_flagged && !domainMap[d].is_blocked && !domainMap[d].is_archived) count++;
   }
   el.textContent = count;
 }
@@ -5267,7 +5224,7 @@ function showFlaggedView() {
   const DAY = 86400000;
 
   // Build flagged items with computed fields (exclude blocked/archived domains)
-  let items = [...flaggedCompanies].filter(d => !blockedDomains.has(d) && !archivedCompanies.has(d)).map(domain => {
+  let items = dmFilter('is_flagged').filter(d => { var dm = domainMap[d]; return !dm.is_blocked && !dm.is_archived; }).map(domain => {
     const data = domainMap[domain];
     const lastDate = data ? data.lastDate : null;
     const daysSince = lastDate ? Math.floor((now - lastDate.getTime()) / DAY) : 9999;
@@ -5434,9 +5391,8 @@ function showFlaggedView() {
 }
 
 function unflagCompany(domain) {
-  flaggedCompanies.delete(domain);
+  if (domainMap[domain]) domainMap[domain].is_flagged = false;
   selectedFlaggedDomains.delete(domain);
-  saveFlaggedCompanies();
   supabaseSaveCompanyField(domain, 'is_flagged', false);
   updateFlaggedCount();
   buildCompaniesFromDomainMap();
@@ -5446,11 +5402,10 @@ function unflagCompany(domain) {
 
 function blockFlaggedCompany(domain) {
   if (!confirm('Block "' + domain + '" from your system? This domain will be permanently hidden.')) return;
-  flaggedCompanies.delete(domain);
+  if (domainMap[domain]) domainMap[domain].is_flagged = false;
   selectedFlaggedDomains.delete(domain);
-  blockedDomains.add(domain.toLowerCase());
-  saveFlaggedCompanies();
-  saveBlockedDomains();
+  ensureDomain(domain.toLowerCase());
+  domainMap[domain.toLowerCase()].is_blocked = true;
   supabaseSaveCompanyField(domain, 'is_flagged', false);
   supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
   updateFlaggedCount();
@@ -5475,7 +5430,7 @@ async function recheckFlaggedDomain(domain, btn) {
 async function recheckAllFlagged() {
   const btn = document.getElementById('recheckAllBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Rechecking...'; }
-  const domains = [...flaggedCompanies];
+  const domains = dmFilter('is_flagged');
   let unflaggedCount = 0;
   const BATCH = 5;
   for (let i = 0; i < domains.length; i += BATCH) {
@@ -5485,7 +5440,8 @@ async function recheckAllFlagged() {
     }));
     for (const r of results) {
       if (r.ok) {
-        flaggedCompanies.delete(r.domain);
+        if (domainMap[r.domain]) domainMap[r.domain].is_flagged = false;
+        supabaseSaveCompanyField(r.domain, 'is_flagged', false);
         selectedFlaggedDomains.delete(r.domain);
         unflaggedCount++;
       }
@@ -5555,11 +5511,10 @@ function bulkUnflagSelected() {
     : 'Unflag ' + domains.length + ' companies? They will return to your main company list.';
   if (!confirm(msg)) return;
   for (const d of domains) {
-    flaggedCompanies.delete(d);
+    if (domainMap[d]) domainMap[d].is_flagged = false;
     supabaseSaveCompanyField(d, 'is_flagged', false);
   }
   selectedFlaggedDomains.clear();
-  saveFlaggedCompanies();
   updateFlaggedCount();
   buildCompaniesFromDomainMap();
   updateStats();
@@ -5574,14 +5529,13 @@ function bulkBlockFlagged() {
     : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.slice(0, 20).join(', ') + (domains.length > 20 ? '\n...and ' + (domains.length - 20) + ' more' : '');
   if (!confirm(msg)) return;
   for (const d of domains) {
-    flaggedCompanies.delete(d);
-    blockedDomains.add(d.toLowerCase());
+    if (domainMap[d]) domainMap[d].is_flagged = false;
+    ensureDomain(d.toLowerCase());
+    domainMap[d.toLowerCase()].is_blocked = true;
     supabaseSaveCompanyField(d, 'is_flagged', false);
     supabaseSaveCompanyField(d.toLowerCase(), 'is_blocked', true);
   }
   selectedFlaggedDomains.clear();
-  saveFlaggedCompanies();
-  saveBlockedDomains();
   updateFlaggedCount();
   updateBlockedCount();
   buildCompaniesFromDomainMap();
@@ -5685,18 +5639,16 @@ async function scanDomainValidity() {
   if (canaryPass < 2) {
     console.warn('[DomainScan] Canary test failed (' + canaryPass + '/' + canaryDomains.length + ' reachable). Network environment cannot validate domains — clearing stale flags and skipping scan.');
     // Clear any previously flagged companies since the scan is unreliable
-    if (flaggedCompanies.size > 0) {
-      flaggedCompanies.clear();
-      saveFlaggedCompanies();
-      updateFlaggedCount();
-    }
+    var hadFlagged = false;
+    for (var fd in domainMap) { if (domainMap[fd].is_flagged) { domainMap[fd].is_flagged = false; supabaseSaveCompanyField(fd, 'is_flagged', false); hadFlagged = true; } }
+    if (hadFlagged) updateFlaggedCount();
     _domainScanRunning = false;
     return 'canary_failed';
   }
   console.log('[DomainScan] Canary test passed (' + canaryPass + '/' + canaryDomains.length + '). Proceeding with scan.');
 
   const domainsToCheck = companies
-    .filter(c => !archivedCompanies.has(c.domain) && !blockedDomains.has(c.domain) && !flaggedCompanies.has(c.domain))
+    .filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_archived && !dm.is_blocked && !dm.is_flagged); })
     .map(c => c.domain);
 
   let newlyFlagged = 0;
@@ -5743,7 +5695,9 @@ async function scanDomainValidity() {
     for (const r of results) {
       totalChecked++;
       if (!r.ok && confirmedFailed.includes(r.domain)) {
-        flaggedCompanies.add(r.domain);
+        ensureDomain(r.domain);
+        domainMap[r.domain].is_flagged = true;
+        supabaseSaveCompanyField(r.domain, 'is_flagged', true);
         flaggedThisScan.add(r.domain);
         newlyFlagged++;
       }
@@ -5754,9 +5708,9 @@ async function scanDomainValidity() {
       console.warn('[DomainScan] Aborting — flag rate too high (' + newlyFlagged + '/' + totalChecked + ' = ' + Math.round(newlyFlagged / totalChecked * 100) + '%). Likely a network issue, not invalid domains. Rolling back newly flagged.');
       // Roll back all domains flagged during this scan
       for (const d of flaggedThisScan) {
-        flaggedCompanies.delete(d);
+        if (domainMap[d]) domainMap[d].is_flagged = false;
+        supabaseSaveCompanyField(d, 'is_flagged', false);
       }
-      saveFlaggedCompanies();
       updateFlaggedCount();
       _domainScanRunning = false;
       return 'aborted_high_rate';
@@ -5798,10 +5752,10 @@ async function scanDomainValidity() {
 function scheduleDomainScan() {
   // One-time cleanup: if flagged count is >30% of total companies, previous scan was
   // unreliable (likely all domains were incorrectly flagged). Clear and force re-scan.
-  if (companies.length > 0 && flaggedCompanies.size > companies.length * 0.3) {
-    console.warn('[DomainScan] Flagged count (' + flaggedCompanies.size + ') exceeds 30% of total (' + companies.length + '). Previous scan was unreliable — clearing stale flags and forcing re-scan.');
-    flaggedCompanies.clear();
-    saveFlaggedCompanies();
+  var flaggedSize = dmCount('is_flagged');
+  if (companies.length > 0 && flaggedSize > companies.length * 0.3) {
+    console.warn('[DomainScan] Flagged count (' + flaggedSize + ') exceeds 30% of total (' + companies.length + '). Previous scan was unreliable — clearing stale flags and forcing re-scan.');
+    for (var fd in domainMap) { if (domainMap[fd].is_flagged) { domainMap[fd].is_flagged = false; supabaseSaveCompanyField(fd, 'is_flagged', false); } }
     updateFlaggedCount();
     // Force immediate re-scan
     _domainScanLastTs = '0';
@@ -5867,8 +5821,7 @@ async function fullDomainRescan() {
   _setRescanBtn('Starting...', true, true);
 
   // Clear all existing flags so every domain gets a fresh check
-  flaggedCompanies.clear();
-  saveFlaggedCompanies();
+  for (var fd in domainMap) { if (domainMap[fd].is_flagged) { domainMap[fd].is_flagged = false; supabaseSaveCompanyField(fd, 'is_flagged', false); } }
   updateFlaggedCount();
   _domainScanLastTs = '0';
 
@@ -5904,13 +5857,10 @@ let showingFlagged = false;
 let showingBlocked = false;
 
 function toggleCompanyStar(domain) {
-  if (starredCompanies.has(domain)) {
-    starredCompanies.delete(domain);
-  } else {
-    starredCompanies.add(domain);
-  }
+  ensureDomain(domain);
+  domainMap[domain].is_starred = !domainMap[domain].is_starred;
   saveStarredCompanies();
-  supabaseSaveCompanyField(domain, 'is_starred', starredCompanies.has(domain));
+  supabaseSaveCompanyField(domain, 'is_starred', domainMap[domain].is_starred);
   updateProposalCount();
   renderTable();
 }
@@ -5940,8 +5890,8 @@ function updateProposalCount() {
   const el = document.getElementById('proposalCount');
   if (!el) return;
   var count = 0;
-  for (var d of starredCompanies) {
-    if (!archivedCompanies.has(d) && !flaggedCompanies.has(d) && !blockedDomains.has(d)) count++;
+  for (var d in domainMap) {
+    if (domainMap[d].is_starred && !domainMap[d].is_archived && !domainMap[d].is_flagged && !domainMap[d].is_blocked) count++;
   }
   el.textContent = count;
 }
@@ -5952,27 +5902,23 @@ function updateProposalCount() {
 let showingFollowUp = false;
 
 function toggleFollowUp(domain) {
-  if (followUpCompanies.has(domain)) {
-    followUpCompanies.delete(domain);
-    delete followUpDates[domain];
-    saveFollowUpDates();
+  ensureDomain(domain);
+  if (domainMap[domain].is_followup) {
+    domainMap[domain].is_followup = false;
+    domainMap[domain].followup_date = null;
     supabaseSaveCompanyField(domain, 'followup_date', null);
   } else {
-    followUpCompanies.add(domain);
+    domainMap[domain].is_followup = true;
   }
   saveFollowUpCompanies();
-  supabaseSaveCompanyField(domain, 'is_followup', followUpCompanies.has(domain));
+  supabaseSaveCompanyField(domain, 'is_followup', domainMap[domain].is_followup);
   updateFollowUpCount();
   renderTable();
 }
 
 function setFollowUpDate(domain, date) {
-  if (date) {
-    followUpDates[domain] = date;
-  } else {
-    delete followUpDates[domain];
-  }
-  saveFollowUpDates();
+  ensureDomain(domain);
+  domainMap[domain].followup_date = date || null;
   supabaseSaveCompanyField(domain, 'followup_date', date || null);
   renderTable();
 }
@@ -6015,7 +5961,8 @@ var MONTH_LABELS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT',
 function renderFollowUpKanban() {
   var board = document.getElementById('fuKanbanBoard');
   var data = companies.filter(function(c) {
-    return followUpCompanies.has(c.domain) && !archivedCompanies.has(c.domain) && !blockedDomains.has(c.domain);
+    var dm = domainMap[c.domain];
+    return dm && dm.is_followup && !dm.is_archived && !dm.is_blocked;
   });
 
   var now = new Date();
@@ -6034,7 +5981,7 @@ function renderFollowUpKanban() {
 
   for (var i = 0; i < data.length; i++) {
     var c = data[i];
-    var rawDate = followUpDates[c.domain] || '';
+    var rawDate = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
     var dateVal = rawDate.length > 7 ? rawDate.slice(0, 7) : rawDate;
     if (!dateVal) {
       buckets['new'].push(c);
@@ -6096,8 +6043,8 @@ function buildKanbanColumn(colKey, label, items, nowMonth, extraClass) {
 function buildKanbanCard(c, colKey, nowMonth) {
   var color = COLORS[c.id % COLORS.length];
   var dSafe = c.domain.replace(/'/g, "\\'");
-  var rawDate = followUpDates[c.domain] || '';
-  var dateVal = rawDate.length > 7 ? rawDate.slice(0, 7) : rawDate;
+  var rawDateK = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
+  var dateVal = rawDateK.length > 7 ? rawDateK.slice(0, 7) : rawDateK;
   var isOverdue = dateVal && dateVal < nowMonth;
 
   var card = '<div class="fu-card' + (isOverdue ? ' fu-card-overdue' : '') + '" draggable="true" onclick="openDetail(' + c.id + ')" oncontextmenu="event.preventDefault();event.stopPropagation();toggleMoveMenu(this,\'' + dSafe + '\')" ondragstart="fuDragStart(event,\'' + dSafe + '\')" ondragend="fuDragEnd(event)" data-domain="' + esc(c.domain) + '">';
@@ -6188,12 +6135,9 @@ function closeAllMovMenus() {
 }
 
 function moveFollowUpTo(domain, monthKey) {
-  if (monthKey) {
-    followUpDates[domain] = monthKey;
-  } else {
-    delete followUpDates[domain];
-  }
-  saveFollowUpDates();
+  ensureDomain(domain);
+  domainMap[domain].followup_date = monthKey || null;
+  supabaseSaveCompanyField(domain, 'followup_date', monthKey || null);
   closeAllMovMenus();
   renderFollowUpKanban();
 }
@@ -6207,8 +6151,8 @@ function updateFollowUpCount() {
   var el = document.getElementById('followUpCount');
   if (!el) return;
   var count = 0;
-  for (var d of followUpCompanies) {
-    if (!archivedCompanies.has(d) && !blockedDomains.has(d)) count++;
+  for (var d in domainMap) {
+    if (domainMap[d].is_followup && !domainMap[d].is_archived && !domainMap[d].is_blocked) count++;
   }
   el.textContent = count;
 }
@@ -6219,10 +6163,9 @@ function updateFollowUpCount() {
 let showingArchived = false;
 
 function archiveCompany(domain) {
-  archivedCompanies.add(domain);
-  starredCompanies.delete(domain); // unstar if starred
-  saveArchivedCompanies();
-  saveStarredCompanies();
+  ensureDomain(domain);
+  domainMap[domain].is_archived = true;
+  domainMap[domain].is_starred = false;
   supabaseSaveCompanyField(domain, 'is_archived', true);
   supabaseSaveCompanyField(domain, 'is_starred', false);
   updateArchivedCount();
@@ -6233,8 +6176,7 @@ function archiveCompany(domain) {
 }
 
 function unarchiveCompany(domain) {
-  archivedCompanies.delete(domain);
-  saveArchivedCompanies();
+  if (domainMap[domain]) domainMap[domain].is_archived = false;
   supabaseSaveCompanyField(domain, 'is_archived', false);
   updateArchivedCount();
   buildCompaniesFromDomainMap();
@@ -6256,7 +6198,7 @@ function showArchivedView() {
   setViewTitle('Archived', false);
 
   const tbody = document.getElementById('tableBody');
-  const archivedDomains = [...archivedCompanies].sort();
+  const archivedDomains = dmFilter('is_archived').sort();
 
   if (archivedDomains.length === 0) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No archived companies. Companies you archive will appear here.</td></tr>';
@@ -6288,7 +6230,7 @@ function showArchivedView() {
 
 function updateArchivedCount() {
   const el = document.getElementById('archivedCount');
-  if (el) el.textContent = archivedCompanies.size;
+  if (el) el.textContent = dmCount('is_archived');
 }
 
 function bulkArchiveSelected() {
@@ -6304,11 +6246,12 @@ function bulkArchiveSelected() {
   if (!confirm(msg)) return;
 
   for (const d of domains) {
-    archivedCompanies.add(d.toLowerCase());
-    starredCompanies.delete(d.toLowerCase());
+    ensureDomain(d.toLowerCase());
+    domainMap[d.toLowerCase()].is_archived = true;
+    domainMap[d.toLowerCase()].is_starred = false;
+    supabaseSaveCompanyField(d.toLowerCase(), 'is_archived', true);
+    supabaseSaveCompanyField(d.toLowerCase(), 'is_starred', false);
   }
-  saveArchivedCompanies();
-  saveStarredCompanies();
   selectedIds.clear();
   buildCompaniesFromDomainMap();
   renderTable();
@@ -6320,9 +6263,8 @@ function bulkArchiveSelected() {
 function bulkStarSelected() {
   for (const id of selectedIds) {
     const c = companies.find(x => x.id === id);
-    if (c) starredCompanies.add(c.domain);
+    if (c) { ensureDomain(c.domain); domainMap[c.domain].is_starred = true; supabaseSaveCompanyField(c.domain, 'is_starred', true); }
   }
-  saveStarredCompanies();
   selectedIds.clear();
   updateProposalCount();
   renderTable();
@@ -6377,7 +6319,7 @@ function checkCompanyDuplicate() {
     // Also check domainMap (includes archived/blocked)
     var inDomainMap = domainMap[domain];
     // Check archived and blocked
-    var isArchived = typeof archivedCompanies !== 'undefined' && archivedCompanies.has && archivedCompanies.has(domain);
+    var isArchived = !!(domainMap[domain] && domainMap[domain].is_archived);
     var isBlocked = isBlockedDomain(domain);
 
     if (existingCompany) {
@@ -6465,14 +6407,9 @@ async function addCompanyManually() {
 
   // Create entry in domainMap if it doesn't exist
   if (!domainMap[domain]) {
-    domainMap[domain] = {
-      contacts: {},
-      sentIds: new Set(),
-      receivedIds: new Set(),
-      lastDate: new Date(),
-      lastSentDate: new Date(),
-      lastReceivedDate: null
-    };
+    ensureDomain(domain);
+    domainMap[domain].lastDate = new Date();
+    domainMap[domain].lastSentDate = new Date();
   }
 
   // Add a placeholder sent message so buildCompaniesFromDomainMap includes it
@@ -6511,8 +6448,8 @@ async function addCompanyManually() {
   saveCompanyNameCache();
 
   // All companies are leads
-  companyTypes[domain] = 'Lead';
-  saveCompanyTypes();
+  domainMap[domain].company_type = 'Lead';
+  supabaseSaveCompanyField(domain, 'company_type', 'lead');
 
   // Rebuild and render immediately so user sees the company
   persistData();
@@ -6670,8 +6607,9 @@ function executeMerge() {
   var primaryDomain = _mergePrimary;
   var secondaryDomain = (primaryDomain === _mergeCompanyA.domain) ? _mergeCompanyB.domain : _mergeCompanyA.domain;
 
-  // Store the merge alias
-  mergedDomains[secondaryDomain] = primaryDomain;
+  // Store the merge alias on domainMap entry
+  ensureDomain(secondaryDomain);
+  domainMap[secondaryDomain].merged_into = primaryDomain;
   saveMergedDomains();
   supabaseSaveCompanyField(secondaryDomain, 'merged_into', primaryDomain);
 
@@ -6684,9 +6622,10 @@ function executeMerge() {
   }
 
   // Carry over company type from primary
-  var primaryType = companyTypes[primaryDomain] || companyTypes[secondaryDomain] || 'Lead';
-  companyTypes[primaryDomain] = primaryType;
-  saveCompanyTypes();
+  ensureDomain(primaryDomain);
+  var primaryType = domainMap[primaryDomain].company_type || (domainMap[secondaryDomain] && domainMap[secondaryDomain].company_type) || 'Lead';
+  domainMap[primaryDomain].company_type = primaryType;
+  supabaseSaveCompanyField(primaryDomain, 'company_type', primaryType.toLowerCase());
 
   // Rebuild and render
   buildCompaniesFromDomainMap();
@@ -6699,8 +6638,8 @@ function executeMerge() {
 }
 
 function unmergeCompany(secondaryDomain) {
-  if (!mergedDomains[secondaryDomain]) return;
-  delete mergedDomains[secondaryDomain];
+  if (!domainMap[secondaryDomain] || !domainMap[secondaryDomain].merged_into) return;
+  domainMap[secondaryDomain].merged_into = null;
   saveMergedDomains();
   supabaseSaveCompanyField(secondaryDomain, 'merged_into', null);
   buildCompaniesFromDomainMap();
@@ -6793,14 +6732,14 @@ function showCompanyPanel(id) {
   const scoreColor = c.score >= 75 ? 'var(--green)' : c.score >= 50 ? 'var(--orange)' : 'var(--red)';
 
   // ── Full-width company banner ──
-  var isStarredH = starredCompanies.has(c.domain);
+  var isStarredH = !!(domainMap[c.domain] && domainMap[c.domain].is_starred);
   var dSafeH = c.domain.replace(/'/g, "\\'");
   let bannerHtml = '<div class="dp-company-head">' +
     '<div class="dp-co-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name, 48) + '</div>' +
     '<div class="dp-co-info"><div style="display:flex;align-items:center;gap:6px"><h2 class="editable-name" style="margin:0;cursor:text" contenteditable="false" id="dpCompanyName" onclick="this.contentEditable=\'true\';this.focus()" onblur="saveCompanyNameEdit(\'' + esc(c.domain).replace(/'/g,"\\'") + '\',this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur()}">' + esc(c.name) + '</h2>' +
       '<svg class="edit-pencil-icon" onclick="var h=document.getElementById(\'dpCompanyName\');h.contentEditable=\'true\';h.focus()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="cursor:pointer;color:var(--text3);flex-shrink:0"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>' +
       '<button class="dp-star' + (isStarredH ? ' active' : '') + '" onclick="event.stopPropagation();toggleCompanyStar(\'' + dSafeH + '\');showCompanyPanel(' + c.id + ')" title="' + (isStarredH ? 'Remove from Proposals' : 'Add to Proposals') + '" style="font-size:18px">&#9733;</button>' +
-      '<button class="dp-flag' + (followUpCompanies.has(c.domain) ? ' active' : '') + '" onclick="event.stopPropagation();toggleFollowUp(\'' + dSafeH + '\');showCompanyPanel(' + c.id + ')" title="' + (followUpCompanies.has(c.domain) ? 'Remove from Follow Up' : 'Flag for Follow Up') + '"><svg viewBox="0 0 24 24" fill="' + (followUpCompanies.has(c.domain) ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button></div>' +
+      '<button class="dp-flag' + (!!(domainMap[c.domain] && domainMap[c.domain].is_followup) ? ' active' : '') + '" onclick="event.stopPropagation();toggleFollowUp(\'' + dSafeH + '\');showCompanyPanel(' + c.id + ')" title="' + (!!(domainMap[c.domain] && domainMap[c.domain].is_followup) ? 'Remove from Follow Up' : 'Flag for Follow Up') + '"><svg viewBox="0 0 24 24" fill="' + (!!(domainMap[c.domain] && domainMap[c.domain].is_followup) ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></button></div>' +
       '<div class="dp-domain">' +
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
           '<span style="font-size:12px">Website: <a href="https://www.' + esc(c.domain) + '" target="_blank" style="color:var(--accent)">' + esc(displayDomain(c.domain)) + '</a></span>' +
@@ -6865,8 +6804,8 @@ function showCompanyPanel(id) {
   document.getElementById('dpCompanyBanner').innerHTML = bannerHtml;
 
   // Proposal notes section (below banner)
-  var dpNote = proposalNotes[c.domain] || '';
-  var dpStage = proposalStages[c.domain] || '';
+  var dpNote = (domainMap[c.domain] && domainMap[c.domain].proposal_notes) || '';
+  var dpStage = (domainMap[c.domain] && domainMap[c.domain].proposal_stage) || '';
   var dpStageDef = PROPOSAL_STAGES.find(function(s) { return s.value === dpStage; }) || PROPOSAL_STAGES[0];
   var dSafeDP = c.domain.replace(/'/g, "\\'");
   document.getElementById('dpLeftHead').innerHTML =
@@ -6927,8 +6866,8 @@ function showCompanyPanel(id) {
 
   // Left footer
   var dSafeF = c.domain.replace(/'/g, "\\'");
-  var isStarredF = starredCompanies.has(c.domain);
-  var isArchivedF = archivedCompanies.has(c.domain);
+  var isStarredF = !!(domainMap[c.domain] && domainMap[c.domain].is_starred);
+  var isArchivedF = !!(domainMap[c.domain] && domainMap[c.domain].is_archived);
   document.getElementById('dpLeftFoot').innerHTML =
     '<div style="display:flex;flex-direction:column;gap:6px">' +
     '<button class="btn btn-ghost btn-sm" onclick="if(confirm(\'Archive ' + esc(c.domain) + '?\'))archiveCompanyFromDetail(\'' + dSafeF + '\')" style="color:var(--text2);border-color:var(--border);font-size:11px;width:100%">' +
@@ -8325,9 +8264,10 @@ function addBlockedDomainsFromSettingsView() {
 }
 
 function exportBlockedDomainsCSV() {
-  if (blockedDomains.size === 0) { alert('No protected domains or emails to export.'); return; }
+  var blockedList = dmFilter('is_blocked');
+  if (blockedList.length === 0) { alert('No protected domains or emails to export.'); return; }
   var rows = ['Type,Value'];
-  for (var entry of blockedDomains) {
+  for (var entry of blockedList) {
     var type = entry.indexOf('@') > -1 ? 'Email' : 'Domain';
     rows.push(type + ',' + entry);
   }
@@ -8376,8 +8316,9 @@ function addBlockedDomains(raw) {
   for (const entry of entries) {
     // If it's an email address, extract domain
     const domain = entry.includes('@') ? entry.split('@')[1] : entry;
-    if (domain && !SKIP_DOMAINS.has(domain) && !blockedDomains.has(domain)) {
-      blockedDomains.add(domain);
+    if (domain && !SKIP_DOMAINS.has(domain) && !(domainMap[domain] && domainMap[domain].is_blocked)) {
+      ensureDomain(domain);
+      domainMap[domain].is_blocked = true;
       supabaseSaveCompanyField(domain, 'is_blocked', true);
       added++;
     }
@@ -8394,8 +8335,7 @@ function addBlockedDomains(raw) {
 }
 
 function removeBlockedDomain(domain) {
-  blockedDomains.delete(domain);
-  saveBlockedDomains();
+  if (domainMap[domain]) domainMap[domain].is_blocked = false;
   supabaseSaveCompanyField(domain, 'is_blocked', false);
   // Rebuild companies — the unblocked domain may reappear
   buildCompaniesFromDomainMap();
@@ -8406,8 +8346,8 @@ function removeBlockedDomain(domain) {
 }
 
 function blockDomainFromDetail(domain) {
-  blockedDomains.add(domain.toLowerCase());
-  saveBlockedDomains();
+  ensureDomain(domain.toLowerCase());
+  domainMap[domain.toLowerCase()].is_blocked = true;
   supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
   buildCompaniesFromDomainMap();
   renderTable();
@@ -8417,10 +8357,11 @@ function blockDomainFromDetail(domain) {
 }
 
 function archiveCompanyFromDetail(domain) {
-  archivedCompanies.add(domain.toLowerCase());
-  starredCompanies.delete(domain.toLowerCase());
-  saveArchivedCompanies();
-  saveStarredCompanies();
+  ensureDomain(domain.toLowerCase());
+  domainMap[domain.toLowerCase()].is_archived = true;
+  domainMap[domain.toLowerCase()].is_starred = false;
+  supabaseSaveCompanyField(domain.toLowerCase(), 'is_archived', true);
+  supabaseSaveCompanyField(domain.toLowerCase(), 'is_starred', false);
   buildCompaniesFromDomainMap();
   renderTable();
   updateStats();
@@ -8431,13 +8372,13 @@ function archiveCompanyFromDetail(domain) {
 
 function renderBlockedDomainsList() {
   const containers = [document.getElementById('blockedDomainsList'), document.getElementById('settingsBlockedDomainsList')];
-  const sorted = [...blockedDomains].sort();
-  const html = blockedDomains.size === 0
+  const sorted = dmFilter('is_blocked').sort();
+  const html = sorted.length === 0
     ? '<span style="font-size:11px;color:var(--text2)">No blocked domains yet</span>'
     : sorted.map(d => `<span class="blocked-tag">${esc(d)}<button onclick="removeBlockedDomain('${d}')" title="Unblock">&times;</button></span>`).join('');
   for (const c of containers) { if (c) c.innerHTML = html; }
   const badge = document.getElementById('settingsBlockedCount');
-  if (badge) badge.textContent = blockedDomains.size;
+  if (badge) badge.textContent = sorted.length;
 }
 
 // ──────────────────────────────────────────────
@@ -8526,7 +8467,7 @@ async function refreshInbox() {
       const domain = getDomain(fromAddr);
       if (!domain || !crmDomains.has(domain)) continue;
       if (isBlockedDomain(domain)) continue;
-      if (flaggedCompanies.has(domain)) continue;
+      if (domainMap[domain] && domainMap[domain].is_flagged) continue;
 
       const company = companies.find(c => c.domain === domain);
       inboxEmails.push({
@@ -8755,8 +8696,9 @@ async function inboxDeleteSelected() {
 function inboxBlockDomain(domain) {
   if (!domain) return;
   if (!confirm('Block "' + domain + '"? All emails and contacts from this domain will be removed from your CRM.')) return;
-  blockedDomains.add(domain.toLowerCase());
-  saveBlockedDomains();
+  ensureDomain(domain.toLowerCase());
+  domainMap[domain.toLowerCase()].is_blocked = true;
+  supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
   inboxEmails = inboxEmails.filter(e => e.domain !== domain);
   inboxSelectedIds.clear();
   renderInbox();
@@ -8780,7 +8722,7 @@ function inboxBlockSelected() {
     ? 'Block "' + domList[0] + '"? All emails and contacts from this domain will be removed from your CRM.'
     : 'Block ' + domList.length + ' domains from your CRM?\n\n' + domList.join(', ');
   if (!confirm(msg)) return;
-  for (const d of domList) blockedDomains.add(d);
+  for (const d of domList) { ensureDomain(d); domainMap[d].is_blocked = true; supabaseSaveCompanyField(d, 'is_blocked', true); }
   saveBlockedDomains();
   inboxEmails = inboxEmails.filter(e => !domains.has(e.domain));
   inboxSelectedIds.clear();
@@ -8882,7 +8824,7 @@ function buildCRMContext() {
   ctx += '- ' + totalSent + ' emails sent, ' + totalRecv + ' received\n';
   ctx += '- Hot leads (10+ received): ' + hot.length + ', Warm (1-9 received): ' + warm.length + ', Cold (0 received): ' + cold.length + '\n';
   ctx += '- Average AI score: ' + avgScore + '/99\n';
-  ctx += '- Blocked domains: ' + blockedDomains.size + '\n\n';
+  ctx += '- Blocked domains: ' + dmCount('is_blocked') + '\n\n';
 
   // Top companies by score — cap at 50 to stay within token budget
   var sorted = companies.slice().sort(function(a, b) { return b.score - a.score; });
@@ -8965,8 +8907,9 @@ function buildCRMContext() {
   }
 
   // Blocked domains — just count, not full list
-  if (blockedDomains.size > 0) {
-    ctx += '\nBLOCKED DOMAINS: ' + blockedDomains.size + ' domains/emails blocked\n';
+  var blockedSize = dmCount('is_blocked');
+  if (blockedSize > 0) {
+    ctx += '\nBLOCKED DOMAINS: ' + blockedSize + ' domains/emails blocked\n';
   }
 
   // Full email bodies — only the 5 most recently opened, capped at 500 chars each
@@ -9416,8 +9359,9 @@ async function aiExecuteAction(action) {
       return 'Updated contact title for ' + action.email;
     }
     if (action.type === 'block_domain' && action.domain) {
-      blockedDomains.add(action.domain);
-      saveBlockedDomains();
+      ensureDomain(action.domain);
+      domainMap[action.domain].is_blocked = true;
+      supabaseSaveCompanyField(action.domain, 'is_blocked', true);
       return 'Blocked ' + action.domain;
     }
     if (action.type === 'star_company' && action.domain) {
