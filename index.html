@@ -3142,25 +3142,31 @@ const MSAL_CDN_URLS = [
   'https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js'
 ];
 
-function loadScript(url) {
+function loadScript(url, timeoutMs) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = url;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Failed to load: ' + url));
+    const timer = setTimeout(() => { s.onload = s.onerror = null; reject(new Error('Timeout loading: ' + url)); }, timeoutMs || 10000);
+    s.onload = () => { clearTimeout(timer); resolve(); };
+    s.onerror = () => { clearTimeout(timer); reject(new Error('Failed to load: ' + url)); };
     document.head.appendChild(s);
   });
 }
 
 async function ensureMSALLoaded() {
   if (typeof msal !== 'undefined') return true;
-  for (const url of MSAL_CDN_URLS) {
-    try {
-      await loadScript(url);
-      if (typeof msal !== 'undefined') return true;
-    } catch(e) {
-      console.warn(e.message);
+  // Try each CDN with retries — mobile connections can be flaky
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (const url of MSAL_CDN_URLS) {
+      try {
+        await loadScript(url, attempt === 0 ? 8000 : 15000);
+        if (typeof msal !== 'undefined') return true;
+      } catch(e) {
+        console.warn('Attempt ' + (attempt + 1) + ': ' + e.message);
+      }
     }
+    // Brief pause before retry round
+    if (attempt === 0) await new Promise(r => setTimeout(r, 1000));
   }
   return false;
 }
@@ -9655,6 +9661,60 @@ function esc(text) {
         return;
       }
     }
+  }
+  // MSAL failed or no session — check if we have cached data to show
+  // (e.g. mobile with flaky connection). Show CRM in read-only mode
+  // so the user doesn't lose access to their data.
+  const cachedData = await loadPersistedData();
+  const hasCachedData = cachedData && cachedData.domainMap && Object.keys(cachedData.domainMap).length > 0;
+  if (hasCachedData) {
+    document.getElementById('authLoading').style.display = 'none';
+    document.getElementById('welcomeScreen').style.display = 'none';
+    document.getElementById('crmContent').classList.add('active');
+    const sb = document.getElementById('sidebar');
+    sb.style.display = 'flex';
+    if (localStorage.getItem('relateflow_sidebar') === 'collapsed') sb.classList.add('collapsed');
+    setViewTitle('All Companies', true);
+    domainMap = cachedData.domainMap;
+    buildCompaniesFromDomainMap();
+    renderTableHeader();
+    renderTable();
+    updateStats();
+    updateLastSyncDisplay();
+    resolveCompanyNames();
+    document.getElementById('settingsBtn').style.display = '';
+    // Show a non-blocking banner so user knows they're in offline mode
+    const banner = document.createElement('div');
+    banner.id = 'offlineBanner';
+    banner.style.cssText = 'position:fixed;top:56px;left:0;right:0;z-index:999;background:#e8710a;color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;';
+    banner.textContent = 'Offline mode — showing cached data. Tap here to retry sign-in.';
+    banner.onclick = () => { banner.remove(); location.reload(); };
+    document.body.appendChild(banner);
+    // Retry MSAL in background — auto-reconnect if network recovers
+    setTimeout(async () => {
+      await initMSAL();
+      if (msalInstance) {
+        const accounts = msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+          currentAccount = accounts[0];
+          userEmail = currentAccount.username;
+          const el = document.getElementById('offlineBanner');
+          if (el) el.remove();
+          // Silently reconnect Supabase
+          if (initSupabase()) {
+            const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+            await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+          }
+          document.getElementById('signOutBtn').style.display = '';
+          document.getElementById('userPill').style.display = 'flex';
+          document.getElementById('userName').textContent = userEmail;
+          document.getElementById('settingsNavItem').style.display = '';
+          startSupabasePolling();
+          scanOutlookEmails();
+        }
+      }
+    }, 10000);
+    return;
   }
   document.getElementById('settingsBtn').style.display = '';
   showWelcome();
