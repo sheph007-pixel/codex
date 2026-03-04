@@ -3000,7 +3000,7 @@ async function initMSAL() {
 
   const loaded = await ensureMSALLoaded();
   if (!loaded) {
-    alert('Could not load the Microsoft authentication library. Please check your internet connection or try disabling ad-blockers, then refresh the page.');
+    console.error('Could not load the Microsoft authentication library.');
     return null;
   }
 
@@ -3024,7 +3024,6 @@ async function initMSAL() {
     return msalInstance;
   } catch(e) {
     console.error('MSAL init error:', e);
-    alert('MSAL initialization failed: ' + e.message);
     msalInstance = null;
     return null;
   }
@@ -9424,22 +9423,42 @@ function esc(text) {
   // No localStorage snapshot — Supabase is the sole source of truth.
   // Data will load from the database after sign-in.
 
-  if (getClientId()) {
-    await initMSAL();
-    if (msalInstance) {
-      const accounts = msalInstance.getAllAccounts();
-      if (accounts.length > 0) {
-        currentAccount = accounts[0];
-        userEmail = currentAccount.username;
-        await onSignedIn();
-        return;
+  // Safety timeout — if MSAL loading takes too long, show welcome screen
+  let welcomed = false;
+  const safetyTimer = setTimeout(() => {
+    if (!welcomed) {
+      welcomed = true;
+      console.warn('MSAL loading timed out — showing welcome screen');
+      document.getElementById('settingsBtn').style.display = '';
+      showWelcome();
+    }
+  }, 12000);
+
+  try {
+    if (getClientId()) {
+      await initMSAL();
+      if (msalInstance) {
+        const accounts = msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+          currentAccount = accounts[0];
+          userEmail = currentAccount.username;
+          clearTimeout(safetyTimer);
+          welcomed = true;
+          await onSignedIn();
+          return;
+        }
       }
     }
+  } catch(e) {
+    console.error('Init error:', e);
   }
-  // MSAL failed or no session — show welcome/sign-in screen.
-  // No local data fallback — everything comes from the database.
-  document.getElementById('settingsBtn').style.display = '';
-  showWelcome();
+
+  clearTimeout(safetyTimer);
+  if (!welcomed) {
+    welcomed = true;
+    document.getElementById('settingsBtn').style.display = '';
+    showWelcome();
+  }
 })();
 
 // Flush to Supabase on page close/hide
