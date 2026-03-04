@@ -3374,9 +3374,9 @@ function processRemovedEmail(msgId) {
 //  Spam, newsletters, and cold inbound are filtered.)
 // ──────────────────────────────────────────────
 function buildCompaniesFromDomainMap() {
+  const buildStart = Date.now();
   // Deduplicate domainMap keys by lowercase (merge any case-variant entries)
   const keys = Object.keys(domainMap);
-  const seen = {};
   for (const k of keys) {
     const lk = k.toLowerCase();
     if (lk !== k) {
@@ -3398,17 +3398,23 @@ function buildCompaniesFromDomainMap() {
     }
   }
 
-  // Build set of secondary (merged-away) domains so we skip them in the main loop
+  // Pre-build merge alias lookup (O(n) instead of O(n²) getMergedAliases per domain)
+  var mergeAliasMap = {};  // primaryDomain -> [alias1, alias2, ...]
   var secondaryDomains = new Set();
   for (var secDom in domainMap) {
-    if (domainMap[secDom].merged_into) secondaryDomains.add(secDom);
+    var mergedInto = domainMap[secDom].merged_into;
+    if (mergedInto) {
+      secondaryDomains.add(secDom);
+      if (!mergeAliasMap[mergedInto]) mergeAliasMap[mergedInto] = [];
+      mergeAliasMap[mergedInto].push(secDom);
+    }
   }
 
   companies = [];
   let id = 1;
   for (const [domain, data] of Object.entries(domainMap)) {
     // Skip blocked, flagged, and archived domains — they have their own views
-    if (isBlockedDomain(domain)) continue;
+    if (SKIP_DOMAINS.has(domain) || data.is_blocked) continue;
     if (data.is_flagged) continue;
     if (data.is_archived) continue;
 
@@ -3417,7 +3423,7 @@ function buildCompaniesFromDomainMap() {
 
     // Collect all domain data sources (primary + any merged aliases)
     var domainSources = [{ domain: domain, data: data }];
-    var aliases = getMergedAliases(domain);
+    var aliases = mergeAliasMap[domain] || [];
     for (var ai = 0; ai < aliases.length; ai++) {
       if (domainMap[aliases[ai]]) {
         domainSources.push({ domain: aliases[ai], data: domainMap[aliases[ai]] });
@@ -3548,6 +3554,7 @@ function buildCompaniesFromDomainMap() {
 
   companies.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
   companies.forEach((c, i) => c.id = i + 1);
+  console.log('buildCompaniesFromDomainMap: ' + companies.length + ' companies built in ' + (Date.now() - buildStart) + 'ms');
 }
 
 // Async: look up real company names for any domains not yet in cache
@@ -3852,7 +3859,9 @@ async function fetchEmailsProgressively(token, useDelta) {
       }
 
       // Throttle UI: only rebuild table every 15 pages to reduce DOM work
+      // Use requestAnimationFrame to avoid blocking the main thread
       if (page === 1 || page % 15 === 0) {
+        await new Promise(r => requestAnimationFrame(r));
         buildCompaniesFromDomainMap();
         renderTable();
         updateStats();
@@ -4138,17 +4147,32 @@ async function onSignedIn() {
   }
 
   // ── STEP 2: SUPABASE SYNC (background if cache existed) ──
-  if (initSupabase()) {
+  const supabaseInited = initSupabase();
+  let userRegistrationPromise = null;
+
+  if (supabaseInited && supabaseReady) {
     const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
-    await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+    userRegistrationPromise = supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+    if (!hasData) {
+      // No cache — must wait for user registration before we can query
+      await userRegistrationPromise;
+    }
   }
 
-  if (supabaseReady && supabaseUserId) {
-    // If we already rendered from cache, sync in background (non-blocking)
+  // For the cache path, supabaseUserId may not be set yet — sync will await registration
+  const canSync = supabaseReady && (supabaseUserId || userRegistrationPromise);
+  if (canSync) {
+    const prevDomainCount = Object.keys(domainMap).length;
     const doSupabaseSync = async () => {
+      // Ensure user registration is complete before querying
+      if (userRegistrationPromise && !supabaseUserId) {
+        await userRegistrationPromise;
+      }
+      if (!supabaseUserId) return;
       try {
         const sbData = await loadFromSupabase();
         if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
+          const newCount = Object.keys(sbData.domainMap).length;
           domainMap = sbData.domainMap;
           if (sbData.scanMeta) {
             lastScanTime = sbData.scanMeta.lastScanTime;
@@ -4157,20 +4181,26 @@ async function onSignedIn() {
           }
           seenMsgIds = new Set();
           hasData = true;
-          buildCompaniesFromDomainMap();
-          renderTableHeader();
-          renderTable();
-          updateStats();
+          // Only re-render if data actually changed or first load
+          if (!prevDomainCount || newCount !== prevDomainCount) {
+            // Yield to main thread before heavy work so UI stays responsive
+            await new Promise(r => setTimeout(r, 0));
+            buildCompaniesFromDomainMap();
+            renderTableHeader();
+            renderTable();
+            updateStats();
+          }
           updateLastSyncDisplay();
-          // Save fresh data to local cache for next startup
           saveLocalCache();
-          // Load enrichment in background
+          // Load enrichment in background with yield
           if (sbData.loadEnrichment) {
-            sbData.loadEnrichment().then(() => { renderTable(); saveLocalCache(); });
+            setTimeout(() => {
+              sbData.loadEnrichment().then(() => { renderTable(); saveLocalCache(); });
+            }, 100);
           }
           resolveCompanyNames();
           updateSupabaseBadge('success');
-          console.log('Startup: Supabase sync complete — ' + Object.keys(domainMap).length + ' domains in ' + (Date.now() - startupTime) + 'ms');
+          console.log('Startup: Supabase sync complete — ' + newCount + ' domains in ' + (Date.now() - startupTime) + 'ms');
         }
       } catch(e) {
         console.warn('Startup: Supabase sync failed (using cache):', e);
