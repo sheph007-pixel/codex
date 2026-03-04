@@ -780,7 +780,12 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   </div>
 </header>
 
-<div class="layout">
+<!-- FULL-PAGE LOADING OVERLAY — covers everything until data is ready -->
+<div id="appLoadingOverlay" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;gap:10px;color:var(--text2);font-size:14px">
+  <div class="scan-spinner"></div> Loading...
+</div>
+
+<div class="layout" id="appLayout" style="visibility:hidden">
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar" style="display:none">
     <div class="sidebar-collapse-row">
@@ -883,10 +888,8 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 
   <!-- MAIN CONTENT -->
   <main class="main">
-    <!-- AUTH LOADING SCREEN (shown while checking session) -->
-    <div id="authLoading" style="display:flex;align-items:center;justify-content:center;flex:1;gap:10px;color:var(--text2);font-size:14px">
-      <div class="scan-spinner"></div> Loading...
-    </div>
+    <!-- Auth loading is now the full-page overlay (#appLoadingOverlay) above -->
+    <div id="authLoading" style="display:none"></div>
 
     <!-- WELCOME / SIGN IN -->
     <div class="welcome-screen" id="welcomeScreen">
@@ -1602,6 +1605,10 @@ window.onerror = function(msg, src, line, col, err) {
     var ws = document.getElementById('welcomeScreen');
     if (al) al.style.display = 'none';
     if (ws) ws.style.display = 'flex';
+    var layout = document.getElementById('appLayout');
+    if (layout) layout.style.visibility = 'visible';
+    var ov = document.getElementById('appLoadingOverlay');
+    if (ov) ov.remove();
   } catch(e) {}
 };
 window.addEventListener('unhandledrejection', function(ev) {
@@ -1611,6 +1618,10 @@ window.addEventListener('unhandledrejection', function(ev) {
     var ws = document.getElementById('welcomeScreen');
     if (al) al.style.display = 'none';
     if (ws) ws.style.display = 'flex';
+    var layout = document.getElementById('appLayout');
+    if (layout) layout.style.visibility = 'visible';
+    var ov = document.getElementById('appLoadingOverlay');
+    if (ov) ov.remove();
   } catch(e) {}
 });
 
@@ -2766,7 +2777,7 @@ async function supabaseFetchAll(table, selectCols, filters) {
   let allData = [];
   let from = 0;
   while (true) {
-    let query = supabaseClient.from(table).select(selectCols).range(from, from + PAGE_SIZE - 1);
+    let query = supabaseClient.from(table).select(selectCols).order('id', { ascending: true }).range(from, from + PAGE_SIZE - 1);
     for (const [key, val] of Object.entries(filters || {})) {
       query = query.eq(key, val);
     }
@@ -2789,6 +2800,7 @@ async function supabaseFetchAll(table, selectCols, filters) {
     if (data.length < PAGE_SIZE) break; // last page
     from += PAGE_SIZE;
   }
+  console.log('Supabase: ' + table + ' total = ' + allData.length + ' rows');
   return allData;
 }
 
@@ -4181,6 +4193,10 @@ function showWelcome() {
   document.getElementById('aiFab').classList.add('hidden');
   document.getElementById('aiChatWindow').classList.remove('open');
   aiChatOpen = false;
+  // Reveal layout and remove loading overlay
+  document.getElementById('appLayout').style.visibility = 'visible';
+  const overlay = document.getElementById('appLoadingOverlay');
+  if (overlay) overlay.remove();
 }
 
 async function onSignedIn(unused, supabasePromise) {
@@ -4214,8 +4230,9 @@ async function onSignedIn(unused, supabasePromise) {
     console.warn('Startup: Supabase load failed:', e);
   }
 
-  // ── STEP 2: Show EVERYTHING at once — sidebar, content, data ──
-  // All DOM updates are synchronous = browser paints once = no flash.
+  // ── STEP 2: Set up ALL UI while layout is visibility:hidden ──
+  // The full-page overlay covers everything. We set up sidebar, content,
+  // data — then remove the overlay to reveal the complete UI in one paint.
   const sb = document.getElementById('sidebar');
   sb.style.display = 'flex';
   if (_sidebarCollapsed) sb.classList.add('collapsed');
@@ -4237,6 +4254,13 @@ async function onSignedIn(unused, supabasePromise) {
   updateLastSyncDisplay();
   updateSupabaseBadge(hasData ? 'success' : 'error');
   resolveCompanyNames();
+
+  // ── REVEAL: Make layout visible, remove overlay ──
+  // Everything is set up — sidebar, content, data all ready.
+  // Show layout and remove overlay in one frame = zero flash.
+  document.getElementById('appLayout').style.visibility = 'visible';
+  const overlay = document.getElementById('appLoadingOverlay');
+  if (overlay) overlay.remove();
 
   updateBlockedCount();
   updateFlaggedCount();
