@@ -2822,7 +2822,7 @@ async function loadFromSupabase() {
           company_type: c.company_type ? c.company_type.replace(/\b\w/g, l => l.toUpperCase()) : null,
           proposal_stage: c.proposal_stage || null,
           proposal_notes: c.proposal_notes || null,
-          followup_date: c.followup_date || null,
+          followup_date: c.followup_date ? c.followup_date.substring(0, 10) : null,
           merged_into: c.merged_into || null,
         };
       } else {
@@ -2832,7 +2832,7 @@ async function loadFromSupabase() {
         existing._dbSentCount = Math.max(existing._dbSentCount || 0, c.sent_count || 0);
         existing._dbReceivedCount = Math.max(existing._dbReceivedCount || 0, c.received_count || 0);
         if (c.is_followup) existing.is_followup = true;
-        if (c.followup_date && !existing.followup_date) existing.followup_date = c.followup_date;
+        if (c.followup_date && !existing.followup_date) existing.followup_date = c.followup_date.substring(0, 10);
         if (c.is_starred) existing.is_starred = true;
         if (c.is_blocked) existing.is_blocked = true;
         if (c.is_flagged) existing.is_flagged = true;
@@ -2999,7 +2999,7 @@ function applyCompanyChange(row) {
   if (row.is_flagged !== undefined) entry.is_flagged = !!row.is_flagged;
   if (row.is_blocked !== undefined) entry.is_blocked = !!row.is_blocked;
   if (row.is_followup !== undefined) entry.is_followup = !!row.is_followup;
-  if (row.followup_date !== undefined) entry.followup_date = row.followup_date || null;
+  if (row.followup_date !== undefined) entry.followup_date = row.followup_date ? row.followup_date.substring(0, 10) : null;
   if (row.proposal_stage !== undefined) entry.proposal_stage = row.proposal_stage || null;
   if (row.proposal_notes !== undefined) entry.proposal_notes = row.proposal_notes || null;
   if (row.merged_into !== undefined) entry.merged_into = row.merged_into || null;
@@ -5981,8 +5981,8 @@ function renderFollowUpList() {
 
   // Sort by due date: items with dates first (ascending), then no-date items by name
   data.sort(function(a, b) {
-    var da = (domainMap[a.domain] && domainMap[a.domain].followup_date) || '';
-    var db = (domainMap[b.domain] && domainMap[b.domain].followup_date) || '';
+    var da = ((domainMap[a.domain] && domainMap[a.domain].followup_date) || '').substring(0, 10);
+    var db = ((domainMap[b.domain] && domainMap[b.domain].followup_date) || '').substring(0, 10);
     if (da && !db) return -1;
     if (!da && db) return 1;
     if (da && db) return da.localeCompare(db);
@@ -5994,7 +5994,8 @@ function renderFollowUpList() {
     var c = data[i];
     var color = COLORS[c.id % COLORS.length];
     var dSafe = c.domain.replace(/'/g, "\\'");
-    var fuDate = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
+    var rawFuDate = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
+    var fuDate = rawFuDate ? rawFuDate.substring(0, 10) : '';
     var isOverdue = fuDate && fuDate < today;
 
     var row = '<tr data-id="' + c.id + '" onclick="openDetail(' + c.id + ')" style="cursor:pointer">';
