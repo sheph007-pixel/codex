@@ -17,61 +17,34 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout main with PAT
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.PAT }}
-          persist-credentials: true
-      - name: Verify PAT and save diagnostics
+      - name: Merge branch to main via GitHub API
+        if: github.event_name == 'push'
         env:
           PAT: ${{ secrets.PAT }}
         run: |
-          if [ -z "$PAT" ]; then
-            echo "PAT_STATUS=EMPTY" > /tmp/pat-diag.txt
-            echo "::error::PAT secret is empty!"
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "Merging $BRANCH into main via GitHub API..."
+          # Use the GitHub API merge endpoint - this guarantees webhook delivery
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "Authorization: token $PAT" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/merges" \
+            -d "{\"base\":\"main\",\"head\":\"$BRANCH\",\"commit_message\":\"Auto-merge $BRANCH into main\"}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo "HTTP: $HTTP_CODE"
+          echo "$BODY" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'SHA: {d.get(\"sha\",\"N/A\")[:12]}')" 2>/dev/null || echo "$BODY"
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "Merge successful - webhook will trigger Vercel"
+          elif [ "$HTTP_CODE" = "204" ]; then
+            echo "Already up to date (no merge needed)"
+          else
+            echo "::error::Merge failed with HTTP $HTTP_CODE"
+            echo "$BODY"
             exit 1
           fi
-          echo "PAT_STATUS=SET" > /tmp/pat-diag.txt
-          echo "PAT_PREFIX=$(echo "$PAT" | head -c 10)..." >> /tmp/pat-diag.txt
-          # Check if classic (ghp_) or fine-grained (github_pat_)
-          if echo "$PAT" | grep -q "^ghp_"; then
-            echo "PAT_TYPE=classic" >> /tmp/pat-diag.txt
-          elif echo "$PAT" | grep -q "^github_pat_"; then
-            echo "PAT_TYPE=fine-grained" >> /tmp/pat-diag.txt
-          else
-            echo "PAT_TYPE=unknown" >> /tmp/pat-diag.txt
-          fi
-          # Test API access
-          HEADERS=$(curl -s -I -H "Authorization: token $PAT" \
-            "https://api.github.com/repos/${{ github.repository }}" 2>&1)
-          HTTP=$(echo "$HEADERS" | head -1)
-          SCOPES=$(echo "$HEADERS" | grep -i "x-oauth-scopes" || echo "none (fine-grained token)")
-          echo "HTTP_RESPONSE=$HTTP" >> /tmp/pat-diag.txt
-          echo "SCOPES=$SCOPES" >> /tmp/pat-diag.txt
-          cat /tmp/pat-diag.txt
-      - name: Commit PAT diagnostics
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp /tmp/pat-diag.txt ./pat-diag.txt 2>/dev/null || echo "no diagnostics" > ./pat-diag.txt
-          git add pat-diag.txt
-          git commit -m "debug: PAT diagnostics [auto]" || true
-          git push origin main || true
-      - name: Merge branch and push to main
-        if: github.event_name == 'push'
-        run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          echo "Merging $BRANCH into main..."
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$BRANCH"
-          git merge "origin/$BRANCH" --no-edit -m "Auto-merge $BRANCH into main"
-          echo "Pushing to main (using PAT from checkout)..."
-          git push origin main
-      - name: Re-checkout main after merge
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
           ref: main
