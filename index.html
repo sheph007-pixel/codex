@@ -2094,6 +2094,38 @@ function isBlockedDomain(domain) {
   return SKIP_DOMAINS.has(domain) || !!(domainMap[domain] && domainMap[domain].is_blocked);
 }
 
+// Central helper: mark a domain as blocked and clean up all related state
+function markDomainBlocked(domain) {
+  var d = domain.toLowerCase();
+  ensureDomain(d);
+  domainMap[d].is_blocked = true;
+  // Clear follow-up so it doesn't linger in any view
+  if (domainMap[d].is_followup) {
+    domainMap[d].is_followup = false;
+    domainMap[d].followup_date = null;
+    supabaseSaveCompanyField(d, 'is_followup', false);
+    supabaseSaveCompanyField(d, 'followup_date', null);
+  }
+  supabaseSaveCompanyField(d, 'is_blocked', true);
+}
+
+// Central helper: run all UI updates after one or more domains are blocked
+function afterBlockCleanup() {
+  // Remove blocked domains from inbox cache
+  inboxEmails = inboxEmails.filter(function(e) { return !isBlockedDomain(e.domain); });
+  inboxSelectedIds.clear();
+  buildCompaniesFromDomainMap();
+  renderTable();
+  updateStats();
+  updateBlockedCount();
+  renderBlockedDomainsList();
+  if (document.getElementById('inboxView').classList.contains('active')) {
+    renderInbox();
+    updateInboxBadge();
+  }
+  saveLocalCache();
+}
+
 
 // ──────────────────────────────────────────────
 // FOLLOW UP COMPANIES (metadata lives on domainMap entries)
@@ -5169,17 +5201,9 @@ function bulkBlockSelected() {
     : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.join(', ');
   if (!confirm(msg)) return;
 
-  for (const d of domains) {
-    ensureDomain(d.toLowerCase());
-    domainMap[d.toLowerCase()].is_blocked = true;
-    supabaseSaveCompanyField(d.toLowerCase(), 'is_blocked', true);
-  }
-  saveBlockedDomains();
+  for (const d of domains) { markDomainBlocked(d); }
   selectedIds.clear();
-  buildCompaniesFromDomainMap();
-  renderTable();
-  updateStats();
-  updateBlockedCount();
+  afterBlockCleanup();
 }
 
 // ──────────────────────────────────────────────
@@ -5554,14 +5578,11 @@ function blockFlaggedCompany(domain) {
   if (!confirm('Block "' + domain + '" from your system? This domain will be permanently hidden.')) return;
   if (domainMap[domain]) domainMap[domain].is_flagged = false;
   selectedFlaggedDomains.delete(domain);
-  ensureDomain(domain.toLowerCase());
-  domainMap[domain.toLowerCase()].is_blocked = true;
-  supabaseSaveCompanyField(domain, 'is_flagged', false);
-  supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
+  domainMap[domain.toLowerCase()].is_flagged = false;
+  supabaseSaveCompanyField(domain.toLowerCase(), 'is_flagged', false);
+  markDomainBlocked(domain);
   updateFlaggedCount();
-  updateBlockedCount();
-  buildCompaniesFromDomainMap();
-  updateStats();
+  afterBlockCleanup();
   showFlaggedView();
 }
 
@@ -5680,17 +5701,13 @@ function bulkBlockFlagged() {
   if (!confirm(msg)) return;
   for (const d of domains) {
     var dl = d.toLowerCase();
-    ensureDomain(dl);
     domainMap[dl].is_flagged = false;
-    domainMap[dl].is_blocked = true;
     supabaseSaveCompanyField(dl, 'is_flagged', false);
-    supabaseSaveCompanyField(dl, 'is_blocked', true);
+    markDomainBlocked(d);
   }
   selectedFlaggedDomains.clear();
   updateFlaggedCount();
-  updateBlockedCount();
-  buildCompaniesFromDomainMap();
-  updateStats();
+  afterBlockCleanup();
   showFlaggedView();
 }
 
@@ -8312,21 +8329,11 @@ function addBlockedDomains(raw) {
     // If it's an email address, extract domain
     const domain = entry.includes('@') ? entry.split('@')[1] : entry;
     if (domain && !SKIP_DOMAINS.has(domain) && !(domainMap[domain] && domainMap[domain].is_blocked)) {
-      ensureDomain(domain);
-      domainMap[domain].is_blocked = true;
-      supabaseSaveCompanyField(domain, 'is_blocked', true);
+      markDomainBlocked(domain);
       added++;
     }
   }
-  if (added > 0) {
-    saveBlockedDomains();
-    // Rebuild companies to remove newly blocked domains
-    buildCompaniesFromDomainMap();
-    renderTable();
-    updateStats();
-    updateBlockedCount();
-    renderBlockedDomainsList();
-  }
+  if (added > 0) { afterBlockCleanup(); }
 }
 
 function removeBlockedDomain(domain) {
@@ -8341,13 +8348,8 @@ function removeBlockedDomain(domain) {
 }
 
 function blockDomainFromDetail(domain) {
-  ensureDomain(domain.toLowerCase());
-  domainMap[domain.toLowerCase()].is_blocked = true;
-  supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
-  buildCompaniesFromDomainMap();
-  renderTable();
-  updateStats();
-  updateBlockedCount();
+  markDomainBlocked(domain);
+  afterBlockCleanup();
   closePanel();
 }
 
@@ -8830,18 +8832,8 @@ async function inboxDeleteSelected() {
 function inboxBlockDomain(domain) {
   if (!domain) return;
   if (!confirm('Block "' + domain + '"? All emails and contacts from this domain will be removed from your CRM.')) return;
-  ensureDomain(domain.toLowerCase());
-  domainMap[domain.toLowerCase()].is_blocked = true;
-  supabaseSaveCompanyField(domain.toLowerCase(), 'is_blocked', true);
-  inboxEmails = inboxEmails.filter(e => e.domain !== domain);
-  inboxSelectedIds.clear();
-  renderInbox();
-  updateInboxBadge();
-  buildCompaniesFromDomainMap();
-  renderTable();
-  updateStats();
-  updateBlockedCount();
-  renderBlockedDomainsList();
+  markDomainBlocked(domain);
+  afterBlockCleanup();
 }
 
 function inboxBlockSelected() {
@@ -8856,17 +8848,8 @@ function inboxBlockSelected() {
     ? 'Block "' + domList[0] + '"? All emails and contacts from this domain will be removed from your CRM.'
     : 'Block ' + domList.length + ' domains from your CRM?\n\n' + domList.join(', ');
   if (!confirm(msg)) return;
-  for (const d of domList) { ensureDomain(d); domainMap[d].is_blocked = true; supabaseSaveCompanyField(d, 'is_blocked', true); }
-  saveBlockedDomains();
-  inboxEmails = inboxEmails.filter(e => !domains.has(e.domain));
-  inboxSelectedIds.clear();
-  renderInbox();
-  updateInboxBadge();
-  buildCompaniesFromDomainMap();
-  renderTable();
-  updateStats();
-  updateBlockedCount();
-  renderBlockedDomainsList();
+  for (const d of domList) { markDomainBlocked(d); }
+  afterBlockCleanup();
 }
 
 function updateInboxBadge() {
@@ -9493,9 +9476,8 @@ async function aiExecuteAction(action) {
       return 'Updated contact title for ' + action.email;
     }
     if (action.type === 'block_domain' && action.domain) {
-      ensureDomain(action.domain);
-      domainMap[action.domain].is_blocked = true;
-      supabaseSaveCompanyField(action.domain, 'is_blocked', true);
+      markDomainBlocked(action.domain);
+      afterBlockCleanup();
       return 'Blocked ' + action.domain;
     }
     if (action.type === 'compose_email' && action.to) {
