@@ -1,6 +1,0 @@
-PAT_STATUS=SET
-PAT_PREFIX=ghp_ZK4sK5...
-PAT_TYPE=classic
-HTTP_RESPONSE=HTTP/2 200 
-SCOPES=x-oauth-scopes: repo
-access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset

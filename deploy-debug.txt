@@ -1,4 +1,0 @@
-url_format=VALID (Vercel deploy hook)
-http_status=201
-response_body:
-{"job":{"id":"uYambCqcpKlGFANMw48n","state":"PENDING","createdAt":1772736183939}}

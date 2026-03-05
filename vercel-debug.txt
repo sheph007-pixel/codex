@@ -1,1 +1,0 @@
-{"error":{"code":"cron_jobs_limits_reached","message":"Hobby accounts are limited to daily cron jobs. This cron expression (*/5 * * * *) would run more than once per day. Upgrade to the Pro plan to unlock all Cron Jobs features on Vercel.","link":"https://vercel.link/3Fpeeb1"}}
