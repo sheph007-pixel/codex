@@ -17,16 +17,36 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Checkout main
+      - name: Checkout main with PAT
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-      - name: Merge branch and push to main
-        if: github.event_name == 'push'
+          token: ${{ secrets.PAT }}
+          persist-credentials: true
+      - name: Verify PAT works
         env:
           PAT: ${{ secrets.PAT }}
+        run: |
+          if [ -z "$PAT" ]; then
+            echo "::error::PAT secret is empty or not set!"
+            exit 1
+          fi
+          # Test PAT against GitHub API
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $PAT" \
+            "https://api.github.com/repos/${{ github.repository }}")
+          echo "PAT API test: HTTP $RESPONSE"
+          if [ "$RESPONSE" != "200" ]; then
+            echo "::error::PAT is invalid or doesn't have repo access (HTTP $RESPONSE)"
+            exit 1
+          fi
+          # Check scopes
+          SCOPES=$(curl -s -I -H "Authorization: token $PAT" \
+            "https://api.github.com/repos/${{ github.repository }}" | grep -i "x-oauth-scopes" || echo "no scopes header")
+          echo "PAT scopes: $SCOPES"
+      - name: Merge branch and push to main
+        if: github.event_name == 'push'
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
           echo "Merging $BRANCH into main..."
@@ -34,13 +54,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin "$BRANCH"
           git merge "origin/$BRANCH" --no-edit -m "Auto-merge $BRANCH into main"
-          if [ -n "$PAT" ]; then
-            echo "Pushing with PAT (will trigger Vercel integration)..."
-            git remote set-url origin "https://x-access-token:${PAT}@github.com/${{ github.repository }}.git"
-          else
-            echo "::warning::PAT secret not set. Using GITHUB_TOKEN (won't trigger Vercel)."
-            echo "To fix: add a PAT secret at Settings > Secrets > Actions"
-          fi
+          echo "Pushing to main (using PAT from checkout)..."
           git push origin main
       - name: Re-checkout main after merge
         uses: actions/checkout@v4
