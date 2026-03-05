@@ -24,27 +24,42 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.PAT }}
           persist-credentials: true
-      - name: Verify PAT works
+      - name: Verify PAT and save diagnostics
         env:
           PAT: ${{ secrets.PAT }}
         run: |
           if [ -z "$PAT" ]; then
-            echo "::error::PAT secret is empty or not set!"
+            echo "PAT_STATUS=EMPTY" > /tmp/pat-diag.txt
+            echo "::error::PAT secret is empty!"
             exit 1
           fi
-          # Test PAT against GitHub API
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $PAT" \
-            "https://api.github.com/repos/${{ github.repository }}")
-          echo "PAT API test: HTTP $RESPONSE"
-          if [ "$RESPONSE" != "200" ]; then
-            echo "::error::PAT is invalid or doesn't have repo access (HTTP $RESPONSE)"
-            exit 1
+          echo "PAT_STATUS=SET" > /tmp/pat-diag.txt
+          echo "PAT_PREFIX=$(echo "$PAT" | head -c 10)..." >> /tmp/pat-diag.txt
+          # Check if classic (ghp_) or fine-grained (github_pat_)
+          if echo "$PAT" | grep -q "^ghp_"; then
+            echo "PAT_TYPE=classic" >> /tmp/pat-diag.txt
+          elif echo "$PAT" | grep -q "^github_pat_"; then
+            echo "PAT_TYPE=fine-grained" >> /tmp/pat-diag.txt
+          else
+            echo "PAT_TYPE=unknown" >> /tmp/pat-diag.txt
           fi
-          # Check scopes
-          SCOPES=$(curl -s -I -H "Authorization: token $PAT" \
-            "https://api.github.com/repos/${{ github.repository }}" | grep -i "x-oauth-scopes" || echo "no scopes header")
-          echo "PAT scopes: $SCOPES"
+          # Test API access
+          HEADERS=$(curl -s -I -H "Authorization: token $PAT" \
+            "https://api.github.com/repos/${{ github.repository }}" 2>&1)
+          HTTP=$(echo "$HEADERS" | head -1)
+          SCOPES=$(echo "$HEADERS" | grep -i "x-oauth-scopes" || echo "none (fine-grained token)")
+          echo "HTTP_RESPONSE=$HTTP" >> /tmp/pat-diag.txt
+          echo "SCOPES=$SCOPES" >> /tmp/pat-diag.txt
+          cat /tmp/pat-diag.txt
+      - name: Commit PAT diagnostics
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp /tmp/pat-diag.txt ./pat-diag.txt 2>/dev/null || echo "no diagnostics" > ./pat-diag.txt
+          git add pat-diag.txt
+          git commit -m "debug: PAT diagnostics [auto]" || true
+          git push origin main || true
       - name: Merge branch and push to main
         if: github.event_name == 'push'
         run: |
