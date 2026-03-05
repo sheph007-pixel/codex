@@ -78,15 +78,16 @@ jobs:
           print(f'URL: https://{d.get(\"url\", \"?\")}')
           print(f'State: {d.get(\"readyState\", d.get(\"status\", \"?\"))}')
           "
-      - name: Save Vercel debug if failed
-        if: steps.vercel.outcome == 'failure'
+      - name: Clean debug files
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp /tmp/vercel-response.json ./vercel-debug.txt 2>/dev/null || echo "no output" > vercel-debug.txt
-          git add vercel-debug.txt
-          git commit -m "debug: vercel deploy response [auto]" || true
-          git push origin main || true
+          rm -f vercel-debug.txt deploy-log.txt pat-diag.txt deploy-debug.txt
+          if git diff --name-only | grep -q "debug\|log\|diag"; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "clean: remove debug files [auto]" || true
+            git push origin main || true
+          fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
