@@ -22,8 +22,11 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
       - name: Merge branch and push to main
         if: github.event_name == 'push'
+        env:
+          PAT: ${{ secrets.PAT }}
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
           echo "Merging $BRANCH into main..."
@@ -31,25 +34,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin "$BRANCH"
           git merge "origin/$BRANCH" --no-edit -m "Auto-merge $BRANCH into main"
+          if [ -n "$PAT" ]; then
+            echo "Pushing with PAT (will trigger Vercel integration)..."
+            git remote set-url origin "https://x-access-token:${PAT}@github.com/${{ github.repository }}.git"
+          else
+            echo "::warning::PAT secret not set. Using GITHUB_TOKEN (won't trigger Vercel)."
+            echo "To fix: add a PAT secret at Settings > Secrets > Actions"
+          fi
           git push origin main
       - name: Re-checkout main after merge
         uses: actions/checkout@v4
         with:
           ref: main
-      - name: Trigger Vercel deploy
-        env:
-          DEPLOY_HOOK: ${{ secrets.AUTODEPLOY }}
-        run: |
-          if [ -z "$DEPLOY_HOOK" ]; then
-            echo "::warning::AUTODEPLOY secret not set, skipping Vercel deploy"
-            exit 0
-          fi
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$DEPLOY_HOOK")
-          echo "Vercel deploy hook returned HTTP $HTTP_CODE"
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "::error::Deploy hook failed with HTTP $HTTP_CODE"
-            exit 1
-          fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
