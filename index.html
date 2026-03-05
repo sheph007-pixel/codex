@@ -2566,11 +2566,12 @@ async function syncToSupabase() {
     // Sync companies + contacts in batches — read all metadata from domainMap (single source of truth)
     const companyRows = [];
     const contactRows = [];
-    for (const [domain, data] of Object.entries(domainMap)) {
+    for (const [rawDomain, data] of Object.entries(domainMap)) {
+      const domain = rawDomain.toLowerCase();
       const row = {
         user_id: supabaseUserId,
         domain: domain,
-        company_name: companyNameCache[domain] || null,
+        company_name: companyNameCache[rawDomain] || companyNameCache[domain] || null,
         company_type: data.company_type ? data.company_type.toLowerCase() : null,
         is_starred: !!data.is_starred,
         is_archived: !!data.is_archived,
@@ -2778,8 +2779,9 @@ async function loadFromSupabase() {
     const newDomainMap = {};
     const companyIdToDomain = {};
     for (const c of companyData) {
-      companyIdToDomain[c.id] = c.domain;
-      newDomainMap[c.domain] = {
+      const domainKey = c.domain ? c.domain.toLowerCase() : c.domain;
+      companyIdToDomain[c.id] = domainKey;
+      newDomainMap[domainKey] = {
         contacts: {},
         sentIds: new Set(),
         receivedIds: new Set(),
@@ -2803,9 +2805,9 @@ async function loadFromSupabase() {
         merged_into: c.merged_into || null,
       };
       // Restore caches from company row
-      if (c.company_name) companyNameCache[c.domain] = c.company_name;
-      if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[c.domain] = c.enrichment;
-      if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[c.domain] = c.custom_data;
+      if (c.company_name) companyNameCache[domainKey] = c.company_name;
+      if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[domainKey] = c.enrichment;
+      if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[domainKey] = c.custom_data;
     }
 
     // Add contacts to their companies
@@ -2889,6 +2891,7 @@ function reapplyPendingEdits() { /* no-op */ }
 
 // ── INDIVIDUAL FIELD SAVES (instant updates) ──
 async function supabaseSaveCompanyField(domain, field, value) {
+  domain = domain ? domain.toLowerCase() : domain;
   addPendingEdit(domain, field, value); // track in case page unloads before save completes
   if (!supabaseReady || !supabaseUserId) return;
   try {
@@ -2938,7 +2941,7 @@ let realtimeConnected = false;
 // Apply a single company row change from Supabase (realtime or poll)
 function applyCompanyChange(row) {
   if (!row || !row.domain) return;
-  const d = row.domain;
+  const d = row.domain.toLowerCase();
   ensureDomain(d);
   const entry = domainMap[d];
   // Update metadata directly on domainMap entry (single source of truth)
@@ -3424,6 +3427,18 @@ function buildCompaniesFromDomainMap() {
         if (domainMap[k].lastDate && (!domainMap[lk].lastDate || domainMap[k].lastDate > domainMap[lk].lastDate)) domainMap[lk].lastDate = domainMap[k].lastDate;
         if (domainMap[k].lastSentDate && (!domainMap[lk].lastSentDate || domainMap[k].lastSentDate > domainMap[lk].lastSentDate)) domainMap[lk].lastSentDate = domainMap[k].lastSentDate;
         if (domainMap[k].lastReceivedDate && (!domainMap[lk].lastReceivedDate || domainMap[k].lastReceivedDate > domainMap[lk].lastReceivedDate)) domainMap[lk].lastReceivedDate = domainMap[k].lastReceivedDate;
+        // Preserve metadata flags from the variant that has them set
+        if (domainMap[k].is_followup && !domainMap[lk].is_followup) domainMap[lk].is_followup = true;
+        if (domainMap[k].followup_date && !domainMap[lk].followup_date) domainMap[lk].followup_date = domainMap[k].followup_date;
+        if (domainMap[k].is_starred && !domainMap[lk].is_starred) domainMap[lk].is_starred = true;
+        if (domainMap[k].is_archived && !domainMap[lk].is_archived) domainMap[lk].is_archived = true;
+        if (domainMap[k].is_blocked && !domainMap[lk].is_blocked) domainMap[lk].is_blocked = true;
+        if (domainMap[k].is_flagged && !domainMap[lk].is_flagged) domainMap[lk].is_flagged = true;
+        if (domainMap[k].company_type && !domainMap[lk].company_type) domainMap[lk].company_type = domainMap[k].company_type;
+        if (domainMap[k].proposal_stage && !domainMap[lk].proposal_stage) domainMap[lk].proposal_stage = domainMap[k].proposal_stage;
+        if (domainMap[k].merged_into && !domainMap[lk].merged_into) domainMap[lk].merged_into = domainMap[k].merged_into;
+        if (domainMap[k]._dbSentCount > (domainMap[lk]._dbSentCount || 0)) domainMap[lk]._dbSentCount = domainMap[k]._dbSentCount;
+        if (domainMap[k]._dbReceivedCount > (domainMap[lk]._dbReceivedCount || 0)) domainMap[lk]._dbReceivedCount = domainMap[k]._dbReceivedCount;
         for (const [e, c] of Object.entries(domainMap[k].contacts)) {
           const le = e.toLowerCase();
           if (!domainMap[lk].contacts[le]) domainMap[lk].contacts[le] = c;
