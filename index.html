@@ -2228,6 +2228,8 @@ function setContactDisplayName(email, name) {
   contactNameOverrides[le] = name;
   contactNameDirty = true;
   saveContactNameOverrides();
+  // Save directly to contacts table for cross-device sync
+  supabaseSaveContactField(le, { name: name });
   // Also update domainMap in-memory
   for (var domain in domainMap) {
     if (domainMap[domain].contacts[le]) {
@@ -2947,6 +2949,16 @@ async function supabaseSaveCompanyField(domain, field, value) {
   } catch(e) { console.warn('Supabase: field save failed:', e); }
 }
 
+async function supabaseSaveContactField(email, fields) {
+  if (!supabaseReady || !supabaseUserId) return;
+  try {
+    var row = Object.assign({ user_id: supabaseUserId, email: email.toLowerCase() }, fields);
+    await supabaseClient
+      .from('contacts')
+      .upsert(row, { onConflict: 'user_id,email' });
+  } catch(e) { console.warn('Supabase: contact field save failed:', e); }
+}
+
 async function supabaseSaveSetting(key, value) {
   if (!supabaseReady || !supabaseUserId) return;
   try {
@@ -3019,6 +3031,64 @@ function applyCompanyChange(row) {
   }
 }
 
+// Apply a contact row change from Supabase realtime
+function applyContactChange(row) {
+  if (!row || !row.email) return;
+  var le = row.email.toLowerCase();
+  // Find which domain has this contact and update it
+  for (var domain in domainMap) {
+    if (domainMap[domain].contacts[le]) {
+      if (row.name) domainMap[domain].contacts[le].name = row.name;
+      if (row.is_starred) {
+        starredContacts[domain] = le;
+      } else if (starredContacts[domain] === le) {
+        delete starredContacts[domain];
+      }
+      if (row.sent_count !== undefined) domainMap[domain].contacts[le]._dbSentCount = row.sent_count || 0;
+      if (row.received_count !== undefined) domainMap[domain].contacts[le]._dbReceivedCount = row.received_count || 0;
+      break;
+    }
+  }
+  // Update contact name override if name changed
+  if (row.name && row.name !== le) contactNameOverrides[le] = row.name;
+}
+
+// Apply a setting change from Supabase realtime
+function applySettingChange(key, value) {
+  try {
+    var val = typeof value === 'string' ? JSON.parse(value) : value;
+    switch (key) {
+      case 'contact_name_overrides':
+        if (val) Object.assign(contactNameOverrides, val);
+        // Update domainMap contact names
+        for (var email in contactNameOverrides) {
+          for (var d in domainMap) {
+            if (domainMap[d].contacts[email]) {
+              domainMap[d].contacts[email].name = contactNameOverrides[email];
+              break;
+            }
+          }
+        }
+        buildCompaniesFromDomainMap();
+        renderTable();
+        break;
+      case 'starred_contacts':
+        if (val) Object.assign(starredContacts, val);
+        buildCompaniesFromDomainMap();
+        renderTable();
+        break;
+      case 'company_name_cache':
+        if (val) { for (var k in val) { companyNameCache[k] = val[k]; } }
+        buildCompaniesFromDomainMap();
+        renderTable();
+        break;
+      case 'column_config':
+        if (val && val.length > 0) { columnConfig = val; renderTableHeader(); renderTable(); }
+        break;
+    }
+  } catch(e) { console.warn('Realtime: setting parse error for ' + key + ':', e); }
+}
+
 // cacheMetadataToLocalStorage removed — Supabase is sole source of truth
 function cacheMetadataToLocalStorage() { /* no-op */ }
 
@@ -3029,31 +3099,55 @@ function startRealtimeSubscription() {
 
   try {
     supabaseChannel = supabaseClient
-      .channel('companies-realtime')
+      .channel('crm-realtime')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'companies',
         filter: 'user_id=eq.' + supabaseUserId
       }, (payload) => {
-        // Skip if we're mid-sync (we're the one writing)
         if (supabaseSyncInProgress) return;
         const row = payload.new || payload.old;
         if (!row) return;
         applyCompanyChange(row);
-        // Re-render to show the change
         buildCompaniesFromDomainMap();
         renderTable();
         updateStats();
         updateBlockedCount();
         updateFlaggedCount();
-        cacheMetadataToLocalStorage();
-        console.log('Realtime: applied change for ' + row.domain);
+        updateFollowUpCount();
+        console.log('Realtime: company change for ' + row.domain);
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'contacts',
+        filter: 'user_id=eq.' + supabaseUserId
+      }, (payload) => {
+        if (supabaseSyncInProgress) return;
+        const row = payload.new || payload.old;
+        if (!row) return;
+        applyContactChange(row);
+        buildCompaniesFromDomainMap();
+        renderTable();
+        console.log('Realtime: contact change for ' + row.email);
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'user_settings',
+        filter: 'user_id=eq.' + supabaseUserId
+      }, (payload) => {
+        if (supabaseSyncInProgress) return;
+        const row = payload.new;
+        if (!row) return;
+        applySettingChange(row.key, row.value);
+        console.log('Realtime: setting change for ' + row.key);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           realtimeConnected = true;
-          console.log('Supabase Realtime: connected');
+          console.log('Supabase Realtime: connected (companies + contacts + settings)');
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           realtimeConnected = false;
           console.warn('Supabase Realtime: disconnected, falling back to polling');
@@ -3081,27 +3175,41 @@ async function refreshFromSupabase() {
   if (Date.now() - lastRefreshTime < 10000) return;
   refreshInProgress = true;
   try {
-    // Fetch only company metadata (not contacts/settings — those are heavy)
-    const remoteCompanies = await supabaseFetchAll('companies',
-      'domain, company_name, company_type, is_starred, is_archived, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date',
-      { user_id: supabaseUserId });
+    // Fetch companies, contacts, and key settings in parallel
+    const [remoteCompanies, remoteContacts, settingsResult] = await Promise.all([
+      supabaseFetchAll('companies',
+        'domain, company_name, company_type, is_starred, is_archived, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date',
+        { user_id: supabaseUserId }),
+      supabaseFetchAll('contacts', 'email, name, is_starred, sent_count, received_count', { user_id: supabaseUserId }),
+      supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId)
+        .in('key', ['contact_name_overrides', 'starred_contacts', 'company_name_cache'])
+    ]);
     if (!remoteCompanies || remoteCompanies.length === 0) throw new Error('no data');
 
     for (const row of remoteCompanies) {
       applyCompanyChange(row);
     }
-    const changed = true; // always re-render — data may have new contacts/counts from other devices
-    if (changed) {
-      buildCompaniesFromDomainMap();
-      renderTable();
-      updateStats();
-      updateBlockedCount();
-      updateFlaggedCount();
-      updateLastSyncDisplay();
-      updateSupabaseBadge('success');
-      cacheMetadataToLocalStorage();
-      saveLocalCache();
+    // Apply contact changes
+    if (remoteContacts) {
+      for (const ct of remoteContacts) {
+        applyContactChange(ct);
+      }
     }
+    // Apply settings changes
+    if (settingsResult && settingsResult.data) {
+      for (const s of settingsResult.data) {
+        applySettingChange(s.key, s.value);
+      }
+    }
+    buildCompaniesFromDomainMap();
+    renderTable();
+    updateStats();
+    updateBlockedCount();
+    updateFlaggedCount();
+    updateFollowUpCount();
+    updateLastSyncDisplay();
+    updateSupabaseBadge('success');
+    saveLocalCache();
     lastRefreshTime = Date.now();
   } catch(e) {
     console.warn('Supabase: refresh failed:', e);
@@ -5568,11 +5676,12 @@ function bulkBlockFlagged() {
     : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.slice(0, 20).join(', ') + (domains.length > 20 ? '\n...and ' + (domains.length - 20) + ' more' : '');
   if (!confirm(msg)) return;
   for (const d of domains) {
-    if (domainMap[d]) domainMap[d].is_flagged = false;
-    ensureDomain(d.toLowerCase());
-    domainMap[d.toLowerCase()].is_blocked = true;
-    supabaseSaveCompanyField(d, 'is_flagged', false);
-    supabaseSaveCompanyField(d.toLowerCase(), 'is_blocked', true);
+    var dl = d.toLowerCase();
+    ensureDomain(dl);
+    domainMap[dl].is_flagged = false;
+    domainMap[dl].is_blocked = true;
+    supabaseSaveCompanyField(dl, 'is_flagged', false);
+    supabaseSaveCompanyField(dl, 'is_blocked', true);
   }
   selectedFlaggedDomains.clear();
   updateFlaggedCount();
@@ -6901,13 +7010,17 @@ document.addEventListener('keydown', function(e) {
 });
 
 function toggleStar(domain, email) {
-  if (starredContacts[domain] === email) {
+  var prevStarred = starredContacts[domain];
+  if (prevStarred === email) {
     delete starredContacts[domain];
   } else {
     starredContacts[domain] = email;
   }
   saveStarredContacts();
   saveLocalCache();
+  // Save is_starred directly to contacts table for cross-device sync
+  if (prevStarred) supabaseSaveContactField(prevStarred, { is_starred: false });
+  if (starredContacts[domain]) supabaseSaveContactField(email, { is_starred: true });
   buildCompaniesFromDomainMap();
   renderTable();
   updateStats();
