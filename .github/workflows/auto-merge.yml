@@ -42,53 +42,23 @@ jobs:
         with:
           ref: main
       - name: Deploy to Vercel Production
+        continue-on-error: true
+        id: vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::warning::VERCEL_TOKEN not set, skipping Vercel deploy"
+            echo "::warning::VERCEL_TOKEN not set, skipping"
             exit 0
           fi
-          # Find the Vercel project linked to this repo
-          PROJECT_INFO=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v9/projects")
-          # Find project linked to this GitHub repo
-          PROJECT_ID=$(echo "$PROJECT_INFO" | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          for p in data.get('projects', []):
-              link = p.get('link', {})
-              if link.get('type') == 'github' and link.get('repo') == 'sheph007-pixel/codex':
-                  print(p['id'])
-                  sys.exit(0)
-          # Fallback: try project named 'crm'
-          for p in data.get('projects', []):
-              if p.get('name') == 'crm':
-                  print(p['id'])
-                  sys.exit(0)
-          print('NOT_FOUND')
-          " 2>/dev/null)
-          if [ "$PROJECT_ID" = "NOT_FOUND" ] || [ -z "$PROJECT_ID" ]; then
-            echo "::error::No Vercel project found for this repo"
-            # Save project list for debugging
-            echo "$PROJECT_INFO" | python3 -c "
-            import json, sys
-            data = json.load(sys.stdin)
-            for p in data.get('projects', []):
-                link = p.get('link', {})
-                print(f'  Project: {p[\"name\"]} - repo: {link.get(\"repo\", \"none\")} - type: {link.get(\"type\", \"none\")}')
-            " 2>/dev/null
-            exit 1
-          fi
-          echo "Found project ID: $PROJECT_ID"
-          # Create deployment via API
+          # Create deployment for "crm" project via Vercel API
           DEPLOY_RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $VERCEL_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.vercel.com/v13/deployments" \
             -d "{
               \"name\": \"crm\",
-              \"project\": \"$PROJECT_ID\",
+              \"project\": \"prj_InuvqogNr3rzD54Ap6HEe5nX2RdW\",
               \"target\": \"production\",
               \"gitSource\": {
                 \"type\": \"github\",
@@ -96,39 +66,27 @@ jobs:
                 \"ref\": \"main\"
               }
             }")
+          # Save response for debugging
+          echo "$DEPLOY_RESPONSE" > /tmp/vercel-response.json
           echo "$DEPLOY_RESPONSE" | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
           if 'error' in d:
               print(f'Error: {d[\"error\"].get(\"message\", d[\"error\"])}')
               sys.exit(1)
-          print(f'Deployment: {d.get(\"id\", \"unknown\")}')
-          print(f'URL: {d.get(\"url\", \"unknown\")}')
-          print(f'Status: {d.get(\"readyState\", d.get(\"status\", \"unknown\"))}')
-          " 2>/dev/null
-          echo "Vercel production deploy triggered!"
-      - name: Save deploy debug
-        if: failure()
+          print(f'Deployment ID: {d.get(\"id\", \"?\")}')
+          print(f'URL: https://{d.get(\"url\", \"?\")}')
+          print(f'State: {d.get(\"readyState\", d.get(\"status\", \"?\"))}')
+          "
+      - name: Save Vercel debug if failed
+        if: steps.vercel.outcome == 'failure'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "Deploy step failed - saving last output" > deploy-log.txt
-          # Re-run the API calls with output saved
-          PROJECT_INFO=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v9/projects" 2>&1)
-          echo "=== Projects ===" >> deploy-log.txt
-          echo "$PROJECT_INFO" | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          for p in data.get('projects', []):
-              link = p.get('link', {})
-              print(f'Project: {p[\"name\"]} id:{p[\"id\"]} repo:{link.get(\"repo\",\"none\")} type:{link.get(\"type\",\"none\")}')
-          " >> deploy-log.txt 2>&1
-          git add deploy-log.txt
-          git commit -m "debug: deploy error log [auto]" || true
+          cp /tmp/vercel-response.json ./vercel-debug.txt 2>/dev/null || echo "no output" > vercel-debug.txt
+          git add vercel-debug.txt
+          git commit -m "debug: vercel deploy response [auto]" || true
           git push origin main || true
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
