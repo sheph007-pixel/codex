@@ -5261,7 +5261,7 @@ var blockedSortAsc = false;
 
 function sortBlockedBy(col) {
   if (blockedSortCol === col) { blockedSortAsc = !blockedSortAsc; }
-  else { blockedSortCol = col; blockedSortAsc = col === 'domain'; }
+  else { blockedSortCol = col; blockedSortAsc = col === 'company' || col === 'contact'; }
   renderBlockedPage();
 }
 
@@ -5272,13 +5272,27 @@ function renderBlockedPage() {
   var filtered = q ? allDomains.filter(function(d) { return d.toLowerCase().includes(q); }) : allDomains;
 
   // Build data with counts
+  var nowMs = Date.now();
   var rows = filtered.map(function(domain) {
     var data = domainMap[domain];
     var sent = data ? Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0) : 0;
     var recv = data ? Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0) : 0;
-    var contacts = data ? Object.keys(data.contacts).length : 0;
     var lastDate = data ? (data.lastDate || null) : null;
-    return { domain: domain, data: data, sent: sent, received: recv, total: sent + recv, contacts: contacts, lastDate: lastDate };
+    var daysSince = lastDate ? Math.floor((nowMs - lastDate.getTime()) / 86400000) : 99999;
+    // Primary contact: most interactions
+    var primaryName = '—';
+    var primaryEmail = '';
+    if (data && data.contacts) {
+      var best = null; var bestCount = -1;
+      for (var ce in data.contacts) {
+        var ct = data.contacts[ce];
+        var ctTotal = (ct.sentIds ? ct.sentIds.size : 0) + (ct.receivedIds ? ct.receivedIds.size : 0) + (ct._dbSentCount || 0) + (ct._dbReceivedCount || 0);
+        if (ctTotal > bestCount) { bestCount = ctTotal; best = ct; primaryEmail = ce; }
+      }
+      if (best) primaryName = best.name || primaryEmail;
+    }
+    var companyName = companyNameCache[domain] || displayDomain(domain);
+    return { domain: domain, companyName: companyName, primaryName: primaryName, primaryEmail: primaryEmail, sent: sent, received: recv, total: sent + recv, lastDate: lastDate, daysSince: daysSince };
   });
 
   // Sort
@@ -5286,13 +5300,10 @@ function renderBlockedPage() {
   var asc = blockedSortAsc;
   rows.sort(function(a, b) {
     var va, vb;
-    if (col === 'domain') { va = a.domain.toLowerCase(); vb = b.domain.toLowerCase(); return asc ? va.localeCompare(vb) : vb.localeCompare(va); }
-    if (col === 'last') {
-      va = a.lastDate ? a.lastDate.getTime() : 0;
-      vb = b.lastDate ? b.lastDate.getTime() : 0;
-    } else {
-      va = a[col] || 0; vb = b[col] || 0;
-    }
+    if (col === 'company') { va = a.companyName.toLowerCase(); vb = b.companyName.toLowerCase(); return asc ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (col === 'contact') { va = a.primaryName.toLowerCase(); vb = b.primaryName.toLowerCase(); return asc ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (col === 'days') { va = a.daysSince; vb = b.daysSince; }
+    else { va = a[col] || 0; vb = b[col] || 0; }
     return asc ? va - vb : vb - va;
   });
 
@@ -5304,36 +5315,38 @@ function renderBlockedPage() {
     return;
   }
 
-  function thArrow(c) { return '<span class="sort-arrow">' + (blockedSortCol === c ? (blockedSortAsc ? '&#9650;' : '&#9660;') : '&#9650;') + '</span>'; }
+  function thArrow(c) { return '<span class="sort-arrow">' + (blockedSortCol === c ? (blockedSortAsc ? '&#9650;' : '&#9660;') : '') + '</span>'; }
   function thClass(c) { return blockedSortCol === c ? ' class="sorted"' : ''; }
 
   var html = '<table class="blocked-table"><thead><tr>' +
-    '<th' + thClass('domain') + ' onclick="sortBlockedBy(\'domain\')">Domain ' + thArrow('domain') + '</th>' +
+    '<th' + thClass('company') + ' onclick="sortBlockedBy(\'company\')">Company ' + thArrow('company') + '</th>' +
+    '<th' + thClass('contact') + ' onclick="sortBlockedBy(\'contact\')">Primary Contact ' + thArrow('contact') + '</th>' +
+    '<th' + thClass('total') + ' onclick="sortBlockedBy(\'total\')" style="text-align:right">Total Emails ' + thArrow('total') + '</th>' +
     '<th' + thClass('sent') + ' onclick="sortBlockedBy(\'sent\')" style="text-align:right">Sent ' + thArrow('sent') + '</th>' +
     '<th' + thClass('received') + ' onclick="sortBlockedBy(\'received\')" style="text-align:right">Received ' + thArrow('received') + '</th>' +
-    '<th' + thClass('total') + ' onclick="sortBlockedBy(\'total\')" style="text-align:right">Total ' + thArrow('total') + '</th>' +
-    '<th' + thClass('last') + ' onclick="sortBlockedBy(\'last\')">Last Activity ' + thArrow('last') + '</th>' +
+    '<th' + thClass('days') + ' onclick="sortBlockedBy(\'days\')" style="text-align:right">Days Since Contact ' + thArrow('days') + '</th>' +
     '<th style="width:70px"></th>' +
     '</tr></thead><tbody>';
 
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     var dSafe = r.domain.replace(/'/g, "\\'");
-    var contactMeta = r.contacts > 0 ? r.contacts + ' contact' + (r.contacts !== 1 ? 's' : '') : '';
-    var lastStr = r.lastDate ? r.lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    var color = COLORS[Math.abs(r.domain.split('').reduce(function(h, c) { return (h * 31 + c.charCodeAt(0)) | 0; }, 0)) % COLORS.length];
+    var daysStr = r.daysSince < 99999 ? r.daysSince : '—';
 
     html += '<tr>' +
       '<td><div class="blocked-domain-cell">' +
-        '<div class="blocked-domain-icon">' + r.domain[0].toUpperCase() + '</div>' +
+        '<div class="blocked-domain-icon" style="background:' + color + '">' + companyLogoHTML(r.domain, color, r.companyName) + '</div>' +
         '<div class="blocked-domain-info">' +
-          '<span class="blocked-domain-name">' + esc(displayDomain(r.domain)) + '</span>' +
-          (contactMeta ? '<span class="blocked-domain-meta">' + contactMeta + '</span>' : '') +
+          '<span class="blocked-domain-name">' + esc(r.companyName) + '</span>' +
+          '<span class="blocked-domain-meta">' + esc(displayDomain(r.domain)) + '</span>' +
         '</div>' +
       '</div></td>' +
+      '<td>' + esc(r.primaryName) + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + r.total + '</td>' +
       '<td style="text-align:right">' + r.sent + '</td>' +
       '<td style="text-align:right">' + r.received + '</td>' +
-      '<td style="text-align:right;font-weight:600">' + r.total + '</td>' +
-      '<td><span style="color:var(--text2)">' + lastStr + '</span></td>' +
+      '<td style="text-align:right;color:var(--text2)">' + daysStr + '</td>' +
       '<td><button class="blocked-domain-unblock" onclick="unblockDomain(\'' + dSafe + '\')">Unblock</button></td>' +
     '</tr>';
   }
