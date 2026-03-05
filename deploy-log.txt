@@ -1,0 +1,6 @@
+Deploy step failed - saving last output
+=== Projects ===
+Project: codex id:prj_1syZ8hFZ5Np95bfgrAytkdSbncF9 repo:codex type:github
+Project: crm id:prj_InuvqogNr3rzD54Ap6HEe5nX2RdW repo:codex type:github
+Project: college id:prj_GYi22AP4ekIkN7F5kdcuf7tB3siL repo:College type:github
+Project: benefits id:prj_ld8qzaJn66DcppVkMEb7F3V3fM4Q repo:Benefits type:github
