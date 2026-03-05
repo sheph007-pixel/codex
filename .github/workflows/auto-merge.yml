@@ -36,43 +36,20 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-      - name: Trigger Vercel deploy via deploy hook
+      - name: Trigger Vercel deploy
         env:
           DEPLOY_HOOK: ${{ secrets.AUTODEPLOY }}
         run: |
-          mkdir -p /tmp/deploy-debug
           if [ -z "$DEPLOY_HOOK" ]; then
-            echo "AUTODEPLOY secret is NOT set" > /tmp/deploy-debug/result.txt
-            echo "::error::AUTODEPLOY secret is NOT set"
-            exit 1
+            echo "::warning::AUTODEPLOY secret not set, skipping Vercel deploy"
+            exit 0
           fi
-          # Validate URL format
-          if echo "$DEPLOY_HOOK" | grep -qE '^https://api\.vercel\.com/v1/integrations/deploy/'; then
-            echo "url_format=VALID (Vercel deploy hook)" > /tmp/deploy-debug/result.txt
-          else
-            echo "url_format=INVALID" > /tmp/deploy-debug/result.txt
-            echo "url_prefix=$(echo "$DEPLOY_HOOK" | head -c 40)..." >> /tmp/deploy-debug/result.txt
-          fi
-          echo "Triggering Vercel deploy hook..."
-          HTTP_CODE=$(curl -s -o /tmp/deploy-debug/response.json -w "%{http_code}" -X POST "$DEPLOY_HOOK")
-          echo "http_status=$HTTP_CODE" >> /tmp/deploy-debug/result.txt
-          echo "response_body:" >> /tmp/deploy-debug/result.txt
-          cat /tmp/deploy-debug/response.json >> /tmp/deploy-debug/result.txt
-          echo "" >> /tmp/deploy-debug/result.txt
-          cat /tmp/deploy-debug/result.txt
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$DEPLOY_HOOK")
+          echo "Vercel deploy hook returned HTTP $HTTP_CODE"
           if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
             echo "::error::Deploy hook failed with HTTP $HTTP_CODE"
             exit 1
           fi
-      - name: Commit deploy hook debug to repo
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp /tmp/deploy-debug/result.txt ./deploy-debug.txt 2>/dev/null || echo "no debug output" > ./deploy-debug.txt
-          git add deploy-debug.txt
-          git commit -m "debug: deploy hook response [auto]" || true
-          git push origin main || true
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
