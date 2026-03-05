@@ -1017,7 +1017,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         </button>
       </div>
       <div class="inbox-tabs">
-        <button class="inbox-tab active" data-tab="primary" onclick="switchInboxTab('primary',this)">Primary</button>
+        <button class="inbox-tab active" data-tab="primary" onclick="switchInboxTab('primary',this)">Primary <span class="tab-badge" id="inboxTabPrimary" style="display:none">0</span></button>
         <button class="inbox-tab" data-tab="all" onclick="switchInboxTab('all',this)">Emails <span class="tab-badge" id="inboxTabAll" style="display:none">0</span></button>
         <button class="inbox-tab" data-tab="followups" onclick="switchInboxTab('followups',this)">Follow Ups <span class="tab-badge" id="inboxTabFollowUp" style="display:none">0</span></button>
       </div>
@@ -8686,13 +8686,30 @@ function renderInbox() {
 
   // Update badges
   var fuCount = 0;
-  for (var fd in domainMap) { if (domainMap[fd].is_followup && !domainMap[fd].is_archived && !domainMap[fd].is_blocked) fuCount++; }
+  var primaryFuCount = 0;
+  var curMonthStr = new Date().toISOString().slice(0, 7);
+  for (var fd in domainMap) {
+    if (domainMap[fd].is_followup && !domainMap[fd].is_archived && !domainMap[fd].is_blocked) {
+      fuCount++;
+      var fdDate = (domainMap[fd].followup_date || '').substring(0, 10);
+      if (!fdDate || fdDate.slice(0, 7) <= curMonthStr) primaryFuCount++;
+    }
+  }
+  var primaryTotal = items.length + primaryFuCount;
+  var primaryBadge = document.getElementById('inboxTabPrimary');
+  primaryBadge.textContent = primaryTotal;
+  primaryBadge.style.display = primaryTotal ? '' : 'none';
   const allBadge = document.getElementById('inboxTabAll');
   const fuBadge = document.getElementById('inboxTabFollowUp');
   allBadge.textContent = inboxEmails.length;
   allBadge.style.display = inboxEmails.length ? '' : 'none';
   fuBadge.textContent = fuCount;
   fuBadge.style.display = fuCount ? '' : 'none';
+  // Sidebar inbox badge = primary total
+  var sidebarNum = document.getElementById('inboxCountNum');
+  var sidebarBadge = document.getElementById('inboxCount');
+  if (sidebarNum) sidebarNum.textContent = primaryTotal;
+  if (sidebarBadge) sidebarBadge.style.display = primaryTotal ? '' : 'none';
   document.getElementById('inboxTopCount').textContent = '';
 
   // Show/hide bulk action buttons
@@ -8741,6 +8758,12 @@ function renderInbox() {
       var rawFd = (domainMap[fc.domain] && domainMap[fc.domain].followup_date) || '';
       var fDate = rawFd ? rawFd.substring(0, 10) : '';
       var fOverdue = fDate && fDate < todayStr;
+      // Format as MM-DD-YY
+      var fDateDisplay = '';
+      if (fDate) {
+        var fp = fDate.split('-');
+        fDateDisplay = fp[1] + '-' + fp[2] + '-' + fp[0].substring(2);
+      }
       var fInitials = fc.contact ? fc.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2).toUpperCase() : '';
       var fCid = fc.id;
       html += '<div class="inbox-row" style="cursor:pointer" onclick="openDetail(' + fCid + ')">' +
@@ -8753,12 +8776,11 @@ function renderInbox() {
         '<div class="inbox-row-content">' +
           '<div class="inbox-row-subject" style="display:flex;align-items:center;gap:6px">' +
             '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="' + (fOverdue ? 'var(--red,#e8453c)' : 'var(--text2)') + '" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>' +
-            '<span>Follow Up' + (fDate ? ' — Due ' + fDate : '') + '</span>' +
+            '<span>' + (fDateDisplay ? fDateDisplay : 'No date') + '</span>' +
           '</div>' +
-          '<div class="inbox-row-preview">' + esc(fc.lastActivity || 'No recent activity') + '</div>' +
         '</div>' +
         '<div class="inbox-row-meta">' +
-          '<div class="inbox-row-time" style="' + (fOverdue ? 'color:var(--red,#e8453c);font-weight:600' : '') + '">' + (fDate ? (fOverdue ? 'Overdue' : fDate) : 'No date') + '</div>' +
+          '<div class="inbox-row-time" style="' + (fOverdue ? 'color:var(--red,#e8453c);font-weight:600' : '') + '">' + (fDateDisplay ? (fOverdue ? 'Overdue' : fDateDisplay) : 'No date') + '</div>' +
         '</div>' +
       '</div>';
     }
