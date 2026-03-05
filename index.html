@@ -8557,12 +8557,17 @@ function renderInbox() {
   let html = '';
 
   // Primary tab: show follow-up tasks section at top
-  if (inboxCurrentTab === 'primary' && fuCount > 0) {
+  if (inboxCurrentTab === 'primary') {
+    var todayStr = new Date().toISOString().slice(0, 10);
+    var curMonth = todayStr.slice(0, 7); // "YYYY-MM"
     var fuData = companies.filter(function(c) {
       var dm = domainMap[c.domain];
-      return dm && dm.is_followup && !dm.is_archived && !dm.is_blocked;
+      if (!dm || !dm.is_followup || dm.is_archived || dm.is_blocked) return false;
+      var fd = (dm.followup_date || '').substring(0, 10);
+      if (!fd) return true; // no date — always show
+      if (fd.slice(0, 7) <= curMonth) return true; // overdue or due this month
+      return false;
     });
-    var todayStr = new Date().toISOString().slice(0, 10);
     fuData.sort(function(a, b) {
       var da = ((domainMap[a.domain] && domainMap[a.domain].followup_date) || '').substring(0, 10);
       var db2 = ((domainMap[b.domain] && domainMap[b.domain].followup_date) || '').substring(0, 10);
@@ -8571,6 +8576,7 @@ function renderInbox() {
       if (da && db2) return da.localeCompare(db2);
       return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
     });
+    if (fuData.length > 0) {
     html += '<div class="inbox-date-label" style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg> Follow Ups</div>';
     for (var fi = 0; fi < fuData.length; fi++) {
       var fc = fuData[fi];
@@ -8603,6 +8609,7 @@ function renderInbox() {
     if (items.length) {
       html += '<div class="inbox-date-label" style="margin-top:8px">Recent Emails</div>';
     }
+    } // end fuData.length > 0
   }
 
   // Group emails by date
