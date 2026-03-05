@@ -1052,6 +1052,21 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       </div>
     </div>
 
+    <!-- ARCHIVED COMPANIES VIEW -->
+    <div class="blocked-page-view" id="archivedPageView">
+      <div class="blocked-page-toolbar">
+        <h2>Archived Companies</h2>
+        <span class="blocked-count-label" id="archivedPageCount">0 companies</span>
+        <div class="blocked-page-search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="blocked-page-search" id="archivedPageSearch" placeholder="Search archived companies..." oninput="renderArchivedPage()">
+        </div>
+      </div>
+      <div class="blocked-page-list" id="archivedPageList">
+        <div style="padding:40px;text-align:center;color:var(--text2)">No archived companies yet</div>
+      </div>
+    </div>
+
     <!-- FULL-PAGE COMPANY DETAIL -->
     <div class="detail-page" id="detailPage">
       <div class="dp-topbar">
@@ -4749,7 +4764,7 @@ function filterByType(type, el) {
   showingArchived = false;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -4782,7 +4797,7 @@ function filterByStatCard(type, el) {
   showingArchived = false;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -5106,7 +5121,7 @@ function filterByStatus(status, el) {
   showingArchived = false;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -5126,7 +5141,7 @@ function filterByClientType(type, el) {
   showingArchived = false;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -5462,7 +5477,7 @@ function showFlaggedView() {
   showingArchived = false;
   showingFlagged = true;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -6133,7 +6148,7 @@ function showFollowUp() {
   currentFilter = 'all';
   currentTypeFilter = 'all';
   tableShowAll = false;
-  hideInbox(); hideSettingsView(); hideBlockedView();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -6285,43 +6300,115 @@ function showArchivedView() {
   showingArchived = true;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();
-  document.getElementById('crmContent').classList.add('active');
-  document.getElementById('crmContent').style.display = '';
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideArchivedView();
+  document.getElementById('crmContent').classList.remove('active');
+  document.getElementById('archivedPageView').classList.add('active');
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.getElementById('archivedViewItem').classList.add('active');
-  setViewTitle('Archived', false);
+  document.getElementById('archivedPageSearch').value = '';
+  renderArchivedPage();
+}
 
-  const tbody = document.getElementById('tableBody');
-  const archivedDomains = dmFilter('is_archived').sort();
+function hideArchivedView() {
+  showingArchived = false;
+  document.getElementById('archivedPageView').classList.remove('active');
+}
 
-  if (archivedDomains.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text2)">No archived companies. Companies you archive will appear here.</td></tr>';
-    clearSelection();
-    updateViewTitleCount(0);
+var archivedSortCol = 'total';
+var archivedSortAsc = false;
+
+function sortArchivedBy(col) {
+  if (archivedSortCol === col) { archivedSortAsc = !archivedSortAsc; }
+  else { archivedSortCol = col; archivedSortAsc = col === 'company' || col === 'contact'; }
+  renderArchivedPage();
+}
+
+function renderArchivedPage() {
+  var q = (document.getElementById('archivedPageSearch').value || '').toLowerCase();
+  var allDomains = dmFilter('is_archived');
+  var totalArchived = allDomains.length;
+  var filtered = q ? allDomains.filter(function(d) { return d.toLowerCase().includes(q) || (companyNameCache[d] || '').toLowerCase().includes(q); }) : allDomains;
+
+  var nowMs = Date.now();
+  var rows = filtered.map(function(domain) {
+    var data = domainMap[domain];
+    var sent = data ? Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0) : 0;
+    var recv = data ? Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0) : 0;
+    var lastDate = data ? (data.lastDate || null) : null;
+    var daysSince = lastDate ? Math.floor((nowMs - lastDate.getTime()) / 86400000) : 99999;
+    var primaryName = '—';
+    var primaryEmail = '';
+    if (data && data.contacts) {
+      var best = null; var bestCount = -1;
+      for (var ce in data.contacts) {
+        var ct = data.contacts[ce];
+        var ctTotal = (ct.sentIds ? ct.sentIds.size : 0) + (ct.receivedIds ? ct.receivedIds.size : 0) + (ct._dbSentCount || 0) + (ct._dbReceivedCount || 0);
+        if (ctTotal > bestCount) { bestCount = ctTotal; best = ct; primaryEmail = ce; }
+      }
+      if (best) primaryName = best.name || primaryEmail;
+    }
+    var companyName = companyNameCache[domain] || displayDomain(domain);
+    return { domain: domain, companyName: companyName, primaryName: primaryName, sent: sent, received: recv, total: sent + recv, lastDate: lastDate, daysSince: daysSince };
+  });
+
+  var col = archivedSortCol;
+  var asc = archivedSortAsc;
+  rows.sort(function(a, b) {
+    var va, vb;
+    if (col === 'company') { va = a.companyName.toLowerCase(); vb = b.companyName.toLowerCase(); return asc ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (col === 'contact') { va = a.primaryName.toLowerCase(); vb = b.primaryName.toLowerCase(); return asc ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (col === 'days') { va = a.daysSince; vb = b.daysSince; }
+    else { va = a[col] || 0; vb = b[col] || 0; }
+    return asc ? va - vb : vb - va;
+  });
+
+  document.getElementById('archivedPageCount').textContent = totalArchived + ' compan' + (totalArchived !== 1 ? 'ies' : 'y') + (q ? ' (' + filtered.length + ' shown)' : '');
+
+  var list = document.getElementById('archivedPageList');
+  if (!rows.length) {
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2)">' + (q ? 'No archived companies match "' + esc(q) + '"' : 'No archived companies yet. Companies you archive will appear here.') + '</div>';
     return;
   }
 
-  tbody.innerHTML = archivedDomains.map(domain => {
-    const data = domainMap[domain];
-    const totalSent = data ? data.sentIds.size : 0;
-    const totalRecv = data ? data.receivedIds.size : 0;
-    const contactCount = data ? Object.keys(data.contacts).length : 0;
-    const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
+  function thArrow(c) { return '<span class="sort-arrow">' + (archivedSortCol === c ? (archivedSortAsc ? '&#9650;' : '&#9660;') : '') + '</span>'; }
+  function thClass(c) { return archivedSortCol === c ? ' class="sorted"' : ''; }
 
-    return '<tr>' +
-      '<td class="col-check"></td>' +
-      '<td><div class="company-cell"><div class="company-logo" style="background:var(--text2);opacity:.6">' + domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name" style="opacity:.7">' + esc(name) + '</span><span class="company-domain">' + esc(displayDomain(domain)) + '</span></div></div></td>' +
-      '<td colspan="5" style="color:var(--text2);font-size:12px">' + totalSent + ' sent, ' + totalRecv + ' received, ' + contactCount + ' contact' + (contactCount !== 1 ? 's' : '') + '</td>' +
-      '<td colspan="2" style="text-align:right">' +
-        '<button class="btn btn-ghost btn-sm" onclick="unarchiveCompany(\'' + domain.replace(/'/g, "\\'") + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Restore</button>' +
-      '</td>' +
+  var html = '<table class="blocked-table"><thead><tr>' +
+    '<th' + thClass('company') + ' onclick="sortArchivedBy(\'company\')">Company ' + thArrow('company') + '</th>' +
+    '<th' + thClass('contact') + ' onclick="sortArchivedBy(\'contact\')">Primary Contact ' + thArrow('contact') + '</th>' +
+    '<th' + thClass('total') + ' onclick="sortArchivedBy(\'total\')" style="text-align:right">Total Emails ' + thArrow('total') + '</th>' +
+    '<th' + thClass('sent') + ' onclick="sortArchivedBy(\'sent\')" style="text-align:right">Sent ' + thArrow('sent') + '</th>' +
+    '<th' + thClass('received') + ' onclick="sortArchivedBy(\'received\')" style="text-align:right">Received ' + thArrow('received') + '</th>' +
+    '<th' + thClass('days') + ' onclick="sortArchivedBy(\'days\')" style="text-align:right">Days Since Contact ' + thArrow('days') + '</th>' +
+    '<th style="width:70px"></th>' +
+    '</tr></thead><tbody>';
+
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var dSafe = r.domain.replace(/'/g, "\\'");
+    var color = COLORS[Math.abs(r.domain.split('').reduce(function(h, c) { return (h * 31 + c.charCodeAt(0)) | 0; }, 0)) % COLORS.length];
+    var daysStr = r.daysSince < 99999 ? r.daysSince : '—';
+
+    html += '<tr>' +
+      '<td><div class="blocked-domain-cell">' +
+        '<div class="blocked-domain-icon" style="background:' + color + '">' + companyLogoHTML(r.domain, color, r.companyName) + '</div>' +
+        '<div class="blocked-domain-info">' +
+          '<span class="blocked-domain-name">' + esc(r.companyName) + '</span>' +
+          '<span class="blocked-domain-meta">' + esc(displayDomain(r.domain)) + '</span>' +
+        '</div>' +
+      '</div></td>' +
+      '<td>' + esc(r.primaryName) + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + r.total + '</td>' +
+      '<td style="text-align:right">' + r.sent + '</td>' +
+      '<td style="text-align:right">' + r.received + '</td>' +
+      '<td style="text-align:right;color:var(--text2)">' + daysStr + '</td>' +
+      '<td><button class="blocked-domain-unblock" onclick="unarchiveCompany(\'' + dSafe + '\')">Restore</button></td>' +
     '</tr>';
-  }).join('');
+  }
 
-  clearSelection();
-  updateViewTitleCount(archivedDomains.length);
+  html += '</tbody></table>';
+  list.innerHTML = html;
 }
 
 function updateArchivedCount() {
@@ -8294,7 +8381,7 @@ function showSettingsView() {
   showingArchived = false;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideBlockedView();
+  hideBlockedView(); hideArchivedView();
   // Hide all other views
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.remove('active');
@@ -8478,7 +8565,7 @@ function showInbox() {
   showingArchived = false;
   showingFlagged = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideSettingsView(); hideBlockedView();
+  hideSettingsView(); hideBlockedView(); hideArchivedView();
   setViewTitle(null, false);
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
