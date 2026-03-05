@@ -4,6 +4,9 @@ on:
     branches: ["claude/*"]
 permissions:
   contents: write
+concurrency:
+  group: "auto-merge"
+  cancel-in-progress: true
 jobs:
   merge:
     runs-on: ubuntu-latest

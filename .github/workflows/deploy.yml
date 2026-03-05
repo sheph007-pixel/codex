@@ -2,9 +2,7 @@ name: Deploy static site to GitHub Pages
 
 on:
   push:
-    branches: ["main", "claude/*"]
-  repository_dispatch:
-    types: [vercel-deploy]
+    branches: ["main"]
   workflow_run:
     workflows: ["Auto-merge to main"]
     types: [completed]
