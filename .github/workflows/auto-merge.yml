@@ -41,19 +41,33 @@ jobs:
           DEPLOY_HOOK: ${{ secrets.AUTODEPLOY }}
         run: |
           if [ -z "$DEPLOY_HOOK" ]; then
-            echo "⚠ AUTODEPLOY secret not set, skipping Vercel deploy hook"
-            exit 0
+            echo "::error::AUTODEPLOY secret is NOT set. Go to repo Settings > Secrets and add it."
+            echo "The value should be your Vercel Deploy Hook URL from:"
+            echo "  Vercel > Project Settings > Git > Deploy Hooks"
+            echo "It looks like: https://api.vercel.com/v1/integrations/deploy/prj_XXXX/YYYY"
+            exit 1
+          fi
+          # Validate URL format (without revealing the actual URL)
+          if echo "$DEPLOY_HOOK" | grep -qE '^https://api\.vercel\.com/v1/integrations/deploy/'; then
+            echo "✓ Deploy hook URL format looks correct (Vercel deploy hook)"
+          else
+            echo "::warning::Deploy hook URL does NOT look like a Vercel deploy hook."
+            echo "Expected format: https://api.vercel.com/v1/integrations/deploy/prj_XXXX/YYYY"
+            echo "Actual URL starts with: $(echo "$DEPLOY_HOOK" | head -c 30)..."
           fi
           echo "Triggering Vercel deploy hook..."
-          HTTP_CODE=$(curl -s -o /tmp/deploy-response.txt -w "%{http_code}" -X POST "$DEPLOY_HOOK")
+          HTTP_CODE=$(curl -v -o /tmp/deploy-response.txt -w "%{http_code}" -X POST "$DEPLOY_HOOK" 2>/tmp/deploy-headers.txt)
+          echo "=== Response Body ==="
           cat /tmp/deploy-response.txt
           echo ""
-          echo "HTTP status: $HTTP_CODE"
+          echo "=== HTTP Status: $HTTP_CODE ==="
+          echo "=== Response Headers ==="
+          grep -i "< " /tmp/deploy-headers.txt || true
           if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "::warning::Deploy hook returned HTTP $HTTP_CODE"
-          else
-            echo "Deploy hook triggered successfully"
+            echo "::error::Deploy hook failed with HTTP $HTTP_CODE"
+            exit 1
           fi
+          echo "Deploy hook triggered successfully with HTTP $HTTP_CODE"
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
