@@ -8545,7 +8545,7 @@ function renderInbox() {
   document.getElementById('inboxDeleteBtn').style.display = hasSelection ? '' : 'none';
   document.getElementById('inboxBlockBtn').style.display = hasSelection ? '' : 'none';
 
-  if (!items.length) {
+  if (!items.length && !(inboxCurrentTab === 'primary' && fuCount > 0)) {
     list.innerHTML = `<div class="inbox-empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
       <p>${inboxCurrentTab === 'primary' ? 'All caught up!' : 'No emails yet'}</p>
@@ -8554,7 +8554,58 @@ function renderInbox() {
     return;
   }
 
-  // Group by date
+  let html = '';
+
+  // Primary tab: show follow-up tasks section at top
+  if (inboxCurrentTab === 'primary' && fuCount > 0) {
+    var fuData = companies.filter(function(c) {
+      var dm = domainMap[c.domain];
+      return dm && dm.is_followup && !dm.is_archived && !dm.is_blocked;
+    });
+    var todayStr = new Date().toISOString().slice(0, 10);
+    fuData.sort(function(a, b) {
+      var da = ((domainMap[a.domain] && domainMap[a.domain].followup_date) || '').substring(0, 10);
+      var db2 = ((domainMap[b.domain] && domainMap[b.domain].followup_date) || '').substring(0, 10);
+      if (da && !db2) return -1;
+      if (!da && db2) return 1;
+      if (da && db2) return da.localeCompare(db2);
+      return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
+    });
+    html += '<div class="inbox-date-label" style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg> Follow Ups</div>';
+    for (var fi = 0; fi < fuData.length; fi++) {
+      var fc = fuData[fi];
+      var fColor = COLORS[fc.id % COLORS.length];
+      var fDomain = fc.domain.replace(/'/g, "\\'");
+      var rawFd = (domainMap[fc.domain] && domainMap[fc.domain].followup_date) || '';
+      var fDate = rawFd ? rawFd.substring(0, 10) : '';
+      var fOverdue = fDate && fDate < todayStr;
+      var fInitials = fc.contact ? fc.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2).toUpperCase() : '';
+      var fCid = fc.id;
+      html += '<div class="inbox-row" style="cursor:pointer" onclick="openDetail(' + fCid + ')">' +
+        '<div class="inbox-check"></div>' +
+        '<div class="inbox-row-avatar" style="background:' + fColor + '">' + (fInitials || '?') + '</div>' +
+        '<div class="inbox-row-from">' +
+          '<span class="inbox-from-name">' + esc(fc.contact || '—') + '</span>' +
+          '<span class="from-company">' + esc(fc.name) + '</span>' +
+        '</div>' +
+        '<div class="inbox-row-content">' +
+          '<div class="inbox-row-subject" style="display:flex;align-items:center;gap:6px">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="' + (fOverdue ? 'var(--red,#e8453c)' : 'var(--text2)') + '" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>' +
+            '<span>Follow Up' + (fDate ? ' — Due ' + fDate : '') + '</span>' +
+          '</div>' +
+          '<div class="inbox-row-preview">' + esc(fc.lastActivity || 'No recent activity') + '</div>' +
+        '</div>' +
+        '<div class="inbox-row-meta">' +
+          '<div class="inbox-row-time" style="' + (fOverdue ? 'color:var(--red,#e8453c);font-weight:600' : '') + '">' + (fDate ? (fOverdue ? 'Overdue' : fDate) : 'No date') + '</div>' +
+        '</div>' +
+      '</div>';
+    }
+    if (items.length) {
+      html += '<div class="inbox-date-label" style="margin-top:8px">Recent Emails</div>';
+    }
+  }
+
+  // Group emails by date
   const groups = {};
   const today = new Date(); today.setHours(0,0,0,0);
   const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
@@ -8570,8 +8621,6 @@ function renderInbox() {
     if (!groups[label]) groups[label] = [];
     groups[label].push(item);
   }
-
-  let html = '';
   for (const [label, groupItems] of Object.entries(groups)) {
     html += `<div class="inbox-date-label">${esc(label)}</div>`;
     for (const item of groupItems) {
