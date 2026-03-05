@@ -8522,11 +8522,7 @@ function renderInbox() {
   const list = document.getElementById('inboxList');
   let items = [...inboxEmails];
 
-  // Primary tab: show only unread / recent emails (last 7 days)
-  if (inboxCurrentTab === 'primary') {
-    var weekAgoTs = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    items = items.filter(function(e) { return !e.isRead || e.date.getTime() > weekAgoTs; });
-  }
+  // Primary tab: show all emails (same as Emails tab) plus follow-ups
 
   // Update badges
   var fuCount = 0;
