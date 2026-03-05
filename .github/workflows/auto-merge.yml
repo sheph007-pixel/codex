@@ -62,7 +62,7 @@ jobs:
               \"target\": \"production\",
               \"gitSource\": {
                 \"type\": \"github\",
-                \"repo\": \"sheph007-pixel/codex\",
+                \"repoId\": 1165902589,
                 \"ref\": \"main\"
               }
             }")
