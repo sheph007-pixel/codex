@@ -23,4 +23,20 @@ jobs:
           git merge "origin/$BRANCH" --no-edit -m "Auto-merge $BRANCH into main"
           git push origin main
       - name: Trigger Vercel deploy via deploy hook
-        run: curl -s -X POST "${{ secrets.AUTODEPLOY }}"
+        env:
+          DEPLOY_HOOK: ${{ secrets.AUTODEPLOY }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::error::AUTODEPLOY secret is not set"
+            exit 1
+          fi
+          echo "Triggering Vercel deploy hook..."
+          HTTP_CODE=$(curl -s -o /tmp/deploy-response.txt -w "%{http_code}" -X POST "$DEPLOY_HOOK")
+          cat /tmp/deploy-response.txt
+          echo ""
+          echo "HTTP status: $HTTP_CODE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Deploy hook failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Deploy hook triggered successfully"
