@@ -45,51 +45,23 @@ jobs:
         id: vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::warning::VERCEL_TOKEN not set, skipping"
             exit 0
           fi
-          echo "Getting latest main SHA..."
-          MAIN_SHA=$(git rev-parse HEAD)
-          echo "Main SHA: $MAIN_SHA"
-          echo "Creating Vercel deployment for crm project..."
-          DEPLOY_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://api.vercel.com/v13/deployments" \
-            -d "{
-              \"name\": \"crm\",
-              \"project\": \"prj_InuvqogNr3rzD54Ap6HEe5nX2RdW\",
-              \"target\": \"production\",
-              \"gitSource\": {
-                \"type\": \"github\",
-                \"repoId\": 1165902589,
-                \"ref\": \"main\",
-                \"sha\": \"$MAIN_SHA\"
-              }
-            }")
-          HTTP_CODE=$(echo "$DEPLOY_RESPONSE" | tail -1)
-          BODY=$(echo "$DEPLOY_RESPONSE" | head -n -1)
-          echo "Vercel API HTTP: $HTTP_CODE"
-          echo "$BODY" | python3 -c "
-          import json, sys
-          try:
-              d = json.load(sys.stdin)
-              if 'error' in d:
-                  print(f'ERROR: {d[\"error\"].get(\"message\", d[\"error\"])}')
-                  sys.exit(1)
-              print(f'Deployment ID: {d.get(\"id\", \"?\")}')
-              print(f'URL: https://{d.get(\"url\", \"?\")}')
-              print(f'State: {d.get(\"readyState\", d.get(\"status\", \"?\"))}')
-          except:
-              print(f'Raw response: {sys.stdin.read()[:500]}')
-              sys.exit(1)
-          "
-          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
-            echo "::error::Vercel deployment failed with HTTP $HTTP_CODE"
-            echo "$BODY"
-            exit 1
+          npm install -g vercel@latest
+          echo "Deploying to Vercel production..."
+          # If org/project secrets not set, try linking
+          if [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "No org/project secrets, using direct deploy..."
+            vercel deploy --prod --yes --token=$VERCEL_TOKEN 2>&1
+          else
+            vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+            vercel build --prod --token=$VERCEL_TOKEN
+            vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
           fi
       - name: Clean debug files
         run: |
