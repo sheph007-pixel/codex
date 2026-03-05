@@ -22,7 +22,7 @@ CREATE TABLE companies (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   domain TEXT NOT NULL,
   company_name TEXT,
-  company_type TEXT CHECK (company_type IN ('hot', 'warm', 'cold', NULL)),
+  company_type TEXT CHECK (company_type IN ('Lead', 'Current Client', 'Old Client', NULL)),
   is_starred BOOLEAN DEFAULT false,
   is_archived BOOLEAN DEFAULT false,
   is_flagged BOOLEAN DEFAULT false,

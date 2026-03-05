@@ -217,15 +217,13 @@ th.col-check,td.col-check{width:40px;text-align:center;padding:10px 8px 10px 14p
 [data-placeholder]:empty::before{content:attr(data-placeholder);color:var(--text2);opacity:.5;font-style:italic}
 
 .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
-.badge-hot{background:var(--green-bg);color:var(--green)}
-.badge-warm{background:var(--orange-bg);color:var(--orange)}
-.badge-cold{background:var(--blue-bg);color:var(--blue)}
-.badge-existing{background:rgba(128,90,213,.08);color:#8050d5}
+.badge-lead{background:var(--orange-bg);color:var(--orange)}
+.badge-current{background:var(--green-bg);color:var(--green)}
 .badge-old{background:rgba(95,99,104,.08);color:var(--text2)}
 .type-dropdown{-webkit-appearance:none;appearance:none;border:none;border-radius:12px;padding:4px 24px 4px 10px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;outline:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;transition:.15s}
-.type-dropdown.badge-warm{background-color:var(--orange-bg);color:var(--orange)}
-.type-dropdown.badge-hot{background-color:var(--green-bg);color:var(--green)}
-.type-dropdown.badge-cold{background-color:var(--blue-bg);color:var(--blue)}
+.type-dropdown.badge-lead{background-color:var(--orange-bg);color:var(--orange)}
+.type-dropdown.badge-current{background-color:var(--green-bg);color:var(--green)}
+.type-dropdown.badge-old{background-color:rgba(95,99,104,.08);color:var(--text2)}
 .type-dropdown:hover{opacity:.85}
 .type-dropdown:focus{box-shadow:0 0 0 2px rgba(26,115,232,.2)}
 
@@ -817,23 +815,12 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
-    <div class="sidebar-section">Leads <span class="sidebar-badge" id="leadsCount" style="background:var(--accent);font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;color:#fff;margin-left:4px">0</span></div>
-    <div class="sidebar-item" data-group="segment" onclick="filterByStatus('Hot',this)">
+    <div class="sidebar-section">Types</div>
+    <div class="sidebar-item" data-group="segment" onclick="filterByClientType('Lead',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-      Hot Leads
-      <span class="sidebar-badge" id="hotCount" style="background:var(--green)">0</span>
+      Leads
+      <span class="sidebar-badge" id="leadsCount" style="background:var(--orange)">0</span>
     </div>
-    <div class="sidebar-item" data-group="segment" onclick="filterByStatus('Warm',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-      Warm Leads
-      <span class="sidebar-badge" id="warmCount" style="background:var(--orange)">0</span>
-    </div>
-    <div class="sidebar-item" data-group="segment" onclick="filterByStatus('Cold',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 17.58A5 5 0 0018 8h-1.26A8 8 0 104 16.25"/><path d="M8 16h.01M8 20h.01M12 18h.01M12 22h.01M16 16h.01M16 20h.01"/></svg>
-      Cold Leads
-      <span class="sidebar-badge" id="coldCount" style="background:var(--blue)">0</span>
-    </div>
-    <div class="sidebar-section">Clients <span class="sidebar-badge" id="clientsCount" style="background:var(--accent);font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;color:#fff;margin-left:4px">0</span></div>
     <div class="sidebar-item" data-group="segment" onclick="filterByClientType('Current Client',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       Current Clients
@@ -1629,7 +1616,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 // CONFIG & STATE
 // ──────────────────────────────────────────────
 const COLORS = ['#1a73e8','#1e8e3e','#e8710a','#d93025','#9334e6','#e37400','#0d652d','#185abc','#a142f4','#c5221f','#137333','#1967d2'];
-const STATUS_CLASS = {Hot:'badge-hot',Warm:'badge-warm',Cold:'badge-cold'};
+const TYPE_CLASS = {Lead:'badge-lead','Current Client':'badge-current','Old Client':'badge-old'};
 const SKIP_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','aol.com','icloud.com','me.com','mac.com','msn.com','googlemail.com','protonmail.com','proton.me','ymail.com','mail.com']);
 
 let companies = [];
@@ -1673,7 +1660,6 @@ const BUILTIN_COLUMNS = [
   { id:'sent', label:'Sent', sortKey:'sent', removable:true },
   { id:'received', label:'Received', sortKey:'received', removable:true },
   { id:'emailFlow', label:'Email Ratio', sortKey:null, removable:true },
-  { id:'status', label:'Status', sortKey:'status', removable:true },
   { id:'companyType', label:'Type', sortKey:'companyType', removable:true },
   { id:'score', label:'AI Score', sortKey:'score', removable:true },
   { id:'lastActivity', label:'Last Email', sortKey:'lastActivity', removable:true },
@@ -2112,7 +2098,7 @@ function setCompanyType(domain, type, selectEl) {
     }
   }
   if (selectEl) {
-    var newClass = type === 'Current Client' ? 'badge-hot' : type === 'Old Client' ? 'badge-cold' : 'badge-warm';
+    var newClass = type === 'Current Client' ? 'badge-current' : type === 'Old Client' ? 'badge-old' : 'badge-lead';
     selectEl.className = 'type-dropdown ' + newClass;
   }
 }
@@ -2899,11 +2885,11 @@ async function loadFromSupabase() {
                 columnConfig = val;
                 // Inject companyType column if missing (added after initial release)
                 if (!columnConfig.find(c => c.id === 'companyType')) {
-                  const statusIdx = columnConfig.findIndex(c => c.id === 'status');
                   const typeCol = { id: 'companyType', label: 'Type', type: 'builtin', visible: true };
-                  if (statusIdx >= 0) columnConfig.splice(statusIdx + 1, 0, typeCol);
-                  else columnConfig.push(typeCol);
+                  columnConfig.push(typeCol);
                 }
+                // Remove legacy status column if present
+                columnConfig = columnConfig.filter(c => c.id !== 'status');
               }
               break;
             case 'email_signature': if (val) _emailSignature = val; break;
@@ -3614,20 +3600,6 @@ function buildCompaniesFromDomainMap() {
       (hasTwoWay ? Math.min(Math.round(Math.min(uniqueReceived / uniqueSent, 1) * 9), 9) : 0)
     ));
 
-    // ── LEAD SEGMENT DETERMINATION ──
-    // Auto AI categorized based on received email count:
-    // Hot Lead: 10+ emails received (strong engagement)
-    // Warm Lead: 1-9 emails received (some engagement)
-    // Cold Lead: 0 emails received (outbound only)
-    let status;
-    if (uniqueReceived >= 10) {
-      status = 'Hot';
-    } else if (uniqueReceived >= 1) {
-      status = 'Warm';
-    } else {
-      status = 'Cold';
-    }
-
     // Use cached company name or smart fallback (async lookup happens separately)
     const companyName = companyNameCache[domain]
       || KNOWN_BRANDS[domain]
@@ -3641,7 +3613,6 @@ function buildCompaniesFromDomainMap() {
       contactEmail: primary.email,
       sent: domainSent,
       received: domainReceived,
-      status: status,
       score: score,
       lastDate: mergedLastDate,
       lastActivity: mergedLastDate ? timeAgo(mergedLastDate) : 'unknown',
@@ -4389,11 +4360,9 @@ function buildCellHTML(col, c, color) {
         var total = c.sent + c.received;
         var sentPct = total ? (c.sent / total * 100) : 50;
         return '<div class="email-bar"><div class="bar-track"><div class="bar-sent" style="width:' + sentPct + '%"></div><div class="bar-recv" style="width:' + (100 - sentPct) + '%"></div></div></div>';
-      case 'status':
-        return '<span class="badge ' + STATUS_CLASS[c.status] + '">' + c.status + '</span>';
       case 'companyType':
         var ct = getCompanyType(c.domain);
-        var ctClass = ct === 'Current Client' ? 'badge-hot' : ct === 'Old Client' ? 'badge-cold' : 'badge-warm';
+        var ctClass = ct === 'Current Client' ? 'badge-current' : ct === 'Old Client' ? 'badge-old' : 'badge-lead';
         return '<select class="type-dropdown ' + ctClass + '" onchange="setCompanyType(\'' + esc(c.domain) + '\',this.value,this)" onclick="event.stopPropagation()">'
           + '<option value="Lead"' + (ct === 'Lead' ? ' selected' : '') + '>Lead</option>'
           + '<option value="Current Client"' + (ct === 'Current Client' ? ' selected' : '') + '>Current Client</option>'
@@ -4608,9 +4577,6 @@ function renderTable() {
   // Hide archived and flagged companies from normal views
   data = data.filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_archived && !dm.is_flagged); });
 
-  if (currentFilter !== 'all') {
-    data = data.filter(c => c.status === currentFilter);
-  }
   // Type filter from sidebar
   if (currentTypeFilter !== 'all') {
     data = data.filter(c => getCompanyType(c.domain) === currentTypeFilter);
@@ -4713,19 +4679,9 @@ function updateStats() {
   document.getElementById('statLeads').textContent = leads.toLocaleString();
   document.getElementById('statExisting').textContent = existing.toLocaleString();
   document.getElementById('statOld').textContent = old.toLocaleString();
-  // Update type filter tab counts
-  // Update lead segment counts in sidebar (only count leads, not clients)
-  const leadOnly = active.filter(c => getCompanyType(c.domain) === 'Lead');
-  const hot = leadOnly.filter(c => c.status === 'Hot').length;
-  const warm = leadOnly.filter(c => c.status === 'Warm').length;
-  const cold = leadOnly.filter(c => c.status === 'Cold').length;
-  document.getElementById('hotCount').textContent = hot.toLocaleString();
-  document.getElementById('warmCount').textContent = warm.toLocaleString();
-  document.getElementById('coldCount').textContent = cold.toLocaleString();
   document.getElementById('leadsCount').textContent = leads.toLocaleString();
   document.getElementById('currentClientCount').textContent = existing.toLocaleString();
   document.getElementById('oldClientCount').textContent = old.toLocaleString();
-  document.getElementById('clientsCount').textContent = (existing + old).toLocaleString();
   updateProposalCount();
   updateArchivedCount();
   // Save snapshot for instant render on next page load
@@ -4834,7 +4790,6 @@ function sortTable(key) {
 // FILTER PANEL (Close.com-style)
 // ──────────────────────────────────────────────
 var FILTER_COLUMNS = [
-  { id: 'status', label: 'Status', type: 'select', options: ['Hot','Warm','Cold'] },
   { id: 'companyType', label: 'Type', type: 'select', options: ['Lead','Current Client','Old Client'] },
   { id: 'score', label: 'AI Score', type: 'number' },
   { id: 'sent', label: 'Emails Sent', type: 'number' },
@@ -4888,7 +4843,7 @@ function getOpsForColumn(colId) {
 }
 
 function addFilterRow() {
-  activeFilters.push({ column: 'status', operator: 'is', value: '' });
+  activeFilters.push({ column: 'companyType', operator: 'is', value: '' });
   renderFilterRows();
 }
 
@@ -5024,7 +4979,6 @@ var SORT_COLUMNS = [
   { id: 'contact', label: 'Contact' },
   { id: 'sent', label: 'Emails Sent' },
   { id: 'received', label: 'Emails Received' },
-  { id: 'status', label: 'Status' },
   { id: 'companyType', label: 'Type' },
   { id: 'score', label: 'AI Score' },
   { id: 'lastActivity', label: 'Last Email' },
@@ -5125,8 +5079,8 @@ function toggleSidebar() {
 }
 
 function filterByStatus(status, el) {
-  currentFilter = status;
-  currentTypeFilter = status === 'all' ? 'all' : 'Lead';
+  currentFilter = 'all';
+  currentTypeFilter = status === 'all' ? 'all' : status;
   tableShowAll = false;
   showingProposals = false;
   showingArchived = false;
@@ -5139,8 +5093,7 @@ function filterByStatus(status, el) {
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.sidebar-item[data-group="segment"]').forEach(e => e.classList.remove('active'));
   if (el) el.classList.add('active');
-  var titles = { all: 'All Companies', Hot: 'Hot (10+ emails received)', Warm: 'Warm (1-9 emails received)', Cold: 'Cold (no emails received)' };
-  setViewTitle(titles[status] || status, status === 'all');
+  setViewTitle(status === 'all' ? 'All Companies' : status, status === 'all');
   syncStatCardActive('all');
   clearSelection();
   renderTable();
@@ -5404,17 +5357,13 @@ function openFlaggedDetail(domain) {
     Math.min(contactArr.length * 3, 10) +
     (hasTwoWay ? Math.min(Math.round(Math.min(uniqueReceived / uniqueSent, 1) * 9), 9) : 0)
   ));
-  let status;
-  if (uniqueReceived >= 10) status = 'Hot';
-  else if (uniqueReceived >= 1) status = 'Warm';
-  else status = 'Cold';
   const companyName = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
   const tempId = 99999;
   const tempCompany = {
     id: tempId, name: companyName, domain: domain,
     contact: primary.name, contactEmail: primary.email,
     sent: domainSent, received: domainReceived,
-    status: status, score: score, lastDate: data.lastDate,
+    score: score, lastDate: data.lastDate,
     lastActivity: data.lastDate ? timeAgo(data.lastDate) : 'unknown',
     allContacts: contactArr,
   };
@@ -6978,7 +6927,7 @@ function showCompanyPanel(id) {
 
   // Details row: type, stats, score, enrichment — all inline
   var detailType = getCompanyType(c.domain);
-  var detailTypeClass = detailType === 'Current Client' ? 'badge-hot' : detailType === 'Old Client' ? 'badge-cold' : 'badge-warm';
+  var detailTypeClass = detailType === 'Current Client' ? 'badge-current' : detailType === 'Old Client' ? 'badge-old' : 'badge-lead';
   var enr = enrichmentCache[c.domain] || {};
   var enrParts = [];
   if (enr.industry) enrParts.push('Industry: ' + esc(enr.industry));
@@ -6997,9 +6946,9 @@ function showCompanyPanel(id) {
       '</select>' +
     '</div>' +
     '<div style="width:1px;height:20px;background:var(--border)"></div>' +
-    // Status + Score
+    // Type + Score
     '<div class="dp-co-meta">' +
-      '<span class="badge ' + (STATUS_CLASS[c.status] || '') + '">' + c.status + '</span>' +
+      '<span class="badge ' + (TYPE_CLASS[detailType] || '') + '">' + detailType + '</span>' +
       '<div class="ai-score"><div class="score-ring" style="color:' + scoreColor + '"><svg viewBox="0 0 30 30"><circle class="track" cx="15" cy="15" r="12"/><circle class="fill" cx="15" cy="15" r="12" stroke="' + scoreColor + '" stroke-dasharray="' + circumference + '" stroke-dashoffset="' + offset + '"/></svg>' + c.score + '</div></div>' +
       '<span style="font-size:11px;color:var(--text2)">' + esc(c.lastActivity) + '</span>' +
     '</div>' +
@@ -8607,9 +8556,9 @@ function renderBlockedDomainsList() {
 // EXPORT CSV
 // ──────────────────────────────────────────────
 function exportCSV() {
-  const header = 'Company,Domain,Primary Contact,Contact Email,Sent,Received,Status,AI Score,Last Activity\n';
+  const header = 'Company,Domain,Primary Contact,Contact Email,Sent,Received,Type,AI Score,Last Activity\n';
   const rows = companies.map(c =>
-    `"${c.name}","${c.domain}","${c.contact}","${c.contactEmail}",${c.sent},${c.received},"${c.status}",${c.score},"${c.lastActivity}"`
+    `"${c.name}","${c.domain}","${c.contact}","${c.contactEmail}",${c.sent},${c.received},"${getCompanyType(c.domain)}",${c.score},"${c.lastActivity}"`
   ).join('\n');
   const blob = new Blob([header + rows], {type: 'text/csv'});
   const a = document.createElement('a');
@@ -9036,15 +8985,15 @@ function buildCRMContext() {
 
   var totalSent = 0, totalRecv = 0, totalContacts = 0;
   companies.forEach(function(c) { totalSent += c.sent; totalRecv += c.received; totalContacts += (c.allContacts ? c.allContacts.length : 1); });
-  var hot = companies.filter(function(c) { return c.status === 'Hot'; });
-  var warm = companies.filter(function(c) { return c.status === 'Warm'; });
-  var cold = companies.filter(function(c) { return c.status === 'Cold'; });
+  var leadsCount = companies.filter(function(c) { return getCompanyType(c.domain) === 'Lead'; }).length;
+  var currentCount = companies.filter(function(c) { return getCompanyType(c.domain) === 'Current Client'; }).length;
+  var oldCount = companies.filter(function(c) { return getCompanyType(c.domain) === 'Old Client'; }).length;
   var avgScore = companies.length ? Math.round(companies.reduce(function(s,c) { return s + c.score; }, 0) / companies.length) : 0;
 
   var ctx = 'CRM OVERVIEW:\n';
   ctx += '- ' + companies.length + ' companies, ' + totalContacts + ' contacts\n';
   ctx += '- ' + totalSent + ' emails sent, ' + totalRecv + ' received\n';
-  ctx += '- Hot leads (10+ received): ' + hot.length + ', Warm (1-9 received): ' + warm.length + ', Cold (0 received): ' + cold.length + '\n';
+  ctx += '- Leads: ' + leadsCount + ', Current Clients: ' + currentCount + ', Old Clients: ' + oldCount + '\n';
   ctx += '- Average AI score: ' + avgScore + '/99\n';
   ctx += '- Blocked domains: ' + dmCount('is_blocked') + '\n\n';
 
@@ -9055,7 +9004,7 @@ function buildCRMContext() {
   for (var ci = 0; ci < companyLimit; ci++) {
     var c = sorted[ci];
     var enr = enrichmentCache[c.domain] || {};
-    var line = c.name + ' (' + c.domain + ') — Score: ' + c.score + ', Status: ' + c.status;
+    var line = c.name + ' (' + c.domain + ') — Score: ' + c.score + ', Type: ' + getCompanyType(c.domain);
     line += ', Sent: ' + c.sent + ', Recv: ' + c.received;
     if (c.lastActivity) line += ', Last: ' + c.lastActivity;
     line += ', Contact: ' + c.contact + ' <' + c.contactEmail + '>';
@@ -9405,7 +9354,7 @@ async function aiDraftEmail() {
         contactCtx += 'Recipient: ' + ct.name + ' <' + lowerEmail + '>\n';
         if (ce.title) contactCtx += 'Title: ' + ce.title + '\n';
         if (comp) {
-          contactCtx += 'Company: ' + comp.name + ' (' + domain + '), Status: ' + comp.status + ', Score: ' + comp.score + '\n';
+          contactCtx += 'Company: ' + comp.name + ' (' + domain + '), Type: ' + getCompanyType(comp.domain) + ', Score: ' + comp.score + '\n';
           contactCtx += 'Sent: ' + comp.sent + ', Received: ' + comp.received + '\n';
           if (enr.industry) contactCtx += 'Industry: ' + enr.industry + '\n';
         }
@@ -9901,12 +9850,13 @@ document.getElementById('searchInput').oninput = function() {
       companyMatches.forEach(function(c, idx) {
         const color = COLORS[c.id % COLORS.length];
         const initial = c.name.charAt(0).toUpperCase();
-        const statusColor = c.status === 'Hot' ? 'var(--green)' : c.status === 'Warm' ? 'var(--orange)' : c.status === 'Cold' ? 'var(--blue)' : c.status === 'Existing' ? '#8050d5' : 'var(--text2)';
+        const cType = getCompanyType(c.domain);
+        const typeColor = cType === 'Current Client' ? 'var(--green)' : cType === 'Old Client' ? 'var(--text2)' : 'var(--orange)';
         html += '<div class="gs-item" data-type="company" data-id="' + c.id + '">' +
           '<div class="gs-avatar" style="background:' + color + '">' + esc(initial) + '</div>' +
           '<div class="gs-info"><div class="gs-name">' + esc(c.name) + '</div>' +
           '<div class="gs-meta">' + esc(displayDomain(c.domain)) + ' &middot; ' + c.sent + ' sent, ' + c.received + ' received</div></div>' +
-          '<span class="gs-tag" style="background:' + statusColor + ';color:#fff">' + esc(c.status) + '</span></div>';
+          '<span class="gs-tag" style="background:' + typeColor + ';color:#fff">' + esc(cType) + '</span></div>';
       });
     }
 
