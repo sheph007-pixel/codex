@@ -360,25 +360,14 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .followup-date-input:focus{border-color:var(--accent)}
 .followup-date-input::-webkit-calendar-picker-indicator{cursor:pointer;filter:invert(.5)}
 
-/* ── FOLLOW-UP LIST ── */
-.fu-list-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);transition:background .1s;cursor:pointer}
-.fu-list-row:hover{background:var(--surface2)}
-.fu-list-row.fu-overdue .fu-list-date{color:var(--red)}
-.fu-list-logo{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;font-weight:700;font-size:11px;color:#fff;flex-shrink:0;overflow:hidden;position:relative}
-.fu-list-logo img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0;background:#fff;padding:2px;border-radius:inherit}
-.fu-list-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.fu-list-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fu-list-domain{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fu-list-date{font-size:12px;font-weight:600;color:var(--text2);flex-shrink:0;min-width:110px;text-align:right}
-.fu-list-datepicker{padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text);font-family:inherit;cursor:pointer;outline:none;transition:border .15s}
-.fu-list-datepicker:focus{border-color:var(--accent)}
-.fu-list-datepicker::-webkit-calendar-picker-indicator{cursor:pointer;filter:invert(.5)}
-.fu-list-remove{background:none;border:none;cursor:pointer;color:var(--border);padding:4px;transition:.15s;display:none;align-items:center;flex-shrink:0;border-radius:4px}
-.fu-list-row:hover .fu-list-remove{display:inline-flex}
-.fu-list-remove:hover{color:var(--red);background:rgba(232,69,60,.08)}
-.fu-list-remove svg{width:14px;height:14px}
-.fu-list-empty{text-align:center;padding:60px 20px;color:var(--text2);font-size:13px}
-.fu-list-section{padding:8px 16px 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border)}
+/* ── FOLLOW-UP TABLE ── */
+.fu-datepicker{padding:5px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:12px;color:var(--text);font-family:inherit;cursor:pointer;outline:none;transition:border .15s}
+.fu-datepicker:focus{border-color:var(--accent)}
+.fu-datepicker::-webkit-calendar-picker-indicator{cursor:pointer;filter:invert(.5)}
+.fu-overdue{color:var(--red);font-weight:600}
+.fu-remove{background:none;border:none;cursor:pointer;color:var(--border);padding:4px;transition:.15s;display:inline-flex;align-items:center;border-radius:4px}
+.fu-remove:hover{color:var(--red);background:rgba(232,69,60,.08)}
+.fu-remove svg{width:14px;height:14px}
 
 .dp-primary-badge{font-size:8px;padding:1px 5px;border-radius:8px;background:var(--accent);color:#fff;font-weight:700;flex-shrink:0}
 .dp-left-foot{padding:8px 20px;border-top:1px solid var(--border);flex-shrink:0}
@@ -980,16 +969,19 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       </div>
 
       <!-- TABLE -->
-      <div class="table-wrap">
+      <div class="table-wrap" id="mainTableWrap">
         <table>
           <thead id="tableHead"></thead>
           <tbody id="tableBody"></tbody>
         </table>
       </div>
 
-      <!-- FOLLOW-UP LIST -->
-      <div id="fuListWrap" style="display:none;flex:1;overflow-y:auto">
-        <div id="fuListContainer"></div>
+      <!-- FOLLOW-UP TABLE -->
+      <div class="table-wrap" id="fuListWrap" style="display:none">
+        <table>
+          <thead id="fuTableHead"></thead>
+          <tbody id="fuTableBody"></tbody>
+        </table>
       </div>
     </div>
 
@@ -5869,103 +5861,103 @@ function showFollowUp() {
   document.getElementById('statsSection').style.display = 'none';
   setViewTitle('Follow Up', false);
   clearSelection();
-  // Hide table, show follow-up list
-  document.querySelector('.table-wrap').style.display = 'none';
+  // Hide main table, show follow-up table
+  document.getElementById('mainTableWrap').style.display = 'none';
   document.querySelector('.toolbar').style.display = 'none';
   var colMgr = document.querySelector('.col-mgr-wrap');
   if (colMgr) colMgr.style.display = 'none';
-  document.getElementById('fuListWrap').style.display = 'flex';
+  document.getElementById('fuListWrap').style.display = '';
   renderFollowUpList();
 }
 
 function hideFollowUpKanban() {
   var el = document.getElementById('fuListWrap');
   if (el) el.style.display = 'none';
-  document.querySelector('.table-wrap').style.display = '';
+  document.getElementById('mainTableWrap').style.display = '';
   document.querySelector('.toolbar').style.display = '';
 }
 
 function renderFollowUpList() {
-  var container = document.getElementById('fuListContainer');
+  var thead = document.getElementById('fuTableHead');
+  var tbody = document.getElementById('fuTableBody');
+
+  // Header
+  thead.innerHTML = '<tr>' +
+    '<th>Company</th>' +
+    '<th>Primary Contact</th>' +
+    '<th>Last Email</th>' +
+    '<th>Due Date</th>' +
+    '<th style="width:40px"></th>' +
+    '</tr>';
+
   var data = companies.filter(function(c) {
     var dm = domainMap[c.domain];
     return dm && dm.is_followup && !dm.is_archived && !dm.is_blocked;
   });
 
   if (data.length === 0) {
-    container.innerHTML = '<div class="fu-list-empty">No follow-ups yet. Flag a company to add it here.</div>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">No follow-ups yet. Flag a company to add it here.</td></tr>';
     updateViewTitleCount(0);
     return;
   }
 
   var today = new Date().toISOString().slice(0, 10);
 
-  // Split into: overdue, upcoming (has date), no date
-  var overdue = [], upcoming = [], noDate = [];
-  for (var i = 0; i < data.length; i++) {
-    var c = data[i];
-    var d = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
-    if (!d) {
-      noDate.push(c);
-    } else if (d < today) {
-      overdue.push(c);
-    } else {
-      upcoming.push(c);
-    }
-  }
-
-  // Sort by date ascending
-  function byDate(a, b) {
+  // Sort by due date: items with dates first (ascending), then no-date items by name
+  data.sort(function(a, b) {
     var da = (domainMap[a.domain] && domainMap[a.domain].followup_date) || '';
     var db = (domainMap[b.domain] && domainMap[b.domain].followup_date) || '';
-    return da.localeCompare(db);
+    if (da && !db) return -1;
+    if (!da && db) return 1;
+    if (da && db) return da.localeCompare(db);
+    return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
+  });
+
+  var rows = [];
+  for (var i = 0; i < data.length; i++) {
+    var c = data[i];
+    var color = COLORS[c.id % COLORS.length];
+    var dSafe = c.domain.replace(/'/g, "\\'");
+    var fuDate = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
+    var isOverdue = fuDate && fuDate < today;
+
+    var row = '<tr data-id="' + c.id + '" onclick="openDetail(' + c.id + ')" style="cursor:pointer">';
+
+    // Company
+    row += '<td><div class="company-cell">' +
+      '<div class="company-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name) + '</div>' +
+      '<div class="company-info"><span class="company-name">' + esc(c.name) + '</span>' +
+      '<span class="company-domain">' + esc(displayDomain(c.domain)) + '</span></div></div></td>';
+
+    // Primary Contact
+    var initials = c.contact ? c.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2) : '';
+    var ctTitle = typeof getContactTitle === 'function' ? getContactTitle(c.contactEmail || '') : '';
+    row += '<td><div class="contact-cell">' +
+      '<div class="avatar" style="background:' + color + '">' + contactPhotoHTML(c.contactEmail || '', color, initials) + '</div>' +
+      '<div><span class="contact-name">' + esc(c.contact || '—') + '</span>' +
+      (ctTitle ? '<div class="contact-title">' + esc(ctTitle) + '</div>' : '') +
+      '</div></div></td>';
+
+    // Last Email
+    row += '<td><span style="color:var(--text2)">' + esc(c.lastActivity || '—') + '</span></td>';
+
+    // Due Date
+    row += '<td><input type="date" class="fu-datepicker' + (isOverdue ? ' fu-overdue' : '') + '" value="' + esc(fuDate) + '" ' +
+      'onclick="event.stopPropagation()" ' +
+      'onchange="setFollowUpDate(\'' + dSafe + '\',this.value);renderFollowUpList()" ' +
+      'title="Set follow-up date"></td>';
+
+    // Remove
+    row += '<td><button class="fu-remove" onclick="event.stopPropagation();toggleFollowUp(\'' + dSafe + '\')" title="Remove">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
+      '</button></td>';
+
+    row += '</tr>';
+    rows.push(row);
   }
-  overdue.sort(byDate);
-  upcoming.sort(byDate);
-  noDate.sort(function(a, b) { return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()); });
 
-  var html = '';
-
-  if (overdue.length > 0) {
-    html += '<div class="fu-list-section" style="color:var(--red)">Overdue <span style="font-weight:400">(' + overdue.length + ')</span></div>';
-    for (var oi = 0; oi < overdue.length; oi++) html += buildFollowUpRow(overdue[oi], today, true);
-  }
-
-  if (upcoming.length > 0) {
-    html += '<div class="fu-list-section">Upcoming <span style="font-weight:400">(' + upcoming.length + ')</span></div>';
-    for (var ui = 0; ui < upcoming.length; ui++) html += buildFollowUpRow(upcoming[ui], today, false);
-  }
-
-  if (noDate.length > 0) {
-    html += '<div class="fu-list-section">No Date Set <span style="font-weight:400">(' + noDate.length + ')</span></div>';
-    for (var ni = 0; ni < noDate.length; ni++) html += buildFollowUpRow(noDate[ni], today, false);
-  }
-
-  container.innerHTML = html;
+  tbody.innerHTML = rows.join('');
   updateViewTitleCount(data.length);
-}
-
-function buildFollowUpRow(c, today, isOverdue) {
-  var color = COLORS[c.id % COLORS.length];
-  var dSafe = c.domain.replace(/'/g, "\\'");
-  var fuDate = (domainMap[c.domain] && domainMap[c.domain].followup_date) || '';
-
-  var dateDisplay = '';
-  if (fuDate) {
-    var parts = fuDate.split('-');
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    dateDisplay = months[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10) + ', ' + parts[0];
-  }
-
-  var row = '<div class="fu-list-row' + (isOverdue ? ' fu-overdue' : '') + '" onclick="openDetail(' + c.id + ')">';
-  row += '<div class="fu-list-logo" style="background:' + color + '">' + companyLogoHTML(c.domain, color, c.name) + '</div>';
-  row += '<div class="fu-list-info"><span class="fu-list-name">' + esc(c.name) + '</span><span class="fu-list-domain">' + esc(displayDomain(c.domain)) + '</span></div>';
-  row += '<input type="date" class="fu-list-datepicker" value="' + esc(fuDate) + '" onclick="event.stopPropagation()" onchange="setFollowUpDate(\'' + dSafe + '\',this.value);renderFollowUpList()" title="Set follow-up date">';
-  row += '<button class="fu-list-remove" onclick="event.stopPropagation();toggleFollowUp(\'' + dSafe + '\')" title="Remove from follow-up">';
-  row += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-  row += '</button>';
-  row += '</div>';
-  return row;
 }
 
 function renderFollowUpTable() {
@@ -5980,6 +5972,7 @@ function updateFollowUpCount() {
     if (domainMap[d].is_followup && !domainMap[d].is_archived && !domainMap[d].is_blocked) count++;
   }
   el.textContent = count;
+  el.style.display = count > 0 ? '' : 'none';
 }
 
 // ──────────────────────────────────────────────
