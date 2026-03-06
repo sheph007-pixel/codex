@@ -43,16 +43,49 @@ jobs:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.PAT }}
-      - name: Push main to trigger Vercel deploy
+      - name: Deploy to Vercel Production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN secret is not set — cannot deploy to Vercel"
+            exit 1
+          fi
+          echo "Triggering Vercel production deployment via API..."
+          DEPLOY_RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.vercel.com/v13/deployments" \
+            -d "{
+              \"name\": \"crm\",
+              \"project\": \"prj_InuvqogNr3rzD54Ap6HEe5nX2RdW\",
+              \"target\": \"production\",
+              \"gitSource\": {
+                \"type\": \"github\",
+                \"repoId\": 1165902589,
+                \"ref\": \"main\"
+              }
+            }")
+          echo "$DEPLOY_RESPONSE" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          if 'error' in d:
+              print(f'ERROR: {d[\"error\"].get(\"message\", d[\"error\"])}')
+              sys.exit(1)
+          print(f'Deployment ID: {d.get(\"id\", \"?\")}')
+          print(f'URL: https://{d.get(\"url\", \"?\")}')
+          print(f'State: {d.get(\"readyState\", d.get(\"status\", \"?\"))}')
+          print('Vercel production deploy triggered successfully!')
+          "
+      - name: Push empty commit as backup trigger
+        continue-on-error: true
         env:
           PAT: ${{ secrets.PAT }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Empty commit to trigger Vercel's Git webhook
           git commit --allow-empty -m "deploy: trigger Vercel production [auto]"
           git push https://x-access-token:${PAT}@github.com/${{ github.repository }}.git HEAD:main
-          echo "Pushed empty commit to main — Vercel should deploy"
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
