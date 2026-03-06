@@ -701,13 +701,28 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 .inbox-row-preview{font-size:12px;color:var(--text2);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inbox-row-meta{width:90px;flex-shrink:0;padding:8px 12px 8px 0;text-align:right;font-size:11px;color:var(--text2)}
 .inbox-row-time{white-space:nowrap}
-.inbox-row-actions{display:none;gap:2px;margin-top:4px}
+.inbox-row-actions{display:none;gap:4px;margin-top:4px}
 .inbox-row:hover .inbox-row-actions{display:flex;justify-content:flex-end}
 .inbox-row:hover .inbox-row-time{display:none}
-.inbox-act{background:none;border:none;width:26px;height:26px;border-radius:6px;display:grid;place-items:center;cursor:pointer;color:var(--text2);transition:.12s}
+.inbox-act{background:none;border:none;width:36px;height:36px;border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--text2);transition:.12s}
+.inbox-act svg{width:18px;height:18px}
 .inbox-act:hover{background:var(--surface2);color:var(--text)}
 .inbox-act.act-delete:hover{color:var(--red)}
 .inbox-act.act-block:hover{color:var(--orange,#f59e0b)}
+.block-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;display:none;place-items:center;backdrop-filter:blur(4px)}
+.block-confirm-overlay.active{display:grid}
+.block-confirm-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;max-width:420px;width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.25);text-align:center}
+.block-confirm-box .block-icon{width:48px;height:48px;border-radius:50%;background:rgba(239,68,68,.1);display:grid;place-items:center;margin:0 auto 16px}
+.block-confirm-box .block-icon svg{color:#ef4444;width:24px;height:24px}
+.block-confirm-box h3{margin:0 0 8px;font-size:17px;font-weight:700}
+.block-confirm-box p{margin:0 0 20px;color:var(--text2);font-size:13px;line-height:1.5}
+.block-confirm-box .domain-name{font-weight:700;color:var(--red,#ef4444)}
+.block-confirm-btns{display:flex;gap:10px;justify-content:center}
+.block-confirm-btns .btn-cancel{padding:9px 20px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);cursor:pointer;font-size:13px;font-weight:500}
+.block-confirm-btns .btn-cancel:hover{background:var(--surface2)}
+.block-confirm-btns .btn-block{padding:9px 20px;border:none;border-radius:10px;background:#ef4444;color:#fff;cursor:pointer;font-size:13px;font-weight:600}
+.block-confirm-btns .btn-block:hover{background:#dc2626}
+.block-confirm-btns .btn-block:disabled{opacity:.5;cursor:not-allowed}
 .inbox-act.act-archive:hover{color:var(--green)}
 .inbox-badge-new{background:#e8453c;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;display:inline-flex;align-items:center}
 .sidebar-item.inbox-item-nav{border:1px solid transparent;margin-bottom:4px}
@@ -1543,6 +1558,19 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   </div>
 </div>
 
+<!-- BLOCK DOMAIN DOUBLE-CONFIRM MODAL -->
+<div class="block-confirm-overlay" id="blockConfirmOverlay">
+  <div class="block-confirm-box">
+    <div class="block-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></div>
+    <h3>Block this domain?</h3>
+    <p>Are you sure you want to block <span class="domain-name" id="blockConfirmDomain"></span>?<br>All emails and contacts from this domain will be removed from your CRM and moved to the Blocked List.</p>
+    <div class="block-confirm-btns">
+      <button class="btn-cancel" onclick="closeBlockConfirm()">Cancel</button>
+      <button class="btn-block" id="blockConfirmBtn" onclick="executeBlock()">Yes, Block Domain</button>
+    </div>
+  </div>
+</div>
+
 <!-- FLOATING AI CHAT WIDGET -->
 <div class="ai-fab hidden" id="aiFab" onclick="toggleAIChat()" title="Kennion AI">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -2108,6 +2136,46 @@ function saveBlockedDomains() { /* no-op: individual saves via dmSet / supabaseS
 
 function isBlockedDomain(domain) {
   return SKIP_DOMAINS.has(domain) || !!(domainMap[domain] && domainMap[domain].is_blocked);
+}
+
+// Double-confirm block dialog
+var _blockPendingDomains = [];
+var _blockPendingCallback = null;
+
+function showBlockConfirm(domains, callback) {
+  _blockPendingDomains = Array.isArray(domains) ? domains : [domains];
+  _blockPendingCallback = callback || null;
+  var overlay = document.getElementById('blockConfirmOverlay');
+  var domainEl = document.getElementById('blockConfirmDomain');
+  var btn = document.getElementById('blockConfirmBtn');
+  if (_blockPendingDomains.length === 1) {
+    domainEl.textContent = _blockPendingDomains[0];
+  } else {
+    domainEl.textContent = _blockPendingDomains.length + ' domains (' + _blockPendingDomains.slice(0, 3).join(', ') + (_blockPendingDomains.length > 3 ? '...' : '') + ')';
+  }
+  btn.disabled = true;
+  btn.textContent = 'Wait 2s...';
+  overlay.classList.add('active');
+  // Require 2-second wait before confirm button activates
+  setTimeout(function() {
+    btn.disabled = false;
+    btn.textContent = _blockPendingDomains.length === 1 ? 'Yes, Block Domain' : 'Yes, Block ' + _blockPendingDomains.length + ' Domains';
+  }, 2000);
+}
+
+function closeBlockConfirm() {
+  document.getElementById('blockConfirmOverlay').classList.remove('active');
+  _blockPendingDomains = [];
+  _blockPendingCallback = null;
+}
+
+function executeBlock() {
+  var domains = _blockPendingDomains;
+  var cb = _blockPendingCallback;
+  closeBlockConfirm();
+  for (var i = 0; i < domains.length; i++) { markDomainBlocked(domains[i]); }
+  afterBlockCleanup();
+  if (cb) cb();
 }
 
 // Central helper: mark a domain as blocked and clean up all related state
@@ -5194,14 +5262,7 @@ function bulkBlockSelected() {
     if (c) domains.push(c.domain);
   }
   if (domains.length === 0) return;
-  const msg = domains.length === 1
-    ? 'Block "' + domains[0] + '" from your system?'
-    : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.join(', ');
-  if (!confirm(msg)) return;
-
-  for (const d of domains) { markDomainBlocked(d); }
-  selectedIds.clear();
-  afterBlockCleanup();
+  showBlockConfirm(domains, function() { selectedIds.clear(); });
 }
 
 // ──────────────────────────────────────────────
@@ -5642,15 +5703,14 @@ function unflagCompany(domain) {
 }
 
 function blockFlaggedCompany(domain) {
-  if (!confirm('Block "' + domain + '" from your system? This domain will be permanently hidden.')) return;
-  if (domainMap[domain]) domainMap[domain].is_flagged = false;
-  selectedFlaggedDomains.delete(domain);
-  domainMap[domain.toLowerCase()].is_flagged = false;
-  supabaseSaveCompanyField(domain.toLowerCase(), 'is_flagged', false);
-  markDomainBlocked(domain);
-  updateFlaggedCount();
-  afterBlockCleanup();
-  showFlaggedView();
+  showBlockConfirm(domain, function() {
+    if (domainMap[domain]) domainMap[domain].is_flagged = false;
+    selectedFlaggedDomains.delete(domain);
+    domainMap[domain.toLowerCase()].is_flagged = false;
+    supabaseSaveCompanyField(domain.toLowerCase(), 'is_flagged', false);
+    updateFlaggedCount();
+    showFlaggedView();
+  });
 }
 
 async function recheckFlaggedDomain(domain, btn) {
@@ -5762,20 +5822,16 @@ function bulkUnflagSelected() {
 function bulkBlockFlagged() {
   const domains = [...selectedFlaggedDomains];
   if (domains.length === 0) return;
-  const msg = domains.length === 1
-    ? 'Block "' + domains[0] + '" from your system?'
-    : 'Block ' + domains.length + ' domains from your system?\n\n' + domains.slice(0, 20).join(', ') + (domains.length > 20 ? '\n...and ' + (domains.length - 20) + ' more' : '');
-  if (!confirm(msg)) return;
-  for (const d of domains) {
-    var dl = d.toLowerCase();
-    domainMap[dl].is_flagged = false;
-    supabaseSaveCompanyField(dl, 'is_flagged', false);
-    markDomainBlocked(d);
-  }
-  selectedFlaggedDomains.clear();
-  updateFlaggedCount();
-  afterBlockCleanup();
-  showFlaggedView();
+  showBlockConfirm(domains, function() {
+    for (const d of domains) {
+      var dl = d.toLowerCase();
+      domainMap[dl].is_flagged = false;
+      supabaseSaveCompanyField(dl, 'is_flagged', false);
+    }
+    selectedFlaggedDomains.clear();
+    updateFlaggedCount();
+    showFlaggedView();
+  });
 }
 
 function clearFlaggedSelection() {
@@ -8395,9 +8451,7 @@ function removeBlockedDomain(domain) {
 }
 
 function blockDomainFromDetail(domain) {
-  markDomainBlocked(domain);
-  afterBlockCleanup();
-  closePanel();
+  showBlockConfirm(domain, function() { closePanel(); });
 }
 
 
@@ -8889,9 +8943,7 @@ async function inboxDeleteSelected() {
 
 function inboxBlockDomain(domain) {
   if (!domain) return;
-  if (!confirm('Block "' + domain + '"? All emails and contacts from this domain will be removed from your CRM.')) return;
-  markDomainBlocked(domain);
-  afterBlockCleanup();
+  showBlockConfirm(domain);
 }
 
 function inboxBlockSelected() {
@@ -8901,13 +8953,7 @@ function inboxBlockSelected() {
     if (email && email.domain) domains.add(email.domain.toLowerCase());
   }
   if (!domains.size) return;
-  const domList = [...domains];
-  const msg = domList.length === 1
-    ? 'Block "' + domList[0] + '"? All emails and contacts from this domain will be removed from your CRM.'
-    : 'Block ' + domList.length + ' domains from your CRM?\n\n' + domList.join(', ');
-  if (!confirm(msg)) return;
-  for (const d of domList) { markDomainBlocked(d); }
-  afterBlockCleanup();
+  showBlockConfirm([...domains]);
 }
 
 function updateInboxBadge() {
