@@ -77,6 +77,29 @@ jobs:
           print(f'State: {d.get(\"readyState\", d.get(\"status\", \"?\"))}')
           print('Vercel production deploy triggered successfully!')
           "
+      - name: Wait for Vercel build and verify live site
+        env:
+          PAT: ${{ secrets.PAT }}
+        run: |
+          echo "Waiting 90 seconds for Vercel to build and deploy..."
+          sleep 90
+          echo "Checking live site..."
+          SITE_CONTENT=$(curl -sL --max-time 30 "https://crm-one-sand-78.vercel.app/" || echo "FETCH_FAILED")
+          TITLE=$(echo "$SITE_CONTENT" | grep -oP '<title>\K[^<]+' || echo "NO_TITLE_FOUND")
+          HEADER=$(echo "$SITE_CONTENT" | grep -oP 'class="logo"[^>]*>.*?</div>' | head -1 || echo "NO_HEADER_FOUND")
+          echo "===== LIVE SITE VERIFICATION ====="
+          echo "Title: $TITLE"
+          echo "Header snippet: $HEADER"
+          echo "Content length: $(echo "$SITE_CONTENT" | wc -c) bytes"
+          echo "=================================="
+          # Report result as commit status
+          MAIN_SHA=$(git rev-parse HEAD)
+          curl -s -X POST \
+            -H "Authorization: token $PAT" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/$MAIN_SHA" \
+            -d "{\"state\":\"success\",\"description\":\"Live title: $TITLE\",\"context\":\"vercel-live-check\"}"
+          echo "Reported live check to commit status"
       - name: Push empty commit as backup trigger
         continue-on-error: true
         env:
