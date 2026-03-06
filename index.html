@@ -1304,10 +1304,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
 <div class="bulk-bar" id="bulkBar">
   <span class="bulk-count" id="bulkCount">0 selected</span>
   <div class="bulk-sep"></div>
-  <button class="btn btn-ghost btn-sm" onclick="bulkArchiveSelected()">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
-    Archive
-  </button>
   <button class="btn btn-sm btn-danger" onclick="bulkBlockSelected()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
     Block
@@ -6268,7 +6264,6 @@ function updateFollowUpCount() {
 function archiveCompany(domain) { blockDomain(domain); }
 function showArchivedView() { showBlockedView(); }
 function updateArchivedCount() {}
-function bulkArchiveSelected() { bulkBlockSelected(); }
 
 
 // ──────────────────────────────────────────────
@@ -8331,10 +8326,8 @@ function blockDomainFromDetail(domain) {
 }
 
 function archiveCompanyFromDetail(domain) {
-  // Archive now maps to block
-  markDomainBlocked(domain);
-  afterBlockCleanup();
-  closePanel();
+  // Archive removed — maps to block
+  blockCompanyFromDetail(domain);
 }
 
 function renderBlockedDomainsList() {
