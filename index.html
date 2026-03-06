@@ -63,8 +63,16 @@ body{min-height:100vh;overflow-x:hidden}
 /* ── LAYOUT ── */
 .layout{display:flex;height:calc(100vh - 56px)}
 .sidebar{width:240px;min-width:0;background:#1e1e2d;border-right:1px solid #2a2a3d;padding:10px 10px;flex-shrink:0;display:flex;flex-direction:column;gap:1px;overflow-y:auto;overflow-x:hidden;transition:width .25s cubic-bezier(.4,0,.2,1),padding .25s cubic-bezier(.4,0,.2,1),border .25s}
-.sidebar.collapsed{width:52px!important;min-width:52px;padding:10px 10px!important;overflow:hidden}
-.sidebar.collapsed>*:not(.sidebar-collapse-row){display:none}
+.sidebar.collapsed{width:52px!important;min-width:52px;padding:10px 6px!important;overflow:hidden}
+.sidebar.collapsed>*:not(.sidebar-collapse-row):not(.sidebar-item):not(.sidebar-account):not(.inbox-item-nav){display:none}
+.sidebar.collapsed .sidebar-section{display:none}
+.sidebar.collapsed .sidebar-item{padding:8px 0;justify-content:center;overflow:hidden}
+.sidebar.collapsed .sidebar-item>*:not(svg){display:none}
+.sidebar.collapsed .sidebar-item svg{margin:0;flex-shrink:0}
+.sidebar.collapsed .sidebar-account{padding:6px 2px;overflow:hidden}
+.sidebar.collapsed .sidebar-account .sa-top,.sidebar.collapsed .sidebar-account .sa-last-sync{display:none}
+.sidebar.collapsed .sidebar-account .sa-status-row{justify-content:center}
+.sidebar.collapsed .sidebar-account .sa-status-row>:not(svg){display:none}
 .sidebar-collapse-row{display:flex;align-items:center;justify-content:flex-end;margin-bottom:4px;flex-shrink:0}
 .sidebar.collapsed .sidebar-collapse-row{justify-content:center}
 .sidebar-toggle{background:none;border:1px solid #3a3a4d;color:#9e9eb8;cursor:pointer;width:26px;height:26px;border-radius:6px;display:grid;place-items:center;transition:.15s}
@@ -1655,7 +1663,7 @@ let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
 let fullScanDone = false;
-const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const AUTO_SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes — near real-time sync
 let autoSyncTimer = null;
 let selectedIds = new Set();
 let starredContacts = {};  // { "domain": "email@example.com" }
@@ -4037,9 +4045,18 @@ async function fetchEmailsProgressively(token, useDelta) {
   let page = 0;
   let totalFetched = 0;
   let totalRemoved = 0;
+  // Incremental syncs are capped to prevent runaway full rescans
+  // Full scans have no limit. Delta syncs typically return few pages.
+  // Timestamp fallback syncs are capped at 25 pages (~5000 emails = ~7 days).
+  const MAX_INCREMENTAL_PAGES = 25;
 
   while (url) {
     page++;
+    // Safety: cap incremental (non-full) syncs to prevent accidental full rescans
+    if (useDelta && !isDelta && page > MAX_INCREMENTAL_PAGES) {
+      console.log('Incremental sync capped at ' + MAX_INCREMENTAL_PAGES + ' pages (' + totalFetched + ' emails)');
+      break;
+    }
     // Only show progress banner during full scans (incremental is silent)
     if (!useDelta) {
       updateScanBanner('Scanning all mail... (' + totalFetched.toLocaleString() + ' emails, page ' + page + ')');
@@ -4104,11 +4121,16 @@ async function fetchEmailsProgressively(token, useDelta) {
     }
 
     if (!resp.ok) {
-      // Delta token expired/invalid (410 Gone or 404) — reset to full delta scan
+      // Delta token expired/invalid (410 Gone or 404)
       if (isDelta && (resp.status === 410 || resp.status === 404) && useDelta) {
-        console.warn('Delta token expired (' + resp.status + '), resetting to full sync');
+        console.warn('Delta token expired (' + resp.status + '), falling back to recent emails');
         deltaLink = null;
-        url = 'https://graph.microsoft.com/v1.0/me/messages/delta?$top=200&' + MSG_SELECT;
+        isDelta = false;
+        // Fall back to timestamp-based recent sync (NOT full rescan)
+        // Fetch last 7 days of emails to catch up
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const sinceDate = lastScanTime && lastScanTime > sevenDaysAgo ? lastScanTime : sevenDaysAgo;
+        url = 'https://graph.microsoft.com/v1.0/me/messages?$top=200&' + MSG_SELECT + '&$orderby=receivedDateTime desc&$filter=receivedDateTime ge ' + sinceDate.toISOString();
         continue;
       }
       // Delta not supported (400 "Change tracking not supported") — fall back to timestamp polling
@@ -4221,10 +4243,13 @@ function timeAgo(date) {
 async function scanOutlookEmails(forceFullScan) {
   if (isScanning) return;
   isScanning = true;
+  updateScanStatus();
   try {
     const token = await getAccessToken();
 
-    // Decide: full scan or delta sync
+    // Strategy: ONE full scan ever, then lightweight incremental syncs
+    // Full scan: pages through ALL emails in all folders (done once, stored in DB)
+    // Incremental: delta link OR timestamp-based last 7 days (fast, silent)
     const needsFullScan = forceFullScan || !fullScanDone;
     let totalFetched;
 
@@ -4235,8 +4260,10 @@ async function scanOutlookEmails(forceFullScan) {
       fullScanDone = true;
       updateScanBanner('Full scan complete! ' + totalFetched.toLocaleString() + ' emails processed, ' + companies.length + ' companies found');
     } else {
-      // Quiet incremental sync — no banner unless new data found
-      totalFetched = await fetchEmailsProgressively(token, true); // incremental (delta or timestamp fallback)
+      // INCREMENTAL SYNC — fast, lightweight, silent
+      // Try delta link first (instant, only changes since last sync)
+      // If delta fails, fall back to recent emails only (last 7 days)
+      totalFetched = await fetchEmailsProgressively(token, true);
       if (totalFetched > 0) {
         updateScanBanner('Synced ' + totalFetched.toLocaleString() + ' new emails');
         setTimeout(() => { hideScanBanner(); }, 2000);
@@ -4311,6 +4338,7 @@ async function scanOutlookEmails(forceFullScan) {
     }
   } finally {
     isScanning = false;
+    updateScanStatus();
   }
 }
 
@@ -4485,14 +4513,21 @@ async function onSignedIn(unused, supabasePromise) {
   if (companies.length > 0) scheduleDomainScan();
   updateLastScanLabel();
 
-  // Step 3: Email scan — always runs in background, never blocks UI.
-  // DB data is already displayed. Scan just adds new emails silently.
-  if (hasData) {
-    // Data from DB is showing — run email sync quietly in background
-    console.log('Startup: data loaded — scheduling background email sync');
+  // Step 3: Email scan strategy (like Close.com / Attio):
+  // - First time: ONE full scan of all folders/emails (stored in DB, never repeated)
+  // - Returning user: fast incremental sync only (delta or last 7 days)
+  // - Background: auto-sync every 2 minutes for near real-time updates
+  if (hasData && fullScanDone) {
+    // Returning user with completed full scan — quick incremental sync in background
+    console.log('Startup: full scan already done — scheduling lightweight incremental sync');
+    updateScanStatus(); // show "Live sync" immediately
     setTimeout(() => { scanOutlookEmails(); }, 3000);
+  } else if (hasData && !fullScanDone) {
+    // Data exists but full scan never completed — resume full scan in background
+    console.log('Startup: resuming interrupted full scan in background');
+    setTimeout(() => { scanOutlookEmails(); }, 1000);
   } else {
-    // First time or empty DB — need full scan to populate
+    // First time or empty DB — need initial full scan
     await scanOutlookEmails();
   }
 
@@ -4525,11 +4560,14 @@ function hideScanBanner() {
 function updateScanStatus() {
   const el = document.getElementById('scanStatusText');
   if (!el) return;
-  if (fullScanDone) {
-    el.textContent = 'Live — auto-syncing new emails';
+  if (fullScanDone && !isScanning) {
+    el.textContent = 'Live sync — ' + companies.length + ' companies';
     el.className = 'sa-scan-status done';
-  } else if (lastScanTime) {
-    el.textContent = 'Full scan in progress...';
+  } else if (fullScanDone && isScanning) {
+    el.textContent = 'Syncing new emails...';
+    el.className = 'sa-scan-status active';
+  } else if (isScanning) {
+    el.textContent = 'Initial scan in progress...';
     el.className = 'sa-scan-status active';
   } else {
     el.textContent = 'Waiting to scan';
