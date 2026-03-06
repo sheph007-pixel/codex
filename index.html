@@ -1206,7 +1206,7 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
               <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-weight:600;font-size:14px">OpenAI</span>
-                <span style="font-size:11px;color:var(--text2)">ChatGPT &middot; GPT-4o</span>
+                <span style="font-size:11px;color:var(--text2)">ChatGPT &middot; GPT-4.1</span>
               </div>
               <span id="aiOpenAIStatus" style="font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:4px"></span>
             </div>
@@ -8957,7 +8957,7 @@ function loadAISettings() {
 function updateAIChatSubtitle() {
   var sub = document.getElementById('aiChatSubtitle');
   if (!sub) return;
-  if (getOpenAIKey()) sub.textContent = 'Connected to ChatGPT \u00b7 Full CRM access';
+  if (getOpenAIKey()) sub.textContent = 'Connected to GPT-4.1 \u00b7 Full CRM access';
   else sub.textContent = 'Add OpenAI API key in Settings to enable';
 }
 function toggleAIChat() {
@@ -8983,9 +8983,9 @@ function clearAIChat() {
 
 // Build CRM context snapshot for the AI — includes ALL available data
 function buildCRMContext() {
-  // Token budget: ~20K tokens ≈ 60K chars for CRM context, leaving room for
-  // system instructions, conversation history, scanned emails, and response.
-  var MAX_CTX = 60000;
+  // Token budget: gpt-4.1 supports 1M tokens — use up to ~120K chars for CRM context,
+  // leaving room for system instructions, conversation history, scanned emails, and response.
+  var MAX_CTX = 120000;
 
   var totalSent = 0, totalRecv = 0, totalContacts = 0;
   companies.forEach(function(c) { totalSent += c.sent; totalRecv += c.received; totalContacts += (c.allContacts ? c.allContacts.length : 1); });
@@ -9001,9 +9001,9 @@ function buildCRMContext() {
   ctx += '- Average AI score: ' + avgScore + '/99\n';
   ctx += '- Blocked domains: ' + dmCount('is_blocked') + '\n\n';
 
-  // Top companies by score — cap at 50 to stay within token budget
+  // Top companies by score — cap at 200 (gpt-4.1 has 1M token context)
   var sorted = companies.slice().sort(function(a, b) { return b.score - a.score; });
-  var companyLimit = Math.min(sorted.length, 50);
+  var companyLimit = Math.min(sorted.length, 200);
   ctx += 'TOP COMPANIES (' + companyLimit + ' of ' + sorted.length + ' total, sorted by score):\n';
   for (var ci = 0; ci < companyLimit; ci++) {
     var c = sorted[ci];
@@ -9017,9 +9017,9 @@ function buildCRMContext() {
     if (enr.employees) line += ', Emp: ' + enr.employees;
     if (enr.type) line += ', Type: ' + enr.type;
     ctx += '  ' + line + '\n';
-    // Top 3 contacts per company
+    // Top 10 contacts per company
     if (c.allContacts && c.allContacts.length > 0) {
-      var contactCap = Math.min(c.allContacts.length, 3);
+      var contactCap = Math.min(c.allContacts.length, 10);
       for (var cci = 0; cci < contactCap; cci++) {
         var ct = c.allContacts[cci];
         var ce = contactEnrichment[ct.email] || {};
@@ -9029,7 +9029,7 @@ function buildCRMContext() {
         if (ce.title) cLine += ', Title: ' + ce.title;
         ctx += cLine + '\n';
       }
-      if (c.allContacts.length > 3) ctx += '    ... +' + (c.allContacts.length - 3) + ' more contacts\n';
+      if (c.allContacts.length > 10) ctx += '    ... +' + (c.allContacts.length - 10) + ' more contacts\n';
     }
     if (ctx.length > MAX_CTX * 0.5) { ctx += '  ...[' + (sorted.length - ci - 1) + ' more companies omitted for token limits]\n'; break; }
   }
@@ -9049,27 +9049,27 @@ function buildCRMContext() {
     }
   }
   allTimelineEmails.sort(function(a, b) { return new Date(b.date) - new Date(a.date); });
-  var emailCap = Math.min(allTimelineEmails.length, 30);
+  var emailCap = Math.min(allTimelineEmails.length, 100);
   if (emailCap > 0) {
     ctx += '\nRECENT EMAILS (' + emailCap + ' of ' + allTimelineEmails.length + ' total):\n';
     for (var ei = 0; ei < emailCap; ei++) {
       var te = allTimelineEmails[ei];
       ctx += '  [' + te.type + '] "' + te.subject + '" — ' + te.contact + ' (' + new Date(te.date).toLocaleDateString() + ')';
-      if (te.preview) ctx += ' — ' + te.preview.substring(0, 80);
+      if (te.preview) ctx += ' — ' + te.preview.substring(0, 150);
       ctx += '\n';
     }
   }
 
-  // Emails — cap at 15 most recent
+  // Emails — cap at 50 most recent
   if (typeof inboxEmails !== 'undefined' && inboxEmails.length > 0) {
-    var inboxCap = Math.min(inboxEmails.length, 15);
+    var inboxCap = Math.min(inboxEmails.length, 50);
     ctx += '\nEMAILS (' + inboxCap + ' of ' + inboxEmails.length + '):\n';
     for (var ii = 0; ii < inboxCap; ii++) {
       var ie = inboxEmails[ii];
       ctx += '  ' + (ie.isRead ? '[Read]' : '[UNREAD]') + ' From: ' + ie.from;
       ctx += ' | "' + (ie.subject || '(no subject)') + '"';
       ctx += ' | ' + new Date(ie.date).toLocaleDateString();
-      if (ie.preview) ctx += ' | ' + ie.preview.substring(0, 80);
+      if (ie.preview) ctx += ' | ' + ie.preview.substring(0, 150);
       ctx += '\n';
     }
   }
@@ -9087,15 +9087,15 @@ function buildCRMContext() {
     ctx += '\nBLOCKED DOMAINS: ' + blockedSize + ' domains/emails blocked\n';
   }
 
-  // Full email bodies — only the 5 most recently opened, capped at 500 chars each
+  // Full email bodies — 20 most recently opened, 1500 chars each
   var bodyKeys = Object.keys(emailBodyCache);
   if (bodyKeys.length > 0) {
-    var recentBodies = bodyKeys.slice(-5);
+    var recentBodies = bodyKeys.slice(-20);
     ctx += '\nRECENT OPENED EMAILS (' + recentBodies.length + ' of ' + bodyKeys.length + ' cached):\n';
     recentBodies.forEach(function(msgId) {
       var e = emailBodyCache[msgId];
       ctx += '---\nFrom: ' + e.from + ' | Subject: "' + e.subject + '" | Date: ' + e.date + '\n';
-      ctx += (e.plainText || '').substring(0, 500) + '\n';
+      ctx += (e.plainText || '').substring(0, 1500) + '\n';
     });
   }
 
@@ -9201,9 +9201,9 @@ async function sendAI() {
 
 async function callOpenAIAPI(apiKey, systemPrompt, messages) {
   var openaiBody = {
-    model: 'gpt-4o',
+    model: 'gpt-4.1',
     messages: [{ role: 'system', content: systemPrompt }].concat(messages),
-    max_tokens: 1024,
+    max_tokens: 4096,
     temperature: 0.7
   };
   // Use server-side proxy to avoid CORS issues with direct browser-to-OpenAI calls
@@ -9561,12 +9561,12 @@ async function aiExecuteAction(action) {
 function buildScannedEmailsContext() {
   var ctx = '';
   if (window.aiEmailScanCache && window.aiEmailScanCache.length > 0) {
-    var scanCap = Math.min(window.aiEmailScanCache.length, 30);
+    var scanCap = Math.min(window.aiEmailScanCache.length, 100);
     ctx += '\nSCANNED EMAILS (' + scanCap + ' of ' + window.aiEmailScanCache.length + ' from mailbox):\n';
     for (var i = 0; i < scanCap; i++) {
       var e = window.aiEmailScanCache[i];
       ctx += '  From: ' + e.from + ' | To: ' + e.to + ' | "' + e.subject + '" | ' + new Date(e.date).toLocaleDateString();
-      if (e.preview) ctx += ' | ' + e.preview.substring(0, 80);
+      if (e.preview) ctx += ' | ' + e.preview.substring(0, 150);
       ctx += '\n';
     }
   }
