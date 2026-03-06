@@ -2914,7 +2914,8 @@ async function loadFromSupabase() {
     if (settingsData) {
       for (const s of settingsData) {
         try {
-          const val = typeof s.value === 'string' ? JSON.parse(s.value) : s.value;
+          let val = s.value;
+          if (typeof val === 'string') { try { val = JSON.parse(val); } catch(_) { /* already a plain string (JSONB auto-parsed) */ } }
           switch (s.key) {
             case 'column_config':
               if (val && val.length > 0) {
@@ -3004,7 +3005,7 @@ async function supabaseSaveSetting(key, value) {
   try {
     await supabaseClient
       .from('user_settings')
-      .upsert({ user_id: supabaseUserId, key: key, value: JSON.stringify(value) },
+      .upsert({ user_id: supabaseUserId, key: key, value: value },
               { onConflict: 'user_id,key' });
   } catch(e) { console.warn('Supabase: setting save failed:', e); }
 }
@@ -9187,7 +9188,7 @@ async function sendAI() {
     var typing = document.getElementById(typingId);
     if (typing) typing.remove();
     var errMsg = e.message || 'Unknown error';
-    if (errMsg.includes('401') || errMsg.includes('invalid')) errMsg = 'Invalid API key. Check your key in Settings &rarr; AI Assistant.';
+    if (errMsg.includes('401') || errMsg.includes('invalid') || errMsg.includes('Incorrect')) errMsg = 'Invalid API key. Please generate a new key at platform.openai.com/api-keys and update it in Settings &rarr; AI Assistant.';
     else if (errMsg.includes('429')) errMsg = 'Rate limited. Please wait a moment and try again.';
     else if (errMsg.includes('insufficient_quota')) errMsg = 'API quota exceeded. Check your billing at the provider\'s dashboard.';
     msgs.innerHTML += '<div class="ai-msg bot" style="color:var(--red)">Error: ' + esc(errMsg) + '</div>';
