@@ -2133,10 +2133,6 @@ function saveFollowUpCompanies() { scheduleSupabaseSync(); }
 function saveFollowUpDates() { /* no-op: followup_date saved via supabaseSaveCompanyField */ }
 
 // ──────────────────────────────────────────────
-// ARCHIVED COMPANIES — feature fully removed
-// ──────────────────────────────────────────────
-
-// ──────────────────────────────────────────────
 // MERGED DOMAINS (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
 function loadMergedDomains() { /* no-op: metadata loaded from DB onto domainMap entries */ }
@@ -6231,9 +6227,6 @@ function updateFollowUpCount() {
   el.textContent = count;
   el.style.display = count > 0 ? '' : 'none';
 }
-
-// Archive feature fully removed
-function bulkArchiveSelected() { bulkBlockSelected(); }
 
 
 // ──────────────────────────────────────────────
