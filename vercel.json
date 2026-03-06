@@ -2,6 +2,7 @@
   "buildCommand": null,
   "outputDirectory": ".",
   "framework": null,
+  "ignoreCommand": "[ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ]",
   "rewrites": [
     { "source": "/api/keepalive", "destination": "/api/keepalive.js" },
     { "source": "/api/openai", "destination": "/api/openai.js" },
