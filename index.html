@@ -1592,7 +1592,7 @@ let companies = [];
 let domainMap = {};
 // ── All per-company metadata lives directly on domainMap[domain] entries ──
 // Each entry has: contacts, sentIds, receivedIds, lastDate, lastSentDate, lastReceivedDate,
-//   is_starred, is_blocked, is_flagged, is_followup, is_archived,
+//   is_starred, is_blocked, is_flagged, is_followup,
 //   company_type, proposal_stage, proposal_notes, followup_date, merged_into,
 //   _fromDb, _dbSentCount, _dbReceivedCount
 // This eliminates the sync bugs caused by separate Sets/Objects getting out of sync with the DB.
@@ -2133,12 +2133,6 @@ function saveFollowUpCompanies() { scheduleSupabaseSync(); }
 function saveFollowUpDates() { /* no-op: followup_date saved via supabaseSaveCompanyField */ }
 
 // ──────────────────────────────────────────────
-// ARCHIVED COMPANIES (metadata lives on domainMap entries)
-// ──────────────────────────────────────────────
-function loadArchivedCompanies() { /* no-op: metadata loaded from DB onto domainMap entries */ }
-function saveArchivedCompanies() { scheduleSupabaseSync(); }
-
-// ──────────────────────────────────────────────
 // MERGED DOMAINS (metadata lives on domainMap entries)
 // ──────────────────────────────────────────────
 function loadMergedDomains() { /* no-op: metadata loaded from DB onto domainMap entries */ }
@@ -2375,7 +2369,6 @@ function saveLocalCache() {
         is_blocked: d.is_blocked || false,
         is_flagged: d.is_flagged || false,
         is_followup: d.is_followup || false,
-        is_archived: d.is_archived || false,
         company_type: d.company_type || null,
         proposal_stage: d.proposal_stage || null,
         proposal_notes: d.proposal_notes || null,
@@ -2474,7 +2467,6 @@ function loadLocalCache() {
         is_blocked: d.is_blocked || false,
         is_flagged: d.is_flagged || false,
         is_followup: d.is_followup || false,
-        is_archived: d.is_archived || false,
         company_type: d.company_type || null,
         proposal_stage: d.proposal_stage || null,
         proposal_notes: d.proposal_notes || null,
@@ -2613,7 +2605,6 @@ async function syncToSupabase() {
         company_name: companyNameCache[rawDomain] || companyNameCache[domain] || null,
         company_type: data.company_type ? data.company_type.toLowerCase() : null,
         is_starred: !!data.is_starred,
-        is_archived: !!data.is_archived,
         is_flagged: !!data.is_flagged,
         is_blocked: !!data.is_blocked,
         is_followup: !!data.is_followup,
@@ -2853,7 +2844,6 @@ async function loadFromSupabase() {
           is_blocked: !!c.is_blocked,
           is_flagged: !!c.is_flagged,
           is_followup: !!c.is_followup,
-          is_archived: !!c.is_archived,
           company_type: c.company_type ? c.company_type.replace(/\b\w/g, l => l.toUpperCase()) : null,
           proposal_stage: c.proposal_stage || null,
           proposal_notes: c.proposal_notes || null,
@@ -2871,7 +2861,6 @@ async function loadFromSupabase() {
         if (c.is_starred) existing.is_starred = true;
         if (c.is_blocked) existing.is_blocked = true;
         if (c.is_flagged) existing.is_flagged = true;
-        if (c.is_archived) existing.is_archived = true;
         if (c.company_type && !existing.company_type) existing.company_type = c.company_type.replace(/\b\w/g, l => l.toUpperCase());
         if (c.proposal_stage && !existing.proposal_stage) existing.proposal_stage = c.proposal_stage;
         if (c.merged_into && !existing.merged_into) existing.merged_into = c.merged_into;
@@ -2935,7 +2924,7 @@ async function loadFromSupabase() {
               // Only fill in names not already loaded from companies table
               if (val) { for (var cnk in val) { if (!companyNameCache[cnk]) companyNameCache[cnk] = val[cnk]; } }
               break;
-            // Note: blocked_domains, starred/archived/flagged/followup companies, proposal data,
+            // Note: blocked_domains, starred/flagged/followup companies, proposal data,
             // merged_domains, enrichment, custom_data, starred_contacts are already loaded from
             // the companies table rows above — user_settings copies are kept as backup only
           }
@@ -3040,7 +3029,6 @@ function applyCompanyChange(row) {
   }
   // Boolean flags — write directly to domainMap entry
   if (row.is_starred !== undefined) entry.is_starred = !!row.is_starred;
-  if (row.is_archived !== undefined) entry.is_archived = !!row.is_archived;
   if (row.is_flagged !== undefined) entry.is_flagged = !!row.is_flagged;
   if (row.is_blocked !== undefined) entry.is_blocked = !!row.is_blocked;
   if (row.is_followup !== undefined) entry.is_followup = !!row.is_followup;
@@ -3211,7 +3199,7 @@ async function refreshFromSupabase() {
     // Fetch companies, contacts, and key settings in parallel
     const [remoteCompanies, remoteContacts, settingsResult] = await Promise.all([
       supabaseFetchAll('companies',
-        'domain, company_name, company_type, is_starred, is_archived, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date',
+        'domain, company_name, company_type, is_starred, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date',
         { user_id: supabaseUserId }),
       supabaseFetchAll('contacts', 'email, name, is_starred, sent_count, received_count', { user_id: supabaseUserId }),
       supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId)
@@ -3439,7 +3427,7 @@ function ensureDomain(domain) {
       contacts: {}, sentIds: new Set(), receivedIds: new Set(),
       lastDate: null, lastSentDate: null, lastReceivedDate: null,
       is_starred: false, is_blocked: false, is_flagged: false,
-      is_followup: false, is_archived: false,
+      is_followup: false,
       company_type: null, proposal_stage: null, proposal_notes: null,
       followup_date: null, merged_into: null,
     };
@@ -3616,7 +3604,6 @@ function buildCompaniesFromDomainMap() {
         if (domainMap[k].is_followup && !domainMap[lk].is_followup) domainMap[lk].is_followup = true;
         if (domainMap[k].followup_date && !domainMap[lk].followup_date) domainMap[lk].followup_date = domainMap[k].followup_date;
         if (domainMap[k].is_starred && !domainMap[lk].is_starred) domainMap[lk].is_starred = true;
-        if (domainMap[k].is_archived && !domainMap[lk].is_archived) domainMap[lk].is_archived = true;
         if (domainMap[k].is_blocked && !domainMap[lk].is_blocked) domainMap[lk].is_blocked = true;
         if (domainMap[k].is_flagged && !domainMap[lk].is_flagged) domainMap[lk].is_flagged = true;
         if (domainMap[k].company_type && !domainMap[lk].company_type) domainMap[lk].company_type = domainMap[k].company_type;
@@ -4370,25 +4357,6 @@ async function onSignedIn(unused, supabasePromise) {
     }
   }
 
-  // Migrate: convert any archived companies to blocked (archive feature removed)
-  var migratedCount = 0;
-  for (var mDom in domainMap) {
-    if (domainMap[mDom].is_archived && !domainMap[mDom].is_blocked) {
-      domainMap[mDom].is_blocked = true;
-      domainMap[mDom].is_archived = false;
-      supabaseSaveCompanyField(mDom, 'is_blocked', true);
-      supabaseSaveCompanyField(mDom, 'is_archived', false);
-      migratedCount++;
-    } else if (domainMap[mDom].is_archived) {
-      domainMap[mDom].is_archived = false;
-      supabaseSaveCompanyField(mDom, 'is_archived', false);
-    }
-  }
-  if (migratedCount > 0) {
-    console.log('Migration: moved ' + migratedCount + ' archived companies to blocked');
-    buildCompaniesFromDomainMap();
-    saveLocalCache();
-  }
 
   // ── STEP 2: Set up ALL UI while layout is visibility:hidden ──
   // The full-page overlay covers everything. We set up sidebar, content,
@@ -4592,7 +4560,7 @@ function renderTable() {
   var colMgr = document.querySelector('.col-mgr-wrap');
   if (colMgr) colMgr.style.display = '';
 
-  // Restore normal table header (in case we're returning from flagged/archived view)
+  // Restore normal table header (in case we're returning from flagged view)
   renderTableHeader();
 
   // Hide flagged bulk bar, scan bar, and filter bar when not in flagged view
@@ -6259,11 +6227,6 @@ function updateFollowUpCount() {
   el.textContent = count;
   el.style.display = count > 0 ? '' : 'none';
 }
-
-// Archive feature removed — all archived companies migrated to blocked
-function archiveCompany(domain) { blockDomain(domain); }
-function showArchivedView() { showBlockedView(); }
-function updateArchivedCount() {}
 
 
 // ──────────────────────────────────────────────
@@ -8325,10 +8288,6 @@ function blockDomainFromDetail(domain) {
   closePanel();
 }
 
-function archiveCompanyFromDetail(domain) {
-  // Archive removed — maps to block
-  blockCompanyFromDetail(domain);
-}
 
 function renderBlockedDomainsList() {
   const containers = [document.getElementById('blockedDomainsList'), document.getElementById('settingsBlockedDomainsList')];
