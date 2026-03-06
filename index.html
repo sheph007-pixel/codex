@@ -97,6 +97,14 @@ body{min-height:100vh;overflow-x:hidden}
 .welcome-card .ms-btn{display:inline-flex;align-items:center;gap:12px;padding:14px 32px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:.15s;font-family:inherit}
 .welcome-card .ms-btn:hover{background:#1557b0;transform:translateY(-1px);box-shadow:0 2px 8px rgba(26,115,232,.3)}
 .welcome-card .ms-btn svg{width:20px;height:20px}
+.auth-tabs{display:flex;gap:0;margin-bottom:20px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.auth-tab{flex:1;padding:10px;border:none;background:var(--surface2);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:.15s;font-family:inherit}
+.auth-tab.active{background:var(--accent);color:#fff}
+.auth-input{width:100%;padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-bottom:10px;box-sizing:border-box;transition:.15s}
+.auth-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(26,115,232,.1)}
+.auth-btn{width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;transition:.15s;font-family:inherit;margin-top:4px}
+.auth-btn:hover{background:#1557b0;transform:translateY(-1px);box-shadow:0 2px 8px rgba(26,115,232,.3)}
+.auth-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;box-shadow:none}
 .welcome-features{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:32px;text-align:left}
 .welcome-feat{display:flex;align-items:start;gap:10px;padding:12px;background:var(--surface2);border-radius:10px}
 .welcome-feat svg{width:18px;height:18px;color:var(--accent2);flex-shrink:0;margin-top:2px}
@@ -879,17 +887,34 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
     <div class="welcome-screen" id="welcomeScreen">
       <div class="welcome-card">
         <h1>Welcome to Kennion CRM</h1>
-        <p class="subtitle">AI-powered CRM that scans your Outlook emails to automatically build your sales pipeline. Zero data entry.</p>
+        <p class="subtitle">AI-powered CRM that scans your emails to automatically build your sales pipeline. Zero data entry.</p>
 
-        <button class="ms-btn" onclick="signIn()">
-          <svg viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
-          Sign in with Microsoft
-        </button>
+        <!-- Auth tabs -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" onclick="switchAuthTab('signin',this)">Sign In</button>
+          <button class="auth-tab" onclick="switchAuthTab('signup',this)">Sign Up</button>
+        </div>
+        <div id="authError" style="display:none;padding:8px 12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:#ef4444;font-size:12px;margin-bottom:12px;text-align:left"></div>
+
+        <!-- Sign In form -->
+        <div id="authSignInForm">
+          <input type="email" id="authEmail" placeholder="Email address" class="auth-input" onkeydown="if(event.key==='Enter')authSignIn()">
+          <input type="password" id="authPassword" placeholder="Password" class="auth-input" onkeydown="if(event.key==='Enter')authSignIn()">
+          <button class="auth-btn" id="authSignInBtn" onclick="authSignIn()">Sign In</button>
+        </div>
+
+        <!-- Sign Up form -->
+        <div id="authSignUpForm" style="display:none">
+          <input type="email" id="authSignUpEmail" placeholder="Email address" class="auth-input" onkeydown="if(event.key==='Enter')authSignUp()">
+          <input type="password" id="authSignUpPassword" placeholder="Password (min 6 characters)" class="auth-input" onkeydown="if(event.key==='Enter')authSignUp()">
+          <input type="password" id="authSignUpConfirm" placeholder="Confirm password" class="auth-input" onkeydown="if(event.key==='Enter')authSignUp()">
+          <button class="auth-btn" id="authSignUpBtn" onclick="authSignUp()">Create Account</button>
+        </div>
 
         <div class="welcome-features">
           <div class="welcome-feat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-            <div><span class="feat-title">Email Scanning</span><span class="feat-desc">Reads your Outlook emails automatically</span></div>
+            <div><span class="feat-title">Email Scanning</span><span class="feat-desc">Connect your email to auto-sync</span></div>
           </div>
           <div class="welcome-feat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/></svg>
@@ -1116,44 +1141,38 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       </div>
 
       <div class="settings-grid">
-        <!-- CONNECTION -->
+        <!-- EMAIL ACCOUNT CONNECTION -->
         <div class="settings-card">
           <div class="settings-card-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h3a5 5 0 010 10h-3m-6 0H6a5 5 0 010-10h3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-            <h3>Connection</h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            <h3>Email Account</h3>
           </div>
-          <!-- Connected state (shown when signed in) -->
-          <div id="settingsConnectedState" style="display:none">
-            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(52,168,83,.08);border:1px solid rgba(52,168,83,.2);border-radius:8px">
-              <div style="width:8px;height:8px;border-radius:50%;background:#34a853;flex-shrink:0"></div>
+          <!-- Connected state -->
+          <div id="emailConnectedState" style="display:none">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(52,168,83,.08);border:1px solid rgba(52,168,83,.2);border-radius:8px;margin-bottom:10px">
+              <svg width="20" height="20" viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:600;color:var(--text)" id="settingsConnectedEmail"></div>
-                <div style="font-size:11px;color:#34a853;margin-top:2px">Connected to Exchange &middot; Synced</div>
+                <div style="font-size:13px;font-weight:600;color:var(--text)" id="emailConnectedAddress"></div>
+                <div style="font-size:11px;color:#34a853;margin-top:2px">Microsoft 365 &middot; Connected &middot; Synced</div>
               </div>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34a853" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34a853" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
+            <button class="btn btn-ghost btn-sm" onclick="disconnectMicrosoftEmail()" style="font-size:11px;color:var(--text2)">Disconnect email account</button>
           </div>
-          <!-- Setup state (shown when not connected) -->
-          <div id="settingsSetupState">
-            <p class="settings-desc">Connect your Microsoft account to sync your Outlook emails.</p>
-            <div class="settings-field">
-              <label>Application (Client) ID</label>
+          <!-- Setup state (no email connected) -->
+          <div id="emailSetupState">
+            <p class="settings-desc">Connect your Microsoft email account to automatically sync emails, contacts, and companies into your CRM.</p>
+            <button class="ms-btn" onclick="connectMicrosoftEmail()" style="width:100%;justify-content:center;padding:12px 20px;font-size:14px;border-radius:10px;margin-top:4px">
+              <svg viewBox="0 0 21 21" width="18" height="18"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+              Connect Microsoft Account
+            </button>
+            <div class="settings-field" style="margin-top:14px">
+              <label>Custom Application (Client) ID <span style="color:var(--text3);font-weight:400">(optional)</span></label>
               <div style="display:flex;gap:8px">
-                <input type="text" id="settingsClientIdInput" placeholder="e.g. 12345678-abcd-1234-abcd-123456789abc" style="flex:1">
-                <button class="btn btn-primary btn-sm" onclick="saveSettingsClientId()" style="white-space:nowrap">Save & Connect</button>
+                <input type="text" id="settingsClientIdInput" placeholder="Leave blank to use default" style="flex:1">
+                <button class="btn btn-ghost btn-sm" onclick="saveSettingsClientId()" style="white-space:nowrap">Save</button>
               </div>
             </div>
-            <details class="settings-details">
-              <summary>Setup Instructions</summary>
-              <ol class="settings-steps">
-                <li>Go to <strong>portal.azure.com</strong> &rarr; <strong>Microsoft Entra ID</strong> &rarr; <strong>App registrations</strong></li>
-                <li>Click <strong>New registration</strong>, name it "Kennion CRM"</li>
-                <li>Set <strong>Redirect URI</strong> (SPA) to: <code id="settingsRedirectDisplay"></code></li>
-                <li>Under <strong>API permissions</strong>, add: <code>Mail.Read</code>, <code>Mail.Send</code>, and <code>Files.ReadWrite.AppFolder</code> (Delegated)</li>
-                <li>Click <strong>Grant admin consent</strong> (or have your admin do it)</li>
-                <li>Copy the <strong>Application (client) ID</strong> and paste above</li>
-              </ol>
-            </details>
           </div>
         </div>
 
@@ -2653,12 +2672,25 @@ async function initSupabase() {
 }
 
 // Upsert user record on sign-in (returns user UUID)
-async function supabaseEnsureUser(microsoftId, email, displayName) {
+async function supabaseEnsureUser(authId, email, displayName) {
   if (!supabaseReady) return null;
   try {
-    const { data, error } = await supabaseClient
+    // First try to find existing user by email (backward compatible with MS-only users)
+    var { data: existing } = await supabaseClient
       .from('users')
-      .upsert({ microsoft_id: microsoftId, email: email, display_name: displayName || email },
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+    if (existing) {
+      supabaseUserId = existing.id;
+      try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
+      console.log('Supabase: found existing user by email, id=' + supabaseUserId);
+      return supabaseUserId;
+    }
+    // Create new user
+    var { data, error } = await supabaseClient
+      .from('users')
+      .upsert({ microsoft_id: authId, email: email, display_name: displayName || email },
               { onConflict: 'microsoft_id' })
       .select('id')
       .single();
@@ -3431,38 +3463,153 @@ async function initMSAL() {
   }
 }
 
-async function signIn() {
-  if (!getClientId()) {
-    openSettings();
-    return;
-  }
-  if (!msalInstance) await initMSAL();
-  if (!msalInstance) { alert('Could not initialize Microsoft authentication. Check your Client ID.'); openSettings(); return; }
+// ── SUPABASE AUTH (email/password login) ──
+function switchAuthTab(tab, el) {
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('authSignInForm').style.display = tab === 'signin' ? '' : 'none';
+  document.getElementById('authSignUpForm').style.display = tab === 'signup' ? '' : 'none';
+  document.getElementById('authError').style.display = 'none';
+}
 
+function showAuthError(msg) {
+  var el = document.getElementById('authError');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+async function authSignUp() {
+  var email = document.getElementById('authSignUpEmail').value.trim();
+  var password = document.getElementById('authSignUpPassword').value;
+  var confirm = document.getElementById('authSignUpConfirm').value;
+  document.getElementById('authError').style.display = 'none';
+  if (!email || !password) { showAuthError('Please enter email and password.'); return; }
+  if (password.length < 6) { showAuthError('Password must be at least 6 characters.'); return; }
+  if (password !== confirm) { showAuthError('Passwords do not match.'); return; }
+  var btn = document.getElementById('authSignUpBtn');
+  btn.disabled = true; btn.textContent = 'Creating account...';
   try {
-    const resp = await msalInstance.loginPopup({
+    await initSupabase();
+    var { data, error } = await supabaseClient.auth.signUp({ email: email, password: password });
+    if (error) throw error;
+    if (data.user) {
+      userEmail = email;
+      await onAuthSignedIn(data.user);
+    }
+  } catch(e) {
+    showAuthError(e.message || 'Sign up failed');
+  }
+  btn.disabled = false; btn.textContent = 'Create Account';
+}
+
+async function authSignIn() {
+  var email = document.getElementById('authEmail').value.trim();
+  var password = document.getElementById('authPassword').value;
+  document.getElementById('authError').style.display = 'none';
+  if (!email || !password) { showAuthError('Please enter email and password.'); return; }
+  var btn = document.getElementById('authSignInBtn');
+  btn.disabled = true; btn.textContent = 'Signing in...';
+  try {
+    await initSupabase();
+    var { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+    if (error) throw error;
+    if (data.user) {
+      userEmail = email;
+      await onAuthSignedIn(data.user);
+    }
+  } catch(e) {
+    showAuthError(e.message || 'Sign in failed');
+  }
+  btn.disabled = false; btn.textContent = 'Sign In';
+}
+
+async function onAuthSignedIn(authUser) {
+  // Ensure user row exists in our users table (backward compatible with MS-only users)
+  await supabaseEnsureUser(authUser.id, authUser.email, authUser.email);
+  // Check if Microsoft email is already connected (MSAL cached account)
+  await tryReconnectMicrosoft();
+  // Load CRM data and show dashboard
+  await onSignedIn(false, null);
+}
+
+async function tryReconnectMicrosoft() {
+  // Silently check if MSAL has a cached account (user previously connected)
+  try {
+    if (!msalInstance) await initMSAL();
+    if (msalInstance) {
+      var accounts = msalInstance.getAllAccounts();
+      if (accounts.length > 0) {
+        currentAccount = accounts[0];
+        console.log('MSAL: reconnected to ' + currentAccount.username);
+        return true;
+      }
+    }
+  } catch(e) { console.warn('MSAL reconnect failed:', e); }
+  return false;
+}
+
+// Connect Microsoft email account (from Settings)
+async function connectMicrosoftEmail() {
+  if (!msalInstance) await initMSAL();
+  if (!msalInstance) { alert('Could not load Microsoft authentication library.'); return; }
+  try {
+    var resp = await msalInstance.loginPopup({
       scopes: ['Mail.Read','Mail.Send','User.Read','MailboxSettings.Read'],
       prompt: 'select_account'
     });
     currentAccount = resp.account;
-    userEmail = currentAccount.username;
-    onSignedIn();
+    updateEmailConnectionUI();
+    // Start scanning now that email is connected
+    scanOutlookEmails();
+    startAutoSync();
+    setTimeout(() => refreshInbox(), 1000);
+    fetchOutlookSignature();
   } catch(e) {
-    console.error('Sign-in error:', e);
     if (e.errorCode === 'user_cancelled') return;
-    // If popup blocked, try redirect
-    if (e.errorCode === 'popup_window_error' || e.errorCode === 'empty_window_error') {
-      alert('Popup was blocked by your browser. Trying redirect login instead...');
-      msalInstance.loginRedirect({ scopes: ['Mail.Read','Mail.Send','User.Read','MailboxSettings.Read'] });
-      return;
-    }
-    alert('Sign-in failed: ' + (e.errorCode || '') + ' — ' + (e.message || e));
+    alert('Connection failed: ' + (e.message || e));
   }
 }
 
-function signOut() {
+function disconnectMicrosoftEmail() {
   if (msalInstance && currentAccount) {
-    msalInstance.logoutPopup({ account: currentAccount });
+    msalInstance.logoutPopup({ account: currentAccount }).catch(() => {});
+  }
+  currentAccount = null;
+  stopAutoSync();
+  updateEmailConnectionUI();
+}
+
+function updateEmailConnectionUI() {
+  var connectedEl = document.getElementById('emailConnectedState');
+  var setupEl = document.getElementById('emailSetupState');
+  var emailEl = document.getElementById('emailConnectedAddress');
+  var sidebarEmail = document.getElementById('accountEmail');
+  var scanStatus = document.getElementById('scanStatusText');
+  if (currentAccount) {
+    if (connectedEl) connectedEl.style.display = '';
+    if (setupEl) setupEl.style.display = 'none';
+    if (emailEl) emailEl.textContent = currentAccount.username;
+    if (sidebarEmail) sidebarEmail.textContent = currentAccount.username;
+    document.getElementById('accountBar').style.display = 'flex';
+  } else {
+    if (connectedEl) connectedEl.style.display = 'none';
+    if (setupEl) setupEl.style.display = '';
+    if (sidebarEmail) sidebarEmail.textContent = userEmail || '';
+    if (scanStatus) { scanStatus.textContent = 'No email connected'; scanStatus.className = 'sa-scan-status'; }
+  }
+}
+
+// Legacy signIn — now redirects to connectMicrosoftEmail (for any remaining onclick refs)
+async function signIn() {
+  connectMicrosoftEmail();
+}
+
+function signOut() {
+  // Sign out of Supabase Auth
+  if (supabaseClient) supabaseClient.auth.signOut().catch(() => {});
+  // Sign out of Microsoft
+  if (msalInstance && currentAccount) {
+    msalInstance.logoutPopup({ account: currentAccount }).catch(() => {});
   }
   currentAccount = null;
   userEmail = '';
@@ -3473,6 +3620,8 @@ function signOut() {
   lastScanTime = null;
   fullScanDone = false;
   isScanning = false;
+  supabaseUserId = null;
+  try { localStorage.removeItem('kennion_sb_uid'); } catch(e) {}
   stopAutoSync();
   clearLocalCache();
   document.getElementById('accountBar').style.display = 'none';
@@ -4370,9 +4519,9 @@ function stopAutoSync() {
 // Last sync display
 function updateLastSyncDisplay() {
   const bar = document.getElementById('accountBar');
-  if (!currentAccount) { bar.style.display = 'none'; return; }
+  if (!currentAccount && !userEmail) { bar.style.display = 'none'; return; }
   bar.style.display = 'flex';
-  document.getElementById('accountEmail').textContent = userEmail || currentAccount.username || '';
+  document.getElementById('accountEmail').textContent = userEmail || (currentAccount && currentAccount.username) || '';
   if (lastScanTime) {
     document.getElementById('lastSyncText').textContent =
       'Last synced ' + timeAgo(lastScanTime);
@@ -4430,10 +4579,14 @@ async function onSignedIn(unused, supabasePromise) {
   if (!supabaseReady) await initSupabase();
   try {
     if (!supabaseReady) throw new Error('Supabase not ready');
-    const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
-    const earlyUid = supabaseUserId;
-    await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+    // Support both Supabase Auth (no currentAccount) and legacy MSAL login
+    if (!supabaseUserId) {
+      const msId = currentAccount ? (currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username) : userEmail;
+      const displayName = currentAccount ? (currentAccount.name || userEmail) : userEmail;
+      await supabaseEnsureUser(msId, userEmail, displayName);
+    }
     if (!supabaseUserId) throw new Error('No user ID');
+    const earlyUid = supabaseUserId;
     const uidMatch = earlyUid && earlyUid === supabaseUserId;
     const sbData = (uidMatch && supabasePromise) ? await supabasePromise : await loadFromSupabase();
     if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
@@ -4503,38 +4656,39 @@ async function onSignedIn(unused, supabasePromise) {
 
   updateBlockedCount();
   updateFlaggedCount();
+  updateEmailConnectionUI();
   updateLastSyncDisplay();
 
   // Schedule domain validity scan (runs once, then once per day)
   if (companies.length > 0) scheduleDomainScan();
   updateLastScanLabel();
 
-  // Step 3: Email scan strategy (like Close.com / Attio):
-  // - First time: ONE full scan of all folders/emails (stored in DB, never repeated)
-  // - Returning user: fast incremental sync only (delta or last 7 days)
-  // - Background: auto-sync every 2 minutes for near real-time updates
-  if (hasData && fullScanDone) {
-    // Returning user with completed full scan — quick incremental sync in background
-    console.log('Startup: full scan already done — scheduling lightweight incremental sync');
-    updateScanStatus(); // show "Live sync" immediately
-    setTimeout(() => { scanOutlookEmails(); }, 3000);
-  } else if (hasData && !fullScanDone) {
-    // Data exists but full scan never completed — resume full scan in background
-    console.log('Startup: resuming interrupted full scan in background');
-    setTimeout(() => { scanOutlookEmails(); }, 1000);
-  } else {
-    // First time or empty DB — need initial full scan
-    await scanOutlookEmails();
+  // Step 3: Email scan — only if Microsoft email is connected
+  if (currentAccount) {
+    // Email scan strategy (like Close.com / Attio):
+    // - First time: ONE full scan of all folders/emails (stored in DB, never repeated)
+    // - Returning user: fast incremental sync only (delta or last 7 days)
+    // - Background: auto-sync every 2 minutes for near real-time updates
+    if (hasData && fullScanDone) {
+      console.log('Startup: full scan already done — scheduling lightweight incremental sync');
+      updateScanStatus();
+      setTimeout(() => { scanOutlookEmails(); }, 3000);
+    } else if (hasData && !fullScanDone) {
+      console.log('Startup: resuming interrupted full scan in background');
+      setTimeout(() => { scanOutlookEmails(); }, 1000);
+    } else {
+      await scanOutlookEmails();
+    }
+
+    // Load emails in background after data is ready
+    setTimeout(() => refreshInbox(), 1000);
+
+    // Fetch Outlook signature if no custom signature is saved yet
+    fetchOutlookSignature();
+
+    // Keep data fresh automatically
+    startAutoSync();
   }
-
-  // Load emails in background after data is ready
-  setTimeout(() => refreshInbox(), 1000);
-
-  // Fetch Outlook signature if no custom signature is saved yet
-  fetchOutlookSignature();
-
-  // Keep data fresh automatically
-  startAutoSync();
 
   // Start real-time polling — pull changes from other devices every 30s
   startSupabasePolling();
@@ -8309,9 +8463,10 @@ async function saveSupabaseSettings() {
   saveSupabaseConfig(url, key);
   if (await initSupabase()) {
     // Register user if signed in
-    if (currentAccount) {
-      const msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
-      await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+    if (currentAccount || userEmail) {
+      const msId = currentAccount ? (currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username) : userEmail;
+      const displayName = currentAccount ? (currentAccount.name || userEmail) : userEmail;
+      await supabaseEnsureUser(msId, userEmail, displayName);
       if (supabaseUserId) {
         // Do initial sync of all existing data to Supabase
         updateSupabaseBadge('syncing');
@@ -8375,17 +8530,8 @@ function showSettingsView() {
   document.getElementById('settingsSupabaseUrl').value = sbConfig.url;
   document.getElementById('settingsSupabaseKey').value = sbConfig.key;
   if (supabaseReady) updateSupabaseBadge('success');
-  // Show connected state or setup state
-  if (currentAccount) {
-    document.getElementById('settingsConnectedState').style.display = '';
-    document.getElementById('settingsSetupState').style.display = 'none';
-    document.getElementById('settingsConnectedEmail').textContent = userEmail || currentAccount.username || '';
-  } else {
-    document.getElementById('settingsConnectedState').style.display = 'none';
-    document.getElementById('settingsSetupState').style.display = '';
-    document.getElementById('settingsClientIdInput').value = getClientId();
-    document.getElementById('settingsRedirectDisplay').textContent = window.location.origin + window.location.pathname;
-  }
+  // Show email connection state
+  updateEmailConnectionUI();
 }
 
 function hideSettingsView() {
@@ -9685,50 +9831,58 @@ function esc(text) {
   // (11,931 companies). Since Supabase already starts loading in parallel
   // with MSAL auth, just wait for Supabase and render once with correct data.
 
-  // ── START SUPABASE LOAD IN PARALLEL WITH MSAL ──
-  // Start Supabase load in parallel with MSAL auth for speed.
-  // Use cached user ID so we don't have to wait for MSAL to know who to load.
-  const cachedUid = localStorage.getItem('kennion_sb_uid');
-  const supabasePromise = cachedUid ? (async () => {
-    await initSupabase();
-    if (!supabaseReady) return null;
-    // Set userId early so loadFromSupabase can use it
-    supabaseUserId = cachedUid;
-    return await loadFromSupabase();
-  })() : null;
-
+  // ── CHECK SUPABASE AUTH SESSION ──
+  // Primary auth is Supabase (email/password). Microsoft is email connection only.
   let welcomed = false;
   const safetyTimer = setTimeout(() => {
-    if (!welcomed) {
-      welcomed = true;
-      document.getElementById('settingsBtn').style.display = '';
-      showWelcome();
-    }
-  }, 12000);
+    if (!welcomed) { welcomed = true; showWelcome(); }
+  }, 10000);
 
   try {
+    await initSupabase();
+    if (supabaseReady) {
+      var { data: sessionData } = await supabaseClient.auth.getSession();
+      if (sessionData && sessionData.session && sessionData.session.user) {
+        var authUser = sessionData.session.user;
+        userEmail = authUser.email;
+        clearTimeout(safetyTimer);
+        welcomed = true;
+        await onAuthSignedIn(authUser);
+        return;
+      }
+    }
+  } catch(e) {
+    console.error('Init auth error:', e);
+  }
+
+  // No Supabase Auth session — try legacy MSAL session (backward compatibility)
+  try {
+    const cachedUid = localStorage.getItem('kennion_sb_uid');
     if (getClientId()) {
       await initMSAL();
       if (msalInstance) {
-        const accounts = msalInstance.getAllAccounts();
+        var accounts = msalInstance.getAllAccounts();
         if (accounts.length > 0) {
           currentAccount = accounts[0];
           userEmail = currentAccount.username;
           clearTimeout(safetyTimer);
           welcomed = true;
-          await onSignedIn(false, supabasePromise);
+          // Legacy path: use MSAL account as user identity
+          if (cachedUid) supabaseUserId = cachedUid;
+          var msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+          await supabaseEnsureUser(msId, userEmail, currentAccount.name || userEmail);
+          await onSignedIn(false, null);
           return;
         }
       }
     }
   } catch(e) {
-    console.error('Init error:', e);
+    console.error('Legacy MSAL init error:', e);
   }
 
   clearTimeout(safetyTimer);
   if (!welcomed) {
     welcomed = true;
-    document.getElementById('settingsBtn').style.display = '';
     showWelcome();
   }
 })();
@@ -9738,15 +9892,15 @@ window.addEventListener('beforeunload', () => {
   if (Object.keys(domainMap).length > 0) {
     saveLocalCache(); // synchronous — ensures cache is saved before page unloads
   }
-  if (currentAccount && Object.keys(domainMap).length > 0) {
+  if (supabaseUserId && Object.keys(domainMap).length > 0) {
     syncToSupabase();
   }
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && Object.keys(domainMap).length > 0) {
     saveLocalCache(); // synchronous — cache saved immediately when tab hidden
-    if (currentAccount) syncToSupabase();
-  } else if (!document.hidden && currentAccount) {
+    if (supabaseUserId) syncToSupabase();
+  } else if (!document.hidden && supabaseUserId) {
     refreshFromSupabase();
   }
 });
