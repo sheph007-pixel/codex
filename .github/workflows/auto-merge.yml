@@ -5,17 +5,12 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
-  pages: write
-  id-token: write
 concurrency:
   group: "auto-merge"
   cancel-in-progress: true
 jobs:
-  merge-and-deploy:
+  merge:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Merge branch to main via GitHub API
         if: github.event_name == 'push'
@@ -23,7 +18,7 @@ jobs:
           PAT: ${{ secrets.PAT }}
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
-          echo "Merging $BRANCH into main via API..."
+          echo "Merging $BRANCH into main..."
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -X POST \
             -H "Authorization: token $PAT" \
@@ -37,41 +32,3 @@ jobs:
             echo "$RESPONSE" | head -n -1
             exit 1
           fi
-      - name: Checkout main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-          token: ${{ secrets.PAT }}
-      - name: Wait for Vercel build and verify live site
-        env:
-          PAT: ${{ secrets.PAT }}
-        run: |
-          echo "Waiting 90 seconds for Vercel to build and deploy..."
-          sleep 90
-          echo "Checking live site..."
-          SITE_CONTENT=$(curl -sL --max-time 30 "https://crm-one-sand-78.vercel.app/" || echo "FETCH_FAILED")
-          TITLE=$(echo "$SITE_CONTENT" | grep -oP '<title>\K[^<]+' || echo "NO_TITLE_FOUND")
-          HEADER=$(echo "$SITE_CONTENT" | grep -oP 'class="logo"[^>]*>.*?</div>' | head -1 || echo "NO_HEADER_FOUND")
-          echo "===== LIVE SITE VERIFICATION ====="
-          echo "Title: $TITLE"
-          echo "Header snippet: $HEADER"
-          echo "Content length: $(echo "$SITE_CONTENT" | wc -c) bytes"
-          echo "=================================="
-          # Report result as commit status
-          MAIN_SHA=$(git rev-parse HEAD)
-          curl -s -X POST \
-            -H "Authorization: token $PAT" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/statuses/$MAIN_SHA" \
-            -d "{\"state\":\"success\",\"description\":\"Live title: $TITLE\",\"context\":\"vercel-live-check\"}"
-          echo "Reported live check to commit status"
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
