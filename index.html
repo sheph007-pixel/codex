@@ -3490,26 +3490,22 @@ async function authSignUp() {
   btn.disabled = true; btn.textContent = 'Creating account...';
   try {
     await initSupabase();
-    // Sign up with email confirmation disabled so users can sign in immediately
-    var { data, error } = await supabaseClient.auth.signUp({
-      email: email,
-      password: password,
-      options: { emailRedirectTo: window.location.origin, data: { email_confirmed: true } }
-    });
+    var { data, error } = await supabaseClient.auth.signUp({ email: email, password: password });
     if (error) throw error;
-    // Check if email confirmation is required (identities array empty means pending confirmation)
+    // Check if email is already registered (identities array empty = duplicate)
     if (data.user && data.user.identities && data.user.identities.length === 0) {
       showAuthError('This email is already registered. Please sign in instead.');
       btn.disabled = false; btn.textContent = 'Create Account';
       return;
     }
-    if (data.user && !data.user.confirmed_at && !data.session) {
-      // Email confirmation required but no session — try signing in directly
+    // Auto-confirm the user's email via server-side admin API
+    if (data.user && !data.user.confirmed_at) {
+      await autoConfirmUser(data.user.id);
+    }
+    // Now sign in to get a proper session (sign-up may not return one if confirmation was pending)
+    if (!data.session) {
       var signInResult = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
-      if (signInResult.error) {
-        // Confirmation truly required — inform user but still let them in since this is a new account
-        console.warn('Email confirmation pending, proceeding with sign-up session');
-      }
+      if (signInResult.error) throw signInResult.error;
       if (signInResult.data && signInResult.data.user) {
         userEmail = email;
         await onAuthSignedIn(signInResult.data.user);
@@ -3527,6 +3523,26 @@ async function authSignUp() {
   btn.disabled = false; btn.textContent = 'Create Account';
 }
 
+// Auto-confirm a user's email via server-side Supabase Admin API
+async function autoConfirmUser(userId) {
+  try {
+    var resp = await fetch('/api/confirm-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: userId })
+    });
+    if (!resp.ok) {
+      console.warn('Auto-confirm failed:', resp.status);
+      return false;
+    }
+    console.log('User email auto-confirmed via admin API');
+    return true;
+  } catch(e) {
+    console.warn('Auto-confirm error:', e);
+    return false;
+  }
+}
+
 async function authSignIn() {
   var email = document.getElementById('authEmail').value.trim();
   var password = document.getElementById('authPassword').value;
@@ -3538,35 +3554,28 @@ async function authSignIn() {
     await initSupabase();
     var { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
     if (error) {
-      // If email not confirmed, try re-signing up (which resends confirmation) then sign in
+      // If email not confirmed, auto-confirm via admin API then retry sign-in
       if (error.message && error.message.toLowerCase().includes('email not confirmed')) {
-        // Attempt to sign up again — for existing unconfirmed users this re-triggers confirmation
-        // but also try a direct sign-in in case the provider auto-confirms
-        var retryResult = await supabaseClient.auth.signUp({
-          email: email,
-          password: password,
-          options: { data: { email_confirmed: true } }
-        });
-        // If sign-up returned a session, use it
-        if (retryResult.data && retryResult.data.session && retryResult.data.user) {
-          userEmail = email;
-          await onAuthSignedIn(retryResult.data.user);
-          btn.disabled = false; btn.textContent = 'Sign In';
-          return;
+        // We need the user ID to confirm — do a sign-up call to get it (returns existing user for duplicates)
+        var lookupResult = await supabaseClient.auth.signUp({ email: email, password: password });
+        var userId = lookupResult.data && lookupResult.data.user ? lookupResult.data.user.id : null;
+        if (userId) {
+          var confirmed = await autoConfirmUser(userId);
+          if (confirmed) {
+            // Retry sign-in after confirmation
+            var retry = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+            if (retry.error) throw retry.error;
+            if (retry.data && retry.data.user) {
+              userEmail = email;
+              await onAuthSignedIn(retry.data.user);
+              btn.disabled = false; btn.textContent = 'Sign In';
+              return;
+            }
+          }
         }
-        // Try sign-in one more time
-        var retry2 = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
-        if (retry2.error) {
-          showAuthError('Email not confirmed. Please check your inbox for a confirmation link, or create a new account.');
-          btn.disabled = false; btn.textContent = 'Sign In';
-          return;
-        }
-        if (retry2.data && retry2.data.user) {
-          userEmail = email;
-          await onAuthSignedIn(retry2.data.user);
-          btn.disabled = false; btn.textContent = 'Sign In';
-          return;
-        }
+        showAuthError('Unable to sign in. Please try creating a new account.');
+        btn.disabled = false; btn.textContent = 'Sign In';
+        return;
       }
       throw error;
     }

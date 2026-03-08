@@ -6,6 +6,7 @@
   "rewrites": [
     { "source": "/api/keepalive", "destination": "/api/keepalive.js" },
     { "source": "/api/openai", "destination": "/api/openai.js" },
+    { "source": "/api/confirm-user", "destination": "/api/confirm-user.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
