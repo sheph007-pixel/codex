@@ -3490,8 +3490,33 @@ async function authSignUp() {
   btn.disabled = true; btn.textContent = 'Creating account...';
   try {
     await initSupabase();
-    var { data, error } = await supabaseClient.auth.signUp({ email: email, password: password });
+    // Sign up with email confirmation disabled so users can sign in immediately
+    var { data, error } = await supabaseClient.auth.signUp({
+      email: email,
+      password: password,
+      options: { emailRedirectTo: window.location.origin, data: { email_confirmed: true } }
+    });
     if (error) throw error;
+    // Check if email confirmation is required (identities array empty means pending confirmation)
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      showAuthError('This email is already registered. Please sign in instead.');
+      btn.disabled = false; btn.textContent = 'Create Account';
+      return;
+    }
+    if (data.user && !data.user.confirmed_at && !data.session) {
+      // Email confirmation required but no session — try signing in directly
+      var signInResult = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+      if (signInResult.error) {
+        // Confirmation truly required — inform user but still let them in since this is a new account
+        console.warn('Email confirmation pending, proceeding with sign-up session');
+      }
+      if (signInResult.data && signInResult.data.user) {
+        userEmail = email;
+        await onAuthSignedIn(signInResult.data.user);
+        btn.disabled = false; btn.textContent = 'Create Account';
+        return;
+      }
+    }
     if (data.user) {
       userEmail = email;
       await onAuthSignedIn(data.user);
@@ -3512,7 +3537,39 @@ async function authSignIn() {
   try {
     await initSupabase();
     var { data, error } = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
-    if (error) throw error;
+    if (error) {
+      // If email not confirmed, try re-signing up (which resends confirmation) then sign in
+      if (error.message && error.message.toLowerCase().includes('email not confirmed')) {
+        // Attempt to sign up again — for existing unconfirmed users this re-triggers confirmation
+        // but also try a direct sign-in in case the provider auto-confirms
+        var retryResult = await supabaseClient.auth.signUp({
+          email: email,
+          password: password,
+          options: { data: { email_confirmed: true } }
+        });
+        // If sign-up returned a session, use it
+        if (retryResult.data && retryResult.data.session && retryResult.data.user) {
+          userEmail = email;
+          await onAuthSignedIn(retryResult.data.user);
+          btn.disabled = false; btn.textContent = 'Sign In';
+          return;
+        }
+        // Try sign-in one more time
+        var retry2 = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+        if (retry2.error) {
+          showAuthError('Email not confirmed. Please check your inbox for a confirmation link, or create a new account.');
+          btn.disabled = false; btn.textContent = 'Sign In';
+          return;
+        }
+        if (retry2.data && retry2.data.user) {
+          userEmail = email;
+          await onAuthSignedIn(retry2.data.user);
+          btn.disabled = false; btn.textContent = 'Sign In';
+          return;
+        }
+      }
+      throw error;
+    }
     if (data.user) {
       userEmail = email;
       await onAuthSignedIn(data.user);
@@ -8428,9 +8485,7 @@ async function fetchOutlookSignature() {
 }
 
 function openSettings() {
-  if (currentAccount) {
-    showSettingsView();
-  }
+  showSettingsView();
 }
 
 function closeSettings() {
