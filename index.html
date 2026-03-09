@@ -838,11 +838,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <span class="sidebar-badge" id="oldClientCount" style="background:#7a7a95">0</span>
     </div>
     <div class="sidebar-section">Manage</div>
-    <div class="sidebar-item" id="newDomainsViewItem" onclick="showNewDomainsView()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      <span>New</span>
-      <span class="sidebar-badge" id="newDomainsCount" style="background:#1a73e8">0</span>
-    </div>
     <div class="sidebar-item" id="flaggedViewItem" onclick="showFlaggedView()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
       <span>Flagged</span>
@@ -1390,20 +1385,6 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
   <button class="btn btn-ghost btn-sm" onclick="clearFlaggedSelection()">Cancel</button>
 </div>
 
-<!-- NEW DOMAINS BULK ACTIONS BAR -->
-<div class="bulk-bar" id="newDomainsBulkBar">
-  <span class="bulk-count" id="newDomainsBulkCount">0 selected</span>
-  <div class="bulk-sep"></div>
-  <button class="btn btn-ghost btn-sm" onclick="bulkKeepNewDomains()" style="color:var(--green);border-color:var(--green)">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-    Keep
-  </button>
-  <button class="btn btn-sm btn-danger" onclick="bulkBlockNewDomains()">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-    Block
-  </button>
-  <button class="btn btn-ghost btn-sm" onclick="clearNewDomainsSelection()">Cancel</button>
-</div>
 
 <!-- COMPOSE EMAIL MODAL -->
 <!-- Outlook-style compose popup -->
@@ -5262,9 +5243,8 @@ function _getSortVal(c, colKey) {
 }
 
 function renderTable() {
-  // If showing flagged, blocked, new domains, or follow-up view, use those renderers instead
+  // If showing flagged, blocked, or follow-up view, use those renderers instead
   if (showingFlagged) { showFlaggedView(); return; }
-  if (showingNewDomains) { showNewDomainsView(); return; }
   if (showingBlocked) { return; }
   if (showingFollowUp) { renderFollowUpTable(); return; }
   // Restore stats section
@@ -6799,280 +6779,13 @@ let showingBlocked = false;
 let showingNewDomains = false;
 
 // ──────────────────────────────────────────────
-// NEW DOMAINS (added in past 3 days)
+// NEW DOMAINS – removed
 // ──────────────────────────────────────────────
-
-let newDomainsSort = { key: 'added', asc: false };
-let selectedNewDomains = new Set();
-
-function updateNewDomainsCount() {
-  const el = document.getElementById('newDomainsCount');
-  if (!el) return;
-  const cutoff = Date.now() - 3 * 86400000;
-  var count = 0;
-  for (var d in domainMap) {
-    if (domainMap[d].is_blocked) continue;
-    if (!domainMap[d].db_created_at) continue;
-    if (new Date(domainMap[d].db_created_at).getTime() >= cutoff) count++;
-  }
-  el.textContent = count;
-}
-
-function hideNewDomainsView() {
-  showingNewDomains = false;
-  selectedNewDomains.clear();
-  var bar = document.getElementById('newDomainsBulkBar');
-  if (bar) bar.classList.remove('active');
-}
-
-function sortNewDomainsTable(key) {
-  if (newDomainsSort.key === key) newDomainsSort.asc = !newDomainsSort.asc;
-  else { newDomainsSort.key = key; newDomainsSort.asc = key === 'company'; }
-  showNewDomainsView();
-}
-
-function showNewDomainsView() {
-  showingFlagged = false; showingBlocked = false;
-  showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();
-  showingNewDomains = true;
-  document.getElementById('crmContent').classList.add('active');
-  document.getElementById('crmContent').style.display = '';
-  document.getElementById('detailPage').classList.remove('active');
-  document.querySelectorAll('.sidebar-item').forEach(function(e) { e.classList.remove('active'); });
-  document.getElementById('newDomainsViewItem').classList.add('active');
-  setViewTitle('New', false);
-
-  // Hide stats section for this view
-  document.getElementById('statsSection').style.display = 'none';
-  var colMgr = document.querySelector('.col-mgr-wrap');
-  if (colMgr) colMgr.style.display = 'none';
-
-  // Hide flagged bars
-  var fScanBar = document.getElementById('flaggedScanBar');
-  if (fScanBar) fScanBar.style.display = 'none';
-  var ffBar = document.getElementById('flaggedFilterBar');
-  if (ffBar) ffBar.style.display = 'none';
-  var fBar = document.getElementById('flaggedBulkBar');
-  if (fBar) fBar.classList.remove('active');
-
-  const cutoff = Date.now() - 3 * 86400000;
-  const now = Date.now();
-  const DAY = 86400000;
-
-  // Build list of new domains (added in last 3 days, not blocked)
-  var items = [];
-  for (var d in domainMap) {
-    var dm = domainMap[d];
-    if (dm.is_blocked) continue;
-    if (dm.merged_into) continue;
-    if (!dm.db_created_at) continue;
-    var addedTime = new Date(dm.db_created_at).getTime();
-    if (addedTime < cutoff) continue;
-    var name = companyNameCache[d] || KNOWN_BRANDS[d] || titleCase(d.split('.')[0].replace(/[-_]/g, ' '));
-    var daysAgo = Math.floor((now - addedTime) / DAY);
-    var totalSent = Math.max(dm.sentIds ? dm.sentIds.size : 0, dm._dbSentCount || 0);
-    var totalRecv = Math.max(dm.receivedIds ? dm.receivedIds.size : 0, dm._dbReceivedCount || 0);
-    var totalEmails = totalSent + totalRecv;
-    // Primary contact
-    var contactArr = Object.values(dm.contacts || {});
-    contactArr.sort(function(a, b) { return (Math.max(b.sentIds ? b.sentIds.size : 0, b._dbSentCount || 0) + Math.max(b.receivedIds ? b.receivedIds.size : 0, b._dbReceivedCount || 0)) - (Math.max(a.sentIds ? a.sentIds.size : 0, a._dbSentCount || 0) + Math.max(a.receivedIds ? a.receivedIds.size : 0, a._dbReceivedCount || 0)); });
-    var primary = getPrimaryContact(d, contactArr) || contactArr[0] || null;
-    var primaryName = '—';
-    if (primary) {
-      var pn = primary.name || '';
-      // If name looks like an email or encoded URL, use just the local part or short email
-      if (!pn || pn === primary.email) {
-        primaryName = primary.email ? primary.email.split('@')[0] : '—';
-      } else {
-        primaryName = pn;
-      }
-    }
-    // Days since last contact
-    var daysSinceContact = dm.lastDate ? Math.floor((now - dm.lastDate.getTime()) / DAY) : null;
-    items.push({ domain: d, name: name, addedTime: addedTime, daysAgo: daysAgo, totalEmails: totalEmails, sent: totalSent, received: totalRecv, primaryName: primaryName, daysSinceContact: daysSinceContact });
-  }
-
-  // Sort
-  var sk = newDomainsSort.key;
-  var sa = newDomainsSort.asc;
-  items.sort(function(a, b) {
-    var va, vb;
-    if (sk === 'company') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
-    else if (sk === 'contact') { va = a.primaryName.toLowerCase(); vb = b.primaryName.toLowerCase(); }
-    else if (sk === 'emails') { va = a.totalEmails; vb = b.totalEmails; }
-    else if (sk === 'sent') { va = a.sent; vb = b.sent; }
-    else if (sk === 'received') { va = a.received; vb = b.received; }
-    else if (sk === 'dayssince') { va = a.daysSinceContact === null ? 9999 : a.daysSinceContact; vb = b.daysSinceContact === null ? 9999 : b.daysSinceContact; }
-    else { va = a.addedTime; vb = b.addedTime; }
-    if (va < vb) return sa ? -1 : 1;
-    if (va > vb) return sa ? 1 : -1;
-    return 0;
-  });
-
-  // Sort arrow helper
-  var arrow = function(k) { return newDomainsSort.key === k ? (newDomainsSort.asc ? ' &#9650;' : ' &#9660;') : ''; };
-
-  // Render table header
-  document.getElementById('tableHead').innerHTML = '<tr>' +
-    '<th class="col-check"><input type="checkbox" class="row-checkbox" id="newDomainsSelectAll" onchange="toggleNewDomainsSelectAll(this.checked)"></th>' +
-    '<th onclick="sortNewDomainsTable(\'company\')" style="cursor:pointer">Company' + arrow('company') + '</th>' +
-    '<th onclick="sortNewDomainsTable(\'contact\')" style="cursor:pointer">Primary Contact' + arrow('contact') + '</th>' +
-    '<th onclick="sortNewDomainsTable(\'emails\')" style="cursor:pointer">Total Emails' + arrow('emails') + '</th>' +
-    '<th onclick="sortNewDomainsTable(\'sent\')" style="cursor:pointer">Sent' + arrow('sent') + '</th>' +
-    '<th onclick="sortNewDomainsTable(\'received\')" style="cursor:pointer">Received' + arrow('received') + '</th>' +
-    '<th onclick="sortNewDomainsTable(\'dayssince\')" style="cursor:pointer">Days Since Contact' + arrow('dayssince') + '</th>' +
-  '</tr>';
-
-  var tbody = document.getElementById('tableBody');
-
-  if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">No new domains discovered in the past 3 days.</td></tr>';
-    updateViewTitleCount(0);
-    updateNewDomainsBulkBar();
-    return;
-  }
-
-  tbody.innerHTML = items.map(function(item) {
-    var dSafe = item.domain.replace(/'/g, "\\'");
-    var sel = selectedNewDomains.has(item.domain);
-    var dscLabel = item.daysSinceContact === null ? '—' : (item.daysSinceContact === 0 ? 'Today' : item.daysSinceContact);
-
-    return '<tr' + (sel ? ' class="row-selected"' : '') + ' data-new-domain="' + esc(item.domain) + '">' +
-      '<td class="col-check"><input type="checkbox" class="row-checkbox" data-nd="' + esc(item.domain) + '"' + (sel ? ' checked' : '') + ' onchange="toggleNewDomainSelect(\'' + dSafe + '\', this.checked)"></td>' +
-      '<td><div class="company-cell" onclick="openNewDomainDetail(\'' + dSafe + '\')" style="cursor:pointer"><div class="company-logo" style="background:#1a73e8">' + item.domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(item.name) + '</span><span class="company-domain">' + esc(displayDomain(item.domain)) + '</span></div></div></td>' +
-      '<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(item.primaryName) + '</td>' +
-      '<td style="font-size:12px;font-weight:600;text-align:center">' + item.totalEmails + '</td>' +
-      '<td style="font-size:12px;text-align:center">' + item.sent + '</td>' +
-      '<td style="font-size:12px;text-align:center">' + item.received + '</td>' +
-      '<td style="font-size:12px;text-align:center;color:var(--text2)">' + dscLabel + '</td>' +
-    '</tr>';
-  }).join('');
-
-  // Update select-all checkbox state
-  var selectAll = document.getElementById('newDomainsSelectAll');
-  if (selectAll) {
-    var allDomains = items.map(function(i) { return i.domain; });
-    var allChecked = allDomains.length > 0 && allDomains.every(function(d) { return selectedNewDomains.has(d); });
-    var someChecked = allDomains.some(function(d) { return selectedNewDomains.has(d); });
-    selectAll.checked = allChecked;
-    selectAll.indeterminate = someChecked && !allChecked;
-  }
-
-  updateViewTitleCount(items.length);
-  updateNewDomainsBulkBar();
-}
-
-function toggleNewDomainSelect(domain, checked) {
-  if (checked) selectedNewDomains.add(domain);
-  else selectedNewDomains.delete(domain);
-  showNewDomainsView();
-}
-
-function toggleNewDomainsSelectAll(checked) {
-  var allItems = document.querySelectorAll('input[data-nd]');
-  allItems.forEach(function(cb) {
-    var domain = cb.getAttribute('data-nd');
-    if (checked) selectedNewDomains.add(domain);
-    else selectedNewDomains.delete(domain);
-  });
-  showNewDomainsView();
-}
-
-function clearNewDomainsSelection() {
-  selectedNewDomains.clear();
-  showNewDomainsView();
-}
-
-function updateNewDomainsBulkBar() {
-  var bar = document.getElementById('newDomainsBulkBar');
-  if (!bar) return;
-  if (selectedNewDomains.size > 0) {
-    bar.classList.add('active');
-    document.getElementById('newDomainsBulkCount').textContent = selectedNewDomains.size + ' selected';
-  } else {
-    bar.classList.remove('active');
-  }
-}
-
-function bulkKeepNewDomains() {
-  var oldDate = new Date(Date.now() - 4 * 86400000).toISOString();
-  for (var domain of selectedNewDomains) {
-    var d = domain.toLowerCase();
-    ensureDomain(d);
-    domainMap[d].db_created_at = oldDate;
-    supabaseSaveCompanyField(d, 'created_at', oldDate);
-  }
-  selectedNewDomains.clear();
-  updateNewDomainsCount();
-  showNewDomainsView();
-}
-
-function bulkBlockNewDomains() {
-  var domains = Array.from(selectedNewDomains);
-  selectedNewDomains.clear();
-  var i = 0;
-  function blockNext() {
-    if (i >= domains.length) {
-      updateNewDomainsCount();
-      showNewDomainsView();
-      return;
-    }
-    var d = domains[i++];
-    showBlockConfirm(d, function() {
-      blockNext();
-    });
-  }
-  blockNext();
-}
+function updateNewDomainsCount() {}
+function hideNewDomainsView() { showingNewDomains = false; }
+function showNewDomainsView() {}
 
 let _cameFromNewDomains = false;
-function openNewDomainDetail(domain) {
-  var data = domainMap[domain];
-  if (!data) return;
-  var contactArr = Object.values(data.contacts);
-  for (var ct of contactArr) { ct.sent = Math.max(ct.sentIds ? ct.sentIds.size : 0, ct._dbSentCount || 0); ct.received = Math.max(ct.receivedIds ? ct.receivedIds.size : 0, ct._dbReceivedCount || 0); }
-  contactArr.sort(function(a, b) { return (b.sent + b.received) - (a.sent + a.received); });
-  var primary = contactArr[0] || { name: 'Unknown', email: '' };
-  var uniqueSent = Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0);
-  var uniqueReceived = Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0);
-  var companyName = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
-  var tempId = 99998;
-  var tempCompany = {
-    id: tempId, name: companyName, domain: domain,
-    contact: primary.name, contactEmail: primary.email,
-    sent: uniqueSent, received: uniqueReceived,
-    score: 0, lastDate: data.lastDate,
-    lastActivity: data.lastDate ? timeAgo(data.lastDate) : 'unknown',
-    allContacts: contactArr,
-  };
-  var existing = companies.findIndex(function(c) { return c.id === tempId; });
-  if (existing >= 0) companies.splice(existing, 1);
-  companies.push(tempCompany);
-  _cameFromNewDomains = true;
-  showingNewDomains = false;
-  showingFollowUp = false; hideFollowUpKanban();
-  showCompanyPanel(tempId);
-}
-
-function keepNewDomain(domain) {
-  // "Keep" means the user reviewed and accepts this domain — remove from "new" by backdating created_at
-  var d = domain.toLowerCase();
-  ensureDomain(d);
-  // Set db_created_at to 4 days ago so it falls outside the 3-day window
-  var oldDate = new Date(Date.now() - 4 * 86400000).toISOString();
-  domainMap[d].db_created_at = oldDate;
-  supabaseSaveCompanyField(d, 'created_at', oldDate);
-  updateNewDomainsCount();
-  showNewDomainsView();
-}
-
-function blockNewDomain(domain) {
-  showBlockConfirm(domain, function() {
-    updateNewDomainsCount();
-    showNewDomainsView();
-  });
-}
 
 // ──────────────────────────────────────────────
 // FOLLOW UP
@@ -7970,13 +7683,6 @@ function closePanel() {
     const tempIdx = companies.findIndex(c => c.id === 99999);
     if (tempIdx >= 0) companies.splice(tempIdx, 1);
     showFlaggedView();
-  }
-  // If we came from new domains view, restore it
-  if (_cameFromNewDomains) {
-    _cameFromNewDomains = false;
-    const tempIdx2 = companies.findIndex(c => c.id === 99998);
-    if (tempIdx2 >= 0) companies.splice(tempIdx2, 1);
-    showNewDomainsView();
   }
 }
 
@@ -10796,7 +10502,7 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
   }
   // Skip if clicking inside col-check area or in flagged view
   if (e.target.closest('.col-check')) return;
-  if (showingFlagged || showingNewDomains) return;
+  if (showingFlagged) return;
   // Row click → open detail
   const row = e.target.closest('tr[data-id]');
   if (row) openDetail(parseInt(row.dataset.id, 10));
