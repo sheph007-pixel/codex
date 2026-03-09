@@ -8249,6 +8249,36 @@ async function fetchContactTimeline(email, domain) {
       } catch(e2) { console.warn('Received filter fallback failed:', e2); }
     }
 
+    // If still no received emails but we have known receivedIds from the scan,
+    // fetch those specific messages by ID as a final fallback.
+    // This handles cases where $search has indexing delays and $filter misses the email.
+    const hasReceivedNow = items.some(i => i.type === 'received');
+    if (!hasReceivedNow && domain && domainMap[domain]) {
+      try {
+        const le = email.toLowerCase();
+        const ct = domainMap[domain].contacts[le];
+        const knownIds = ct && ct.receivedIds ? [...ct.receivedIds] : [];
+        if (knownIds.length > 0) {
+          const existingIds = new Set(items.map(i => i.id));
+          const missingIds = knownIds.filter(id => !existingIds.has(id));
+          // Fetch up to 10 messages by ID to avoid excessive API calls
+          const toFetch = missingIds.slice(0, 10);
+          const fetchResults = await Promise.allSettled(
+            toFetch.map(msgId =>
+              fetch('https://graph.microsoft.com/v1.0/me/messages/' + encodeURIComponent(msgId) + '?' + select, { headers })
+                .then(r => r.ok ? r.json() : null)
+            )
+          );
+          for (const result of fetchResults) {
+            if (result.status === 'fulfilled' && result.value) {
+              const m = result.value;
+              items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
+            }
+          }
+        }
+      } catch(e3) { console.warn('Direct message ID fallback failed:', e3); }
+    }
+
     // Calendar events — wrapped in try/catch since Calendars.Read may not be granted
     try {
       const calUrl = 'https://graph.microsoft.com/v1.0/me/events?$top=20&$select=subject,start,end,attendees,isOnlineMeeting' +
