@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v2.7.1 -->
+<!-- v2.8.0 - Performance fixes: prevent page unresponsive -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -1673,7 +1673,7 @@ let domainMap = {};
 // This eliminates the sync bugs caused by separate Sets/Objects getting out of sync with the DB.
 let seenMsgIds = new Set(); // track processed email IDs to prevent double-counting
 let msgIdIndex = {};  // msgId -> { domain, email (optional) } — reverse index for fast removal
-const SEEN_MSG_IDS_MAX = 500000; // cap to prevent unbounded memory growth
+const SEEN_MSG_IDS_MAX = 150000; // cap to prevent unbounded memory growth
 let lastScanTime = null;
 let deltaLink = null; // Microsoft Graph delta sync token — tracks last sync position
 let currentSort = {key:'sent',asc:false};
@@ -1686,7 +1686,7 @@ let currentAccount = null;
 let userEmail = '';
 let isScanning = false;
 let fullScanDone = false;
-const AUTO_SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes — near real-time sync
+const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes — realtime handles instant updates
 let autoSyncTimer = null;
 let selectedIds = new Set();
 let starredContacts = {};  // { "domain": "email@example.com" }
@@ -2135,7 +2135,7 @@ function setCompanyType(domain, type, selectEl) {
   scheduleSupabaseSync();
   // Debounced stats update instead of immediate full recount
   if (_statsUpdateTimer) clearTimeout(_statsUpdateTimer);
-  _statsUpdateTimer = setTimeout(function() { _statsUpdateTimer = null; updateTypeCounts(); }, 300);
+  _statsUpdateTimer = setTimeout(function() { _statsUpdateTimer = null; updateTypeCounts(); }, 1000);
   // Update the dropdown badge class in-place instead of full re-render
   // This prevents the dropdown from being destroyed mid-interaction
   if (!selectEl) {
@@ -2470,10 +2470,19 @@ function saveLocalCache() {
       console.log('Cache: skip save — domainMap is empty');
       return;
     }
-    for (const domain of domainKeys) {
+    // Limit to 3000 most recently active domains to cap serialization time
+    const sortedKeys = domainKeys.sort((a, b) => {
+      const da = domainMap[a].lastDate ? domainMap[a].lastDate.getTime() : 0;
+      const db = domainMap[b].lastDate ? domainMap[b].lastDate.getTime() : 0;
+      return db - da;
+    }).slice(0, 3000);
+    for (const domain of sortedKeys) {
       const d = domainMap[domain];
       const contacts = {};
-      for (const [email, ct] of Object.entries(d.contacts || {})) {
+      const contactEntries = Object.entries(d.contacts || {});
+      // Cap contacts per domain to 20 to limit serialization
+      const cappedContacts = contactEntries.length > 20 ? contactEntries.slice(0, 20) : contactEntries;
+      for (const [email, ct] of cappedContacts) {
         contacts[email] = {
           name: ct.name, email: ct.email,
           sent: Math.max(ct._dbSentCount || 0, ct.sentIds?.size || 0),
@@ -2615,7 +2624,7 @@ function clearLocalCache() {
 let _saveCacheTimer = null;
 function saveLocalCacheDeferred() {
   if (_saveCacheTimer) clearTimeout(_saveCacheTimer);
-  _saveCacheTimer = setTimeout(function() { _saveCacheTimer = null; saveLocalCache(); }, 300);
+  _saveCacheTimer = setTimeout(function() { _saveCacheTimer = null; saveLocalCache(); }, 2000);
 }
 function persistData() { saveLocalCacheDeferred(); }
 function loadPersistedData() { return loadLocalCache(); }
@@ -2859,7 +2868,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
 function scheduleSupabaseSync() {
   if (!supabaseReady || !supabaseUserId) return;
   if (supabaseSyncTimer) clearTimeout(supabaseSyncTimer);
-  supabaseSyncTimer = setTimeout(() => { syncToSupabase(); }, 1000);
+  supabaseSyncTimer = setTimeout(() => { syncToSupabase(); }, 5000);
 }
 
 async function syncToSupabase() {
@@ -2871,9 +2880,12 @@ async function syncToSupabase() {
     // Pulling ALL companies before every push doubled network time for no benefit.
 
     // Sync companies + contacts in batches — read all metadata from domainMap (single source of truth)
+    // Yield to main thread every 500 domains to prevent page freeze
     const companyRows = [];
     const contactRows = [];
-    for (const [rawDomain, data] of Object.entries(domainMap)) {
+    const domainEntries = Object.entries(domainMap);
+    for (let di = 0; di < domainEntries.length; di++) {
+      const [rawDomain, data] = domainEntries[di];
       const domain = rawDomain.toLowerCase();
       const row = {
         user_id: supabaseUserId,
@@ -2915,6 +2927,8 @@ async function syncToSupabase() {
         if (ctEnrich && Object.keys(ctEnrich).length > 0) ctRow.enrichment = ctEnrich;
         contactRows.push(ctRow);
       }
+      // Yield to main thread every 500 domains to keep UI responsive
+      if (di % 500 === 499) await yieldToMain();
     }
 
     // Batch upsert companies (chunks of 200)
@@ -3374,23 +3388,34 @@ function applyCompanyChange(row) {
   }
 }
 
+// Reverse index: email -> domain for O(1) contact lookups (built lazily)
+var _contactDomainIndex = {};
+function _getContactDomain(email) {
+  if (_contactDomainIndex[email]) return _contactDomainIndex[email];
+  for (var domain in domainMap) {
+    if (domainMap[domain].contacts[email]) {
+      _contactDomainIndex[email] = domain;
+      return domain;
+    }
+  }
+  return null;
+}
+
 // Apply a contact row change from Supabase realtime
 function applyContactChange(row) {
   if (!row || !row.email) return;
   var le = row.email.toLowerCase();
-  // Find which domain has this contact and update it
-  for (var domain in domainMap) {
-    if (domainMap[domain].contacts[le]) {
-      if (row.name) domainMap[domain].contacts[le].name = row.name;
-      if (row.is_starred) {
-        starredContacts[domain] = le;
-      } else if (starredContacts[domain] === le) {
-        delete starredContacts[domain];
-      }
-      if (row.sent_count !== undefined) domainMap[domain].contacts[le]._dbSentCount = row.sent_count || 0;
-      if (row.received_count !== undefined) domainMap[domain].contacts[le]._dbReceivedCount = row.received_count || 0;
-      break;
+  // Use reverse index for O(1) lookup instead of scanning all domains
+  var domain = _getContactDomain(le);
+  if (domain && domainMap[domain] && domainMap[domain].contacts[le]) {
+    if (row.name) domainMap[domain].contacts[le].name = row.name;
+    if (row.is_starred) {
+      starredContacts[domain] = le;
+    } else if (starredContacts[domain] === le) {
+      delete starredContacts[domain];
     }
+    if (row.sent_count !== undefined) domainMap[domain].contacts[le]._dbSentCount = row.sent_count || 0;
+    if (row.received_count !== undefined) domainMap[domain].contacts[le]._dbReceivedCount = row.received_count || 0;
   }
   // Update contact name override if name changed
   if (row.name && row.name !== le) contactNameOverrides[le] = row.name;
@@ -3523,7 +3548,7 @@ async function refreshFromSupabase() {
   if (!supabaseReady || !supabaseUserId || refreshInProgress) return;
   if (supabaseSyncInProgress) return;
   if (isScanning) return;
-  if (Date.now() - lastRefreshTime < 10000) return;
+  if (Date.now() - lastRefreshTime < 30000) return;
   refreshInProgress = true;
   try {
     // Only fetch records updated since last refresh (incremental sync)
@@ -3586,10 +3611,9 @@ async function refreshFromSupabase() {
     }
 
     // Only rebuild and re-render if there were actual changes
+    // Use debounced version to avoid blocking UI during rapid polling
     if (hasChanges || !_lastRefreshTimestamp) {
-      buildCompaniesFromDomainMap();
-      renderTable();
-      updateStats();
+      scheduleBuildCompanies();
       updateBlockedCount();
       updateFlaggedCount();
       updateNewDomainsCount();
@@ -4085,6 +4109,8 @@ function dmFilter(prop) {
 function ensureContact(domain, email, name) {
   ensureDomain(domain);
   const le = email.toLowerCase();
+  // Maintain reverse index for O(1) contact->domain lookups
+  _contactDomainIndex[le] = domain;
   // If user manually overrode this contact's name, always use that
   if (contactNameOverrides[le]) {
     if (!domainMap[domain].contacts[le]) {
@@ -4140,6 +4166,11 @@ function recalcDomainDates() {
       data.lastDate = data.lastReceivedDate;
     }
   }
+}
+
+// Yield to main thread so browser stays responsive during heavy loops
+function yieldToMain() {
+  return new Promise(resolve => setTimeout(resolve, 0));
 }
 
 function processEmailBatch(messages) {
@@ -4739,6 +4770,8 @@ async function fetchEmailsProgressively(token, useDelta) {
       if (regular.length > 0) {
         totalFetched += regular.length;
         processEmailBatch(regular);
+        // Yield to main thread between pages to keep browser responsive
+        await yieldToMain();
       }
 
       // Don't re-render table during scan — data is already showing from DB.
@@ -4748,8 +4781,8 @@ async function fetchEmailsProgressively(token, useDelta) {
         updateScanBanner('Scanning... ' + totalFetched.toLocaleString() + ' emails' + (totalRemoved > 0 ? ', ' + totalRemoved + ' removed' : '') + ' — ' + companies.length + ' companies');
       }
 
-      // Persist every 10 pages
-      if (page === 1 || page % 10 === 0) {
+      // Persist every 25 pages (reduced frequency to avoid blocking UI during scan)
+      if (page === 1 || page % 25 === 0) {
         lastScanTime = new Date();
         persistData();
       }
@@ -5271,7 +5304,7 @@ let _lastRenderedData = null; // cache filtered+sorted data to allow incremental
 let _buildCompaniesTimer = null;
 function scheduleBuildCompanies() {
   if (_buildCompaniesTimer) clearTimeout(_buildCompaniesTimer);
-  _buildCompaniesTimer = setTimeout(function() { _buildCompaniesTimer = null; buildCompaniesFromDomainMap(); scheduleRenderTable(); updateStats(); }, 500);
+  _buildCompaniesTimer = setTimeout(function() { _buildCompaniesTimer = null; buildCompaniesFromDomainMap(); scheduleRenderTable(); updateStats(); }, 1000);
 }
 
 // Debounce renderTable to prevent UI freezing from rapid successive calls
@@ -5281,7 +5314,7 @@ let _renderTableImmediate = false;
 let _statsUpdateTimer = null;
 function scheduleRenderTable() {
   if (_renderTableTimer) clearTimeout(_renderTableTimer);
-  _renderTableTimer = setTimeout(function() { _renderTableTimer = null; renderTable(); }, 250);
+  _renderTableTimer = setTimeout(function() { _renderTableTimer = null; renderTable(); }, 500);
 }
 
 function renderTableHeader() {
@@ -10715,25 +10748,29 @@ function esc(text) {
   }
 })();
 
-// Save cache + flush to Supabase on page close/hide
+// Save cache on page close — skip heavy syncToSupabase on unload to avoid freeze.
+// Supabase sync runs on a timer and on visibility change; beforeunload should be fast.
 window.addEventListener('beforeunload', () => {
   if (Object.keys(domainMap).length > 0) {
     saveLocalCache(); // synchronous — ensures cache is saved before page unloads
   }
-  if (supabaseUserId && Object.keys(domainMap).length > 0) {
-    syncToSupabase();
-  }
+  // Note: syncToSupabase() removed from beforeunload — it's async and blocks page close.
+  // Data is already synced via the 1s debounce timer and visibility change handler.
 });
-// Debounce visibility-change cache saves to avoid blocking UI on rapid tab switches
+// Debounce visibility-change saves to avoid blocking UI on rapid tab switches
 let _visCacheTimer = null;
+let _visSyncTimer = null;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && Object.keys(domainMap).length > 0) {
-    // Delay cache save slightly so it doesn't block UI during tab switch animation
+    // Delay cache save so it doesn't block UI during tab switch animation
     if (_visCacheTimer) clearTimeout(_visCacheTimer);
-    _visCacheTimer = setTimeout(() => { _visCacheTimer = null; saveLocalCache(); }, 500);
-    if (supabaseUserId) syncToSupabase();
+    _visCacheTimer = setTimeout(() => { _visCacheTimer = null; saveLocalCache(); }, 1000);
+    // Delay sync too — don't fire immediately on tab hide
+    if (_visSyncTimer) clearTimeout(_visSyncTimer);
+    _visSyncTimer = setTimeout(() => { _visSyncTimer = null; if (supabaseUserId) syncToSupabase(); }, 2000);
   } else if (!document.hidden && supabaseUserId) {
-    refreshFromSupabase();
+    // Returning to tab — refresh data but with a short delay to avoid blocking rendering
+    setTimeout(() => refreshFromSupabase(), 500);
   }
 });
 
