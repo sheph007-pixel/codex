@@ -2614,6 +2614,7 @@ let _domainScanLastTs = '0';
 const _deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
 let supabaseClient = null;
 let supabaseUserId = null;
+let supabaseAuthUuid = null; // Supabase Auth UUID — stored for cross-device user lookup
 let supabaseReady = false;
 let supabaseSyncTimer = null;
 let supabaseSyncInProgress = false;
@@ -2672,49 +2673,95 @@ async function initSupabase() {
 }
 
 // Upsert user record on sign-in (returns user UUID)
-async function supabaseEnsureUser(authId, email, displayName) {
+// Identity resolution priority: supabase_auth_id > email > microsoft_id
+// Once found, stores supabase_auth_id on the row for reliable cross-device lookup.
+async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
   if (!supabaseReady) return null;
   try {
-    // Find existing user by email — use limit(1) + order to handle duplicate rows safely.
-    // maybeSingle() errors when multiple rows match the same email, which silently
-    // caused new empty user rows to be created on every login, losing all saved data.
-    // Use ilike for case-insensitive matching so "Hunter@kennion.com" matches
-    // "hunter@kennion.com" — prevents creating duplicate empty users on new devices.
-    var { data: rows, error: findErr } = await supabaseClient
-      .from('users')
-      .select('id')
-      .ilike('email', email)
-      .order('created_at', { ascending: true })
-      .limit(1);
-    if (!findErr && rows && rows.length > 0) {
-      supabaseUserId = rows[0].id;
+    var foundUser = null;
+    var foundBy = '';
+
+    // 1. Try supabase_auth_id first (most reliable for Supabase Auth users)
+    if (supabaseAuthId) {
+      var { data: authRows, error: authErr } = await supabaseClient
+        .from('users')
+        .select('id')
+        .eq('supabase_auth_id', supabaseAuthId)
+        .limit(1);
+      if (!authErr && authRows && authRows.length > 0) {
+        foundUser = authRows[0];
+        foundBy = 'supabase_auth_id';
+      }
+    }
+
+    // 2. Try email (case-insensitive) — handles most normal logins
+    if (!foundUser) {
+      var { data: rows, error: findErr } = await supabaseClient
+        .from('users')
+        .select('id')
+        .ilike('email', email)
+        .order('created_at', { ascending: true })
+        .limit(1);
+      if (!findErr && rows && rows.length > 0) {
+        foundUser = rows[0];
+        foundBy = 'email';
+      }
+    }
+
+    // 3. Try microsoft_id (handles legacy MSAL users and email changes)
+    if (!foundUser) {
+      var { data: msRows, error: msErr } = await supabaseClient
+        .from('users')
+        .select('id')
+        .eq('microsoft_id', authId)
+        .limit(1);
+      if (!msErr && msRows && msRows.length > 0) {
+        foundUser = msRows[0];
+        foundBy = 'microsoft_id';
+      }
+    }
+
+    // Found existing user — link supabase_auth_id for future cross-device logins
+    if (foundUser) {
+      supabaseUserId = foundUser.id;
       try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
-      console.log('Supabase: found existing user by email, id=' + supabaseUserId);
+      console.log('Supabase: found existing user by ' + foundBy + ', id=' + supabaseUserId);
+      // Store supabase_auth_id on the row if not already set (enables cross-device lookup)
+      if (supabaseAuthId) {
+        supabaseClient.from('users')
+          .update({ supabase_auth_id: supabaseAuthId })
+          .eq('id', supabaseUserId)
+          .then(function() {})
+          .catch(function() {}); // fire-and-forget, column may not exist yet
+      }
       return supabaseUserId;
     }
-    // Also try finding by microsoft_id (handles case where email changed)
-    var { data: msRows, error: msErr } = await supabaseClient
-      .from('users')
-      .select('id')
-      .eq('microsoft_id', authId)
-      .limit(1);
-    if (!msErr && msRows && msRows.length > 0) {
-      supabaseUserId = msRows[0].id;
-      try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
-      console.log('Supabase: found existing user by microsoft_id, id=' + supabaseUserId);
-      return supabaseUserId;
-    }
-    // Create new user only if no existing user found by email or microsoft_id
+
+    // No existing user found — create new (first-time signup)
+    var insertData = { email: email, display_name: displayName || email };
+    if (supabaseAuthId) insertData.supabase_auth_id = supabaseAuthId;
+    if (authId && authId !== email) insertData.microsoft_id = authId;
     var { data, error } = await supabaseClient
       .from('users')
-      .upsert({ microsoft_id: authId, email: email, display_name: displayName || email },
-              { onConflict: 'microsoft_id' })
+      .insert(insertData)
       .select('id')
       .single();
-    if (error) { console.warn('Supabase: user upsert failed:', error.message); return null; }
+    if (error) {
+      // Fallback: if insert fails (e.g. supabase_auth_id column doesn't exist yet),
+      // try the old upsert approach without supabase_auth_id
+      console.warn('Supabase: insert failed, trying legacy upsert:', error.message);
+      var legacyData = { microsoft_id: authId, email: email, display_name: displayName || email };
+      var { data: d2, error: e2 } = await supabaseClient
+        .from('users')
+        .upsert(legacyData, { onConflict: 'microsoft_id' })
+        .select('id')
+        .single();
+      if (e2) { console.warn('Supabase: user upsert failed:', e2.message); return null; }
+      data = d2;
+    }
     supabaseUserId = data.id;
     try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
-    console.log('Supabase: user ready, id=' + supabaseUserId);
+    console.log('Supabase: new user created, id=' + supabaseUserId);
     return supabaseUserId;
   } catch(e) {
     console.warn('Supabase: user ensure failed:', e);
@@ -3607,8 +3654,11 @@ async function authSignIn() {
 }
 
 async function onAuthSignedIn(authUser) {
-  // Ensure user row exists in our users table (backward compatible with MS-only users)
-  await supabaseEnsureUser(authUser.id, authUser.email, authUser.email);
+  // Store Supabase Auth UUID for cross-device identity linking
+  supabaseAuthUuid = authUser.id;
+  // Ensure user row exists in our users table.
+  // Pass the Supabase Auth UUID so it gets stored on the user row for cross-device lookup.
+  await supabaseEnsureUser(authUser.id, authUser.email, authUser.email, authUser.id);
   // Check if Microsoft email is already connected (MSAL cached account)
   var msReconnected = await tryReconnectMicrosoft();
   // If Microsoft account was found and its email differs from the Supabase Auth email,
@@ -3618,7 +3668,7 @@ async function onAuthSignedIn(authUser) {
     var msEmail = currentAccount.username;
     if (msEmail && msEmail.toLowerCase() !== authUser.email.toLowerCase()) {
       var msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
-      await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail);
+      await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail, authUser.id);
     }
   }
   // Load CRM data and show dashboard
@@ -3664,7 +3714,7 @@ async function connectMicrosoftEmail() {
         // Try matching the Microsoft account to an existing DB user
         var msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
         var msEmail = currentAccount.username;
-        await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail);
+        await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail, supabaseAuthUuid);
         if (supabaseUserId) {
           var sbData = await loadFromSupabase();
           if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
@@ -3767,6 +3817,7 @@ function signOut() {
   fullScanDone = false;
   isScanning = false;
   supabaseUserId = null;
+  supabaseAuthUuid = null;
   try { localStorage.removeItem('kennion_sb_uid'); } catch(e) {}
   stopAutoSync();
   clearLocalCache();
