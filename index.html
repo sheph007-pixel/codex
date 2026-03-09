@@ -3719,9 +3719,26 @@ async function signIn() {
 function signOut() {
   // Sign out of Supabase Auth
   if (supabaseClient) supabaseClient.auth.signOut().catch(() => {});
-  // Sign out of Microsoft
-  if (msalInstance && currentAccount) {
-    msalInstance.logoutPopup({ account: currentAccount }).catch(() => {});
+  // Clear Microsoft email connection silently — no popup.
+  // Microsoft is just an email connection (not the login method), so we clear
+  // the MSAL cache directly instead of showing a confusing Microsoft logout popup.
+  if (msalInstance) {
+    try {
+      var allAccounts = msalInstance.getAllAccounts();
+      for (var i = 0; i < allAccounts.length; i++) {
+        msalInstance.getTokenCache && msalInstance.getTokenCache().removeAccount &&
+          msalInstance.getTokenCache().removeAccount(allAccounts[i]);
+      }
+    } catch(e) {}
+    // Clear MSAL localStorage entries as fallback
+    try {
+      var keys = Object.keys(localStorage);
+      for (var k = 0; k < keys.length; k++) {
+        if (keys[k].startsWith('msal.') || keys[k].indexOf('msal') !== -1) {
+          localStorage.removeItem(keys[k]);
+        }
+      }
+    } catch(e) {}
   }
   currentAccount = null;
   userEmail = '';
