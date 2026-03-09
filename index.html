@@ -3593,7 +3593,17 @@ async function onAuthSignedIn(authUser) {
   // Ensure user row exists in our users table (backward compatible with MS-only users)
   await supabaseEnsureUser(authUser.id, authUser.email, authUser.email);
   // Check if Microsoft email is already connected (MSAL cached account)
-  await tryReconnectMicrosoft();
+  var msReconnected = await tryReconnectMicrosoft();
+  // If Microsoft account was found and its email differs from the Supabase Auth email,
+  // re-resolve the user identity using the Microsoft email so we load the right data.
+  // This handles the case where data was stored under the Microsoft user identity.
+  if (msReconnected && currentAccount) {
+    var msEmail = currentAccount.username;
+    if (msEmail && msEmail.toLowerCase() !== authUser.email.toLowerCase()) {
+      var msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+      await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail);
+    }
+  }
   // Load CRM data and show dashboard
   await onSignedIn(false, null);
 }
@@ -3625,6 +3635,42 @@ async function connectMicrosoftEmail() {
     });
     currentAccount = resp.account;
     updateEmailConnectionUI();
+
+    // ── CRITICAL: Reload data from Supabase before scanning ──
+    // When a user logs in via Supabase Auth and then connects Microsoft email,
+    // the initial Supabase load may have used a different user identity.
+    // Re-resolve the user using the Microsoft account identity and reload
+    // all saved data (blocked domains, company types, etc.) before scanning.
+    var dataLoaded = Object.keys(domainMap).length > 0;
+    if (!dataLoaded && supabaseReady) {
+      try {
+        // Try matching the Microsoft account to an existing DB user
+        var msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+        var msEmail = currentAccount.username;
+        await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail);
+        if (supabaseUserId) {
+          var sbData = await loadFromSupabase();
+          if (sbData && sbData.domainMap && Object.keys(sbData.domainMap).length > 0) {
+            if (sbData.scanMeta) {
+              lastScanTime = sbData.scanMeta.lastScanTime;
+              fullScanDone = sbData.scanMeta.fullScanDone || false;
+              deltaLink = sbData.scanMeta.deltaLink || null;
+            }
+            if (Object.keys(sbData.domainMap).length > 50) fullScanDone = true;
+            domainMap = sbData.domainMap;
+            buildCompaniesFromDomainMap();
+            renderTable();
+            updateStats();
+            updateBlockedCount();
+            updateFlaggedCount();
+            console.log('connectMicrosoftEmail: reloaded ' + Object.keys(domainMap).length + ' domains from Supabase');
+          }
+        }
+      } catch(e) {
+        console.warn('connectMicrosoftEmail: Supabase reload failed:', e);
+      }
+    }
+
     // Start scanning now that email is connected
     scanOutlookEmails();
     startAutoSync();
@@ -4672,6 +4718,36 @@ async function onSignedIn(unused, supabasePromise) {
     }
   } catch(e) {
     console.warn('Startup: Supabase load failed:', e);
+  }
+
+  // Fallback: if Supabase didn't load, try re-resolving with Microsoft identity
+  // This handles the case where Supabase Auth user has no data but the Microsoft
+  // user (same person, different identity) does have data in the database.
+  if (!hasData && currentAccount && supabaseReady) {
+    try {
+      var msId = currentAccount.homeAccountId || currentAccount.localAccountId || currentAccount.username;
+      var msEmail = currentAccount.username;
+      var prevUid = supabaseUserId;
+      await supabaseEnsureUser(msId, msEmail, currentAccount.name || msEmail);
+      if (supabaseUserId && supabaseUserId !== prevUid) {
+        var sbData2 = await loadFromSupabase();
+        if (sbData2 && sbData2.domainMap && Object.keys(sbData2.domainMap).length > 0) {
+          if (sbData2.scanMeta) {
+            lastScanTime = sbData2.scanMeta.lastScanTime;
+            fullScanDone = sbData2.scanMeta.fullScanDone || false;
+            deltaLink = sbData2.scanMeta.deltaLink || null;
+          }
+          if (Object.keys(sbData2.domainMap).length > 50) fullScanDone = true;
+          seenMsgIds = new Set();
+          domainMap = sbData2.domainMap;
+          hasData = true;
+          buildCompaniesFromDomainMap();
+          console.log('Startup: Supabase loaded via Microsoft identity — ' + Object.keys(domainMap).length + ' domains');
+        }
+      }
+    } catch(e) {
+      console.warn('Startup: Microsoft identity re-resolve failed:', e);
+    }
   }
 
   // Fallback: if Supabase didn't load, try local cache
