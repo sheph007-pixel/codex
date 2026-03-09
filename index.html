@@ -1691,6 +1691,7 @@ let domainMap = {};
 //   _fromDb, _dbSentCount, _dbReceivedCount
 // This eliminates the sync bugs caused by separate Sets/Objects getting out of sync with the DB.
 let seenMsgIds = new Set(); // track processed email IDs to prevent double-counting
+let msgIdIndex = {};  // msgId -> { domain, email (optional) } — reverse index for fast removal
 let lastScanTime = null;
 let deltaLink = null; // Microsoft Graph delta sync token — tracks last sync position
 let currentSort = {key:'sent',asc:false};
@@ -3972,7 +3973,7 @@ function signOut() {
   userEmail = '';
   companies = [];
   domainMap = {};
-  seenMsgIds = new Set();
+  seenMsgIds = new Set(); msgIdIndex = {};
   deltaLink = null;
   lastScanTime = null;
   fullScanDone = false;
@@ -4146,6 +4147,7 @@ function processEmailBatch(messages) {
         const le = toEmail.toLowerCase();
         domainMap[domain].contacts[le].sentIds.add(msg.id);
         domainMap[domain].sentIds.add(msg.id);
+        msgIdIndex[msg.id] = { domain, email: le };
         const sentDt = msg.sentDateTime || msg.receivedDateTime;
         updateDate(domainMap[domain], sentDt);
         updateDate(domainMap[domain].contacts[le], sentDt);
@@ -4162,6 +4164,7 @@ function processEmailBatch(messages) {
       const le = senderEmail.toLowerCase();
       domainMap[domain].contacts[le].receivedIds.add(msg.id);
       domainMap[domain].receivedIds.add(msg.id);
+      msgIdIndex[msg.id] = { domain, email: le };
       updateDate(domainMap[domain], msg.receivedDateTime);
       updateDate(domainMap[domain].contacts[le], msg.receivedDateTime);
       updateDateField(domainMap[domain], 'lastReceivedDate', msg.receivedDateTime);
@@ -4169,17 +4172,22 @@ function processEmailBatch(messages) {
   }
 }
 
-// Handle @removed items from delta sync — delete email ID from all Sets
+// Handle @removed items from delta sync — delete email ID using reverse index (O(1))
 function processRemovedEmail(msgId) {
   if (!msgId) return;
   seenMsgIds.delete(msgId);
-  for (const data of Object.values(domainMap)) {
-    data.sentIds.delete(msgId);
-    data.receivedIds.delete(msgId);
-    for (const ct of Object.values(data.contacts)) {
-      ct.sentIds.delete(msgId);
-      ct.receivedIds.delete(msgId);
+  const idx = msgIdIndex[msgId];
+  if (idx) {
+    const data = domainMap[idx.domain];
+    if (data) {
+      data.sentIds.delete(msgId);
+      data.receivedIds.delete(msgId);
+      if (idx.email && data.contacts[idx.email]) {
+        data.contacts[idx.email].sentIds.delete(msgId);
+        data.contacts[idx.email].receivedIds.delete(msgId);
+      }
     }
+    delete msgIdIndex[msgId];
   }
 }
 
@@ -4769,7 +4777,7 @@ async function scanOutlookEmails(forceFullScan) {
     let totalFetched;
 
     if (needsFullScan) {
-      if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); deltaLink = null; }
+      if (forceFullScan) { domainMap = {}; seenMsgIds = new Set(); msgIdIndex = {}; deltaLink = null; }
       showScanBanner('One-time full scan — reading all emails...');
       totalFetched = await fetchEmailsProgressively(token, false); // full delta scan
       fullScanDone = true;
@@ -4854,7 +4862,7 @@ async function scanOutlookEmails(forceFullScan) {
 // Full re-scan: clears everything and starts fresh
 async function fullRescan() {
   domainMap = {};
-  seenMsgIds = new Set();
+  seenMsgIds = new Set(); msgIdIndex = {};
   deltaLink = null;
   lastScanTime = null;
   fullScanDone = false;
@@ -4964,7 +4972,7 @@ async function onSignedIn(unused, supabasePromise) {
       // If we have substantial data in DB, the full scan was clearly done
       // (handles cases where scanMeta wasn't saved or was lost)
       if (Object.keys(sbData.domainMap).length > 50) fullScanDone = true;
-      seenMsgIds = new Set();
+      seenMsgIds = new Set(); msgIdIndex = {};
       domainMap = sbData.domainMap;
       hasData = true;
       buildCompaniesFromDomainMap();
@@ -4992,7 +5000,7 @@ async function onSignedIn(unused, supabasePromise) {
             deltaLink = sbData2.scanMeta.deltaLink || null;
           }
           if (Object.keys(sbData2.domainMap).length > 50) fullScanDone = true;
-          seenMsgIds = new Set();
+          seenMsgIds = new Set(); msgIdIndex = {};
           domainMap = sbData2.domainMap;
           hasData = true;
           buildCompaniesFromDomainMap();
@@ -8256,14 +8264,24 @@ async function fetchContactTimeline(email, domain) {
     function classifyMessage(m, knownSentSet, knownRecvSet) {
       const fromAddr = (m.from?.emailAddress?.address || '').toLowerCase();
       const myLower = userEmail.toLowerCase();
-      // Use known ID sets for reliable classification, then fall back to from-address
-      if (knownSentSet.has(m.id) || fromAddr === myLower) {
-        return { type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' };
+      const contactLower = email.toLowerCase();
+      // Prefer from-address (reliable) over ID sets (can have dupes from merges)
+      let type = null;
+      if (fromAddr === myLower) type = 'sent';
+      else if (fromAddr === contactLower) type = 'received';
+      else if (knownSentSet.has(m.id)) type = 'sent';
+      else if (knownRecvSet.has(m.id)) type = 'received';
+      // Last resort: check if sender domain matches contact domain
+      else if (fromAddr && contactLower) {
+        const fromDomain = fromAddr.split('@')[1];
+        const contactDomain = contactLower.split('@')[1];
+        if (fromDomain && contactDomain && fromDomain === contactDomain) type = 'received';
       }
-      if (knownRecvSet.has(m.id) || fromAddr === email.toLowerCase()) {
-        return { type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' };
-      }
-      return null;
+      if (!type) return null;
+      const date = type === 'sent'
+        ? new Date(m.sentDateTime || m.receivedDateTime)
+        : new Date(m.receivedDateTime || m.sentDateTime);
+      return { type, subject: m.subject || '(no subject)', date, preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' };
     }
 
     const knownSentSet = new Set(knownSentIds);
@@ -8271,50 +8289,44 @@ async function fetchContactTimeline(email, domain) {
 
     // Fetch emails and calendar events in parallel
     const emailPromise = (async () => {
+      const seenIds = new Set();
+
       if (allKnownIds.length > 0) {
         // ── Fast path: fetch known IDs directly via $batch ──
         const idsToFetch = allKnownIds.slice(0, 100);
         const messages = await fetchMessagesByIds(idsToFetch);
         for (const m of messages) {
           const item = classifyMessage(m, knownSentSet, knownRecvSet);
-          if (item) items.push(item);
+          if (item) { seenIds.add(m.id); items.push(item); }
         }
       } else {
         // ── No known IDs (page reload / DB-only counts) ──
-        // Use $search for all emails and $filter for received in parallel.
-        // Note: recipients/any() $filter is NOT supported on Graph v1.0 /me/messages,
-        // so we use $search with "participants:" for broad coverage, plus a reliable
-        // $filter on from/emailAddress for received emails as a safety net.
+        // Use $search with "participants:" for broad coverage
         const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=75&' + select +
           '&$search=' + encodeURIComponent('"participants:' + email + '"');
-        const recvFilterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
-          '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
-
-        const [searchResp, recvResp] = await Promise.all([
-          fetch(searchUrl, { headers }).catch(() => null),
-          fetch(recvFilterUrl, { headers }).catch(() => null)
-        ]);
-
-        const seenIds = new Set();
-        // Process search results (covers both sent and received)
+        const searchResp = await fetch(searchUrl, { headers }).catch(() => null);
         if (searchResp && searchResp.ok) {
           const searchData = await searchResp.json();
           for (const m of (searchData.value || [])) {
             if (!seenIds.has(m.id)) {
-              seenIds.add(m.id);
               const item = classifyMessage(m, knownSentSet, knownRecvSet);
-              if (item) items.push(item);
+              if (item) { seenIds.add(m.id); items.push(item); }
             }
           }
         }
-        // Merge received emails from $filter (catches any missed by $search)
-        if (recvResp && recvResp.ok) {
-          const recvData = await recvResp.json();
-          for (const m of (recvData.value || [])) {
-            if (!seenIds.has(m.id)) {
-              seenIds.add(m.id);
-              items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
-            }
+      }
+
+      // ALWAYS supplement with $filter for received emails — this reliably
+      // catches emails missed by $batch (deleted/moved IDs) or $search.
+      const recvFilterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
+        '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
+      const recvResp = await fetch(recvFilterUrl, { headers }).catch(() => null);
+      if (recvResp && recvResp.ok) {
+        const recvData = await recvResp.json();
+        for (const m of (recvData.value || [])) {
+          if (!seenIds.has(m.id)) {
+            seenIds.add(m.id);
+            items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
           }
         }
       }
@@ -8375,9 +8387,12 @@ async function fetchContactTimeline(email, domain) {
 }
 
 function renderTimeline(email) {
+  try {
   const el = document.getElementById('dpTimeline');
   if (!el) return;
   let items = contactTimelineCache[email] || [];
+  // Filter out items with invalid dates to prevent rendering crashes
+  items = items.filter(i => i && i.date && !isNaN(i.date.getTime()));
 
   if (currentContactTab === 'sent') items = items.filter(i => i.type === 'sent');
   else if (currentContactTab === 'received') items = items.filter(i => i.type === 'received');
@@ -8418,6 +8433,7 @@ function renderTimeline(email) {
   }
   html += '</div>';
   el.innerHTML = html;
+  } catch(e) { console.error('renderTimeline error:', e); }
 }
 
 function formatDateGroup(date) {
