@@ -70,7 +70,7 @@ body{min-height:100vh;overflow-x:hidden}
 .sidebar.collapsed .sidebar-item>*:not(svg){display:none}
 .sidebar.collapsed .sidebar-item svg{margin:0;flex-shrink:0}
 .sidebar.collapsed .sidebar-account{padding:6px 2px;overflow:hidden}
-.sidebar.collapsed .sidebar-account .sa-top,.sidebar.collapsed .sidebar-account .sa-last-sync{display:none}
+.sidebar.collapsed .sidebar-account .sa-top,.sidebar.collapsed .sidebar-account .sa-last-sync,.sidebar.collapsed .sidebar-account #dbRecordBreakdown{display:none}
 .sidebar.collapsed .sidebar-account .sa-status-row{justify-content:center}
 .sidebar.collapsed .sidebar-account .sa-status-row>:not(svg){display:none}
 .sidebar-collapse-row{display:flex;align-items:center;justify-content:flex-end;margin-bottom:4px;flex-shrink:0}
@@ -875,6 +875,16 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
         <span class="sa-scan-status" id="scanStatusText">Not yet scanned</span>
       </div>
       <span class="sa-last-sync" id="lastSyncText"></span>
+      <!-- DB Record Counts -->
+      <div class="sa-status-row" id="dbRecordRow" style="display:none;flex-wrap:wrap;gap:4px;margin-top:2px">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span style="font-size:10px;color:#7a7a95" id="dbRecordText">0 records</span>
+      </div>
+      <div id="dbRecordBreakdown" style="display:none;padding:2px 0 0 16px;font-size:9px;color:#7a7a95;line-height:1.6">
+        <span id="dbLeadCount" style="color:var(--orange)">0 leads</span> ·
+        <span id="dbCurrentCount" style="color:var(--green)">0 current</span> ·
+        <span id="dbOldCount" style="color:#7a7a95">0 old</span>
+      </div>
     </div>
   </aside>
 
@@ -3008,6 +3018,9 @@ async function syncToSupabase() {
     const elapsed = ((Date.now() - syncStart) / 1000).toFixed(1);
     console.log('Supabase: synced ' + companyRows.length + ' companies, ' + contactRows.length + ' contacts in ' + elapsed + 's');
     updateSupabaseBadge('success');
+    // Mark all synced entries as from DB so record counts stay accurate
+    for (const domain in domainMap) domainMap[domain]._fromDb = true;
+    updateDbRecordCounts();
     // Update local cache after successful sync
     saveLocalCache();
   } catch(e) {
@@ -5256,8 +5269,35 @@ function updateStats() {
   document.getElementById('oldClientCount').textContent = old.toLocaleString();
 
   updateFollowUpCount();
+  updateDbRecordCounts();
   // Save snapshot for instant render on next page load
   saveInstantSnapshot();
+}
+
+function updateDbRecordCounts() {
+  // Count all domainMap entries that came from the database (_fromDb flag)
+  let total = 0, dbLeads = 0, dbCurrent = 0, dbOld = 0;
+  for (const domain in domainMap) {
+    if (!domainMap[domain]._fromDb) continue;
+    if (domainMap[domain].is_blocked) continue;
+    total++;
+    const t = getCompanyType(domain);
+    if (t === 'Current Client') dbCurrent++;
+    else if (t === 'Old Client') dbOld++;
+    else dbLeads++;
+  }
+  const row = document.getElementById('dbRecordRow');
+  const breakdown = document.getElementById('dbRecordBreakdown');
+  if (row) {
+    row.style.display = total > 0 ? 'flex' : 'none';
+    document.getElementById('dbRecordText').textContent = total.toLocaleString() + ' DB record' + (total !== 1 ? 's' : '');
+  }
+  if (breakdown) {
+    breakdown.style.display = total > 0 ? 'block' : 'none';
+    document.getElementById('dbLeadCount').textContent = dbLeads + ' lead' + (dbLeads !== 1 ? 's' : '');
+    document.getElementById('dbCurrentCount').textContent = dbCurrent + ' current';
+    document.getElementById('dbOldCount').textContent = dbOld + ' old';
+  }
 }
 
 function updateTypeCounts() {
