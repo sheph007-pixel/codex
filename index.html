@@ -3221,18 +3221,43 @@ function addPendingEdit() { /* no-op */ }
 function clearPendingEdit() { /* no-op */ }
 function reapplyPendingEdits() { /* no-op */ }
 
+// ── MINI TOAST for save feedback ──
+function showSyncToast(message, isError) {
+  var existing = document.getElementById('syncToast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.id = 'syncToast';
+  toast.textContent = message;
+  toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:8px;font-size:13px;z-index:99999;pointer-events:none;transition:opacity .3s;' +
+    (isError ? 'background:#d93025;color:#fff;' : 'background:var(--card-bg,#222);color:var(--text,#fff);border:1px solid var(--border,#333);');
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 400); }, isError ? 4000 : 2000);
+}
+
 // ── INDIVIDUAL FIELD SAVES (instant updates) ──
 async function supabaseSaveCompanyField(domain, field, value) {
   domain = domain ? domain.toLowerCase() : domain;
   addPendingEdit(domain, field, value); // track in case page unloads before save completes
-  if (!supabaseReady || !supabaseUserId) return;
-  try {
-    const row = { user_id: supabaseUserId, domain: domain, [field]: value };
-    await supabaseDataClient
-      .from('companies')
-      .upsert(row, { onConflict: 'user_id,domain' });
-    clearPendingEdit(domain, field); // confirmed saved — remove from pending
-  } catch(e) { console.warn('Supabase: field save failed:', e); }
+  if (!supabaseReady || !supabaseUserId) {
+    console.warn('Supabase: save skipped — not ready (ready=' + supabaseReady + ', userId=' + !!supabaseUserId + ')');
+    return false;
+  }
+  // Retry up to 2 times on failure
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      const row = { user_id: supabaseUserId, domain: domain, [field]: value };
+      var result = await supabaseDataClient
+        .from('companies')
+        .upsert(row, { onConflict: 'user_id,domain' });
+      if (result.error) throw result.error;
+      clearPendingEdit(domain, field); // confirmed saved — remove from pending
+      return true;
+    } catch(e) {
+      console.warn('Supabase: field save attempt ' + (attempt + 1) + ' failed:', e);
+      if (attempt < 2) await new Promise(function(r) { setTimeout(r, 1000 * (attempt + 1)); });
+    }
+  }
+  return false;
 }
 
 async function supabaseSaveContactField(email, fields) {
@@ -7211,7 +7236,7 @@ let panelState = null; // null | { view:'company', companyId } | { view:'contact
 function openDetail(id) { showCompanyPanel(id); }
 
 // Save edited company name
-function saveCompanyNameEdit(domain, el) {
+async function saveCompanyNameEdit(domain, el) {
   el.contentEditable = 'false';
   var newName = el.textContent.trim();
   if (!newName) return;
@@ -7219,8 +7244,13 @@ function saveCompanyNameEdit(domain, el) {
   companyNameCache[domain] = newName;
   companyNameCacheDirty = true;
   saveCompanyNameCache();
-  // Instant save to companies table for cross-device sync
-  supabaseSaveCompanyField(domain, 'company_name', newName);
+  // Save to companies table for cross-device sync — await to confirm
+  var saved = await supabaseSaveCompanyField(domain, 'company_name', newName);
+  if (saved) {
+    showSyncToast('Saved — synced to all devices');
+  } else {
+    showSyncToast('Save failed — change may not sync to other devices', true);
+  }
   saveLocalCache();
   // Update in-memory company object
   var comp = companies.find(function(c) { return c.domain === domain; });
