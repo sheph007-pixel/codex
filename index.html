@@ -3435,7 +3435,14 @@ function startRealtimeSubscription() {
           console.log('Supabase Realtime: connected (companies + contacts + settings)');
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           realtimeConnected = false;
-          console.warn('Supabase Realtime: disconnected, falling back to polling');
+          console.warn('Supabase Realtime: disconnected, attempting reconnect in 5s...');
+          // Auto-reconnect after 5 seconds
+          setTimeout(() => {
+            if (!realtimeConnected) {
+              stopRealtimeSubscription();
+              startRealtimeSubscription();
+            }
+          }, 5000);
         }
       });
   } catch(e) {
@@ -3503,18 +3510,24 @@ async function refreshFromSupabase() {
   }
 }
 
-// Fallback polling — longer interval since Realtime handles instant sync
+// Fallback polling — shorter interval for reliable cross-device sync
 function startSupabasePolling() {
   if (supabaseRefreshTimer) return;
   // Start realtime subscription first
   startRealtimeSubscription();
-  // Fallback poll every 2 minutes (in case realtime disconnects)
+  // Poll every 30 seconds as safety net (realtime can silently disconnect)
   supabaseRefreshTimer = setInterval(() => {
     if (!document.hidden && supabaseReady && supabaseUserId) {
-      // Only poll if realtime is disconnected, or every 2 min as safety net
       refreshFromSupabase();
     }
-  }, 120000);
+  }, 30000);
+
+  // Refresh immediately when user switches back to this tab
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && supabaseReady && supabaseUserId) {
+      refreshFromSupabase();
+    }
+  });
 }
 
 // Legacy stubs (no-op)
