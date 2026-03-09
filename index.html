@@ -1878,10 +1878,10 @@ async function runEnrichment() {
     const batch = domains.slice(i, i + 5);
     await Promise.all(batch.map(d => enrichDomain(d)));
     changed = true;
-    if (i % 15 === 0 && changed) { renderTable(); }
+    if (i % 15 === 0 && changed) { scheduleRenderTable(); }
   }
   saveEnrichmentCache();
-  if (changed) renderTable();
+  if (changed) scheduleRenderTable();
   enrichmentRunning = false;
 }
 
@@ -3420,20 +3420,20 @@ function applySettingChange(key, value) {
           }
         }
         buildCompaniesFromDomainMap();
-        renderTable();
+        scheduleRenderTable();
         break;
       case 'starred_contacts':
         if (val) Object.assign(starredContacts, val);
         buildCompaniesFromDomainMap();
-        renderTable();
+        scheduleRenderTable();
         break;
       case 'company_name_cache':
         if (val) { for (var k in val) { companyNameCache[k] = val[k]; } }
         buildCompaniesFromDomainMap();
-        renderTable();
+        scheduleRenderTable();
         break;
       case 'column_config':
-        if (val && val.length > 0) { columnConfig = val; renderTableHeader(); renderTable(); }
+        if (val && val.length > 0) { columnConfig = val; renderTableHeader(); scheduleRenderTable(); }
         break;
     }
   } catch(e) { console.warn('Realtime: setting parse error for ' + key + ':', e); }
@@ -3461,7 +3461,7 @@ function startRealtimeSubscription() {
         if (!row) return;
         applyCompanyChange(row);
         buildCompaniesFromDomainMap();
-        renderTable();
+        scheduleRenderTable();
         updateStats();
         updateBlockedCount();
         updateFlaggedCount();
@@ -3479,7 +3479,7 @@ function startRealtimeSubscription() {
         if (!row) return;
         applyContactChange(row);
         buildCompaniesFromDomainMap();
-        renderTable();
+        scheduleRenderTable();
         console.log('Realtime: contact change for ' + row.email);
       })
       .on('postgres_changes', {
@@ -4394,7 +4394,7 @@ async function resolveCompanyNames() {
           changed = true;
         }
       }
-      if (changed) renderTable();
+      if (changed) scheduleRenderTable();
     }
     saveCompanyNameCache();
     // After Clearbit lookups, run AI improvement for remaining poor names
@@ -4491,7 +4491,7 @@ async function aiImproveNames() {
           if (comp) { comp.name = newName.trim(); changed = true; }
         }
       }
-      if (changed) { saveCompanyNameCache(); renderTable(); }
+      if (changed) { saveCompanyNameCache(); scheduleRenderTable(); }
     }
 
     // Apply contact name improvements
@@ -4716,9 +4716,8 @@ async function fetchEmailsProgressively(token, useDelta) {
     }
   }
 
-  // Final UI update
+  // Final data rebuild (rendering handled by caller)
   buildCompaniesFromDomainMap();
-  renderTable();
   updateStats();
 
   return totalFetched;
@@ -5120,6 +5119,15 @@ function updateScanStatus() {
 // ──────────────────────────────────────────────
 const TABLE_PAGE_SIZE = 100;
 let tableShowAll = false;
+
+// Debounce renderTable to prevent UI freezing from rapid successive calls
+// (e.g. concurrent name resolution, email scan, AI improvement all triggering re-renders)
+let _renderTableTimer = null;
+let _renderTableImmediate = false;
+function scheduleRenderTable() {
+  if (_renderTableTimer) clearTimeout(_renderTableTimer);
+  _renderTableTimer = setTimeout(function() { _renderTableTimer = null; renderTable(); }, 150);
+}
 
 function renderTableHeader() {
   const cols = getVisibleColumns();
@@ -6629,7 +6637,7 @@ async function scanDomainValidity() {
       buildCompaniesFromDomainMap();
       updateStats();
       if (showingFlagged) showFlaggedView();
-      else renderTable();
+      else scheduleRenderTable();
       // Update progress on button
       if (typeof _setRescanBtn === 'function') {
         _setRescanBtn(totalChecked + ' / ' + domainsToCheck.length, true, true);
@@ -6646,7 +6654,7 @@ async function scanDomainValidity() {
   if (newlyFlagged > 0) {
     buildCompaniesFromDomainMap();
     updateStats();
-    renderTable();
+    scheduleRenderTable();
   }
   _domainScanLastTs = Date.now().toString();
   updateLastScanLabel();
@@ -8227,30 +8235,28 @@ async function fetchContactTimeline(email, domain) {
       }
     }
 
-    // If $search "participants:" returned no received emails, fetch recent messages
-    // and filter client-side. This bypasses search indexing delays and works across
-    // ALL folders including Junk/Spam (which $search may exclude).
+    // If $search "participants:" returned no received emails, try server-side
+    // $filter on the sender address first (fast), then fall back to a smaller
+    // client-side filter if needed.
     const hasReceived = items.some(i => i.type === 'received');
     if (!hasReceived) {
       try {
-        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-        const recentUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=100&' + select +
-          '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("receivedDateTime ge " + since);
-        const recentResp = await fetch(recentUrl, { headers });
-        if (recentResp.ok) {
-          const recentData = await recentResp.json();
-          if (recentData.value) {
+        // Try server-side filter by sender address first (efficient, avoids large payloads)
+        const filterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=25&' + select +
+          '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
+        const filterResp = await fetch(filterUrl, { headers });
+        if (filterResp.ok) {
+          const filterData = await filterResp.json();
+          if (filterData.value && filterData.value.length > 0) {
             const existingIds = new Set(items.map(i => i.id));
-            const emailLower = email.toLowerCase();
-            for (const m of recentData.value) {
-              const fromAddr = (m.from?.emailAddress?.address || '').toLowerCase();
-              if (fromAddr === emailLower && !existingIds.has(m.id)) {
+            for (const m of filterData.value) {
+              if (!existingIds.has(m.id)) {
                 items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
               }
             }
           }
         }
-      } catch(e2) { console.warn('Recent messages fallback failed:', e2); }
+      } catch(e2) { console.warn('Received email filter fallback failed:', e2); }
     }
 
     // Calendar events — wrapped in try/catch since Calendars.Read may not be granted
@@ -10661,7 +10667,10 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
     e.stopPropagation();
     const rid = parseInt(checkbox.dataset.rid, 10);
     if (checkbox.checked) selectedIds.add(rid); else selectedIds.delete(rid);
-    renderTable();
+    // Update row highlight in-place instead of full re-render
+    const row = checkbox.closest('tr');
+    if (row) { if (checkbox.checked) row.classList.add('row-selected'); else row.classList.remove('row-selected'); }
+    updateBulkBar();
     return;
   }
   // Skip if clicking inside col-check area or in flagged view
