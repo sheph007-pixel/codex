@@ -6807,10 +6807,10 @@ function sortNewDomainsTable(key) {
 }
 
 function showNewDomainsView() {
-  showingNewDomains = true;
-  showingFlagged = false; showingNewDomains = false;
+  showingFlagged = false; showingBlocked = false;
   showingFollowUp = false; hideFollowUpKanban();
   hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();
+  showingNewDomains = true;
   document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -8281,29 +8281,33 @@ async function fetchContactTimeline(email, domain) {
         }
       } else {
         // ── No known IDs (page reload / DB-only counts) ──
-        // Run $filter for sent + received in parallel (more reliable than $search)
-        const sentFilterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
-          '&$orderby=sentDateTime desc&$filter=' + encodeURIComponent("recipients/any(r:r/emailAddress/address eq '" + email + "')");
+        // Use $search for all emails and $filter for received in parallel.
+        // Note: recipients/any() $filter is NOT supported on Graph v1.0 /me/messages,
+        // so we use $search with "participants:" for broad coverage, plus a reliable
+        // $filter on from/emailAddress for received emails as a safety net.
+        const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=75&' + select +
+          '&$search=' + encodeURIComponent('"participants:' + email + '"');
         const recvFilterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
           '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
 
-        const [sentResp, recvResp] = await Promise.all([
-          fetch(sentFilterUrl, { headers }).catch(() => null),
+        const [searchResp, recvResp] = await Promise.all([
+          fetch(searchUrl, { headers }).catch(() => null),
           fetch(recvFilterUrl, { headers }).catch(() => null)
         ]);
 
         const seenIds = new Set();
-        // Process sent emails
-        if (sentResp && sentResp.ok) {
-          const sentData = await sentResp.json();
-          for (const m of (sentData.value || [])) {
+        // Process search results (covers both sent and received)
+        if (searchResp && searchResp.ok) {
+          const searchData = await searchResp.json();
+          for (const m of (searchData.value || [])) {
             if (!seenIds.has(m.id)) {
               seenIds.add(m.id);
-              items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
+              const item = classifyMessage(m, knownSentSet, knownRecvSet);
+              if (item) items.push(item);
             }
           }
         }
-        // Process received emails
+        // Merge received emails from $filter (catches any missed by $search)
         if (recvResp && recvResp.ok) {
           const recvData = await recvResp.json();
           for (const m of (recvData.value || [])) {
@@ -8312,26 +8316,6 @@ async function fetchContactTimeline(email, domain) {
               items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
             }
           }
-        }
-
-        // If $filter for sent didn't work (some Graph tenants don't support recipients/any),
-        // fall back to $search for sent emails only
-        if (!items.some(i => i.type === 'sent') && sentResp && !sentResp.ok) {
-          try {
-            const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
-              '&$search=' + encodeURIComponent('"to:' + email + '"');
-            const searchResp = await fetch(searchUrl, { headers });
-            if (searchResp.ok) {
-              const searchData = await searchResp.json();
-              for (const m of (searchData.value || [])) {
-                if (!seenIds.has(m.id)) {
-                  seenIds.add(m.id);
-                  const item = classifyMessage(m, knownSentSet, knownRecvSet);
-                  if (item) items.push(item);
-                }
-              }
-            }
-          } catch(e2) { console.warn('Sent email search fallback failed:', e2); }
         }
       }
     })();
