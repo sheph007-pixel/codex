@@ -838,6 +838,11 @@ td.custom-cell input.cell-edit{background:var(--surface);border:1px solid var(--
       <span class="sidebar-badge" id="oldClientCount" style="background:#7a7a95">0</span>
     </div>
     <div class="sidebar-section">Manage</div>
+    <div class="sidebar-item" id="newDomainsViewItem" onclick="showNewDomainsView()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <span>New</span>
+      <span class="sidebar-badge" id="newDomainsCount" style="background:#1a73e8">0</span>
+    </div>
     <div class="sidebar-item" id="flaggedViewItem" onclick="showFlaggedView()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
       <span>Flagged</span>
@@ -3114,6 +3119,7 @@ async function loadFromSupabase() {
           proposal_notes: c.proposal_notes || null,
           followup_date: c.followup_date ? c.followup_date.substring(0, 10) : null,
           merged_into: c.merged_into || null,
+          db_created_at: c.created_at || null,
         };
       } else {
         // Merge duplicate DB rows (case variants) — preserve truthy metadata
@@ -3327,6 +3333,7 @@ function applyCompanyChange(row) {
   if (row.proposal_stage !== undefined) entry.proposal_stage = row.proposal_stage || null;
   if (row.proposal_notes !== undefined) entry.proposal_notes = row.proposal_notes || null;
   if (row.merged_into !== undefined) entry.merged_into = row.merged_into || null;
+  if (row.created_at && !entry.db_created_at) entry.db_created_at = row.created_at;
   if (row.enrichment && Object.keys(row.enrichment).length > 0) enrichmentCache[d] = row.enrichment;
   if (row.custom_data && Object.keys(row.custom_data).length > 0) customColumnData[d] = row.custom_data;
   // Update DB-cached counts so they survive periodic refreshes
@@ -3497,7 +3504,7 @@ async function refreshFromSupabase() {
     // Fetch companies, contacts, and key settings in parallel
     const [remoteCompanies, remoteContacts, settingsResult] = await Promise.all([
       supabaseFetchAll('companies',
-        'domain, company_name, company_type, is_starred, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date',
+        'domain, company_name, company_type, is_starred, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date, created_at',
         { user_id: supabaseUserId }),
       supabaseFetchAll('contacts', 'email, name, is_starred, sent_count, received_count', { user_id: supabaseUserId }),
       supabaseDataClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId)
@@ -3525,6 +3532,7 @@ async function refreshFromSupabase() {
     updateStats();
     updateBlockedCount();
     updateFlaggedCount();
+    updateNewDomainsCount();
     updateFollowUpCount();
     updateLastSyncDisplay();
     updateSupabaseBadge('success');
@@ -3987,6 +3995,7 @@ function ensureDomain(domain) {
       is_followup: false,
       company_type: null, proposal_stage: null, proposal_notes: null,
       followup_date: null, merged_into: null,
+      db_created_at: new Date().toISOString(),
     };
   }
 }
@@ -5002,6 +5011,7 @@ async function onSignedIn(unused, supabasePromise) {
 
   updateBlockedCount();
   updateFlaggedCount();
+  updateNewDomainsCount();
   updateEmailConnectionUI();
   updateLastSyncDisplay();
 
@@ -5168,8 +5178,9 @@ function _getSortVal(c, colKey) {
 }
 
 function renderTable() {
-  // If showing flagged, blocked, or follow-up view, use those renderers instead
+  // If showing flagged, blocked, new domains, or follow-up view, use those renderers instead
   if (showingFlagged) { showFlaggedView(); return; }
+  if (showingNewDomains) { showNewDomainsView(); return; }
   if (showingBlocked) { return; }
   if (showingFollowUp) { renderFollowUpTable(); return; }
   // Restore stats section
@@ -5370,9 +5381,9 @@ function filterByType(type, el) {
   currentTypeFilter = type;
   tableShowAll = false;
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();  document.getElementById('crmContent').classList.add('active');
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
@@ -5402,9 +5413,9 @@ function filterByStatCard(type, el) {
   currentFilter = 'all';
   tableShowAll = false;
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();  document.getElementById('crmContent').classList.add('active');
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
   // Sync sidebar — highlight "All Companies"
@@ -5725,9 +5736,9 @@ function filterByStatus(status, el) {
   currentTypeFilter = status === 'all' ? 'all' : status;
   tableShowAll = false;
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();  document.getElementById('crmContent').classList.add('active');
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
@@ -5744,9 +5755,9 @@ function filterByClientType(type, el) {
   currentTypeFilter = type;
   tableShowAll = false;
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();  document.getElementById('crmContent').classList.add('active');
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
@@ -5850,9 +5861,9 @@ function updateBlockedSyncStatus() {
 
 function showBlockedView() {
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView();
+  hideInbox(); hideSettingsView(); hideNewDomainsView();
   showingBlocked = true;
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('blockedPageView').classList.add('active');
@@ -6065,16 +6076,16 @@ function openFlaggedDetail(domain) {
   companies.push(tempCompany);
   // Mark that we came from flagged view, then clear the flag so renderTable() won't re-trigger showFlaggedView
   _cameFromFlagged = true;
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
   showCompanyPanel(tempId);
 }
 
 function showFlaggedView() {
 
-  showingFlagged = true;
+  showingFlagged = true; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideInbox(); hideSettingsView(); hideBlockedView();  document.getElementById('crmContent').classList.add('active');
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
@@ -6701,6 +6712,180 @@ async function fullDomainRescan() {
 
 let showingFlagged = false;
 let showingBlocked = false;
+let showingNewDomains = false;
+
+// ──────────────────────────────────────────────
+// NEW DOMAINS (added in past 7 days)
+// ──────────────────────────────────────────────
+
+let newDomainsSort = { key: 'added', asc: false };
+
+function updateNewDomainsCount() {
+  const el = document.getElementById('newDomainsCount');
+  if (!el) return;
+  const cutoff = Date.now() - 7 * 86400000;
+  var count = 0;
+  for (var d in domainMap) {
+    if (domainMap[d].is_blocked) continue;
+    if (!domainMap[d].db_created_at) continue;
+    if (new Date(domainMap[d].db_created_at).getTime() >= cutoff) count++;
+  }
+  el.textContent = count;
+}
+
+function hideNewDomainsView() {
+  showingNewDomains = false;
+}
+
+function sortNewDomainsTable(key) {
+  if (newDomainsSort.key === key) newDomainsSort.asc = !newDomainsSort.asc;
+  else { newDomainsSort.key = key; newDomainsSort.asc = key === 'company'; }
+  showNewDomainsView();
+}
+
+function showNewDomainsView() {
+  showingNewDomains = true;
+  showingFlagged = false; showingNewDomains = false;
+  showingFollowUp = false; hideFollowUpKanban();
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();
+  document.getElementById('crmContent').classList.add('active');
+  document.getElementById('crmContent').style.display = '';
+  document.getElementById('detailPage').classList.remove('active');
+  document.querySelectorAll('.sidebar-item').forEach(function(e) { e.classList.remove('active'); });
+  document.getElementById('newDomainsViewItem').classList.add('active');
+  setViewTitle('New', false);
+
+  // Hide stats section for this view
+  document.getElementById('statsSection').style.display = 'none';
+  var colMgr = document.querySelector('.col-mgr-wrap');
+  if (colMgr) colMgr.style.display = 'none';
+
+  // Hide flagged bars
+  var fScanBar = document.getElementById('flaggedScanBar');
+  if (fScanBar) fScanBar.style.display = 'none';
+  var ffBar = document.getElementById('flaggedFilterBar');
+  if (ffBar) ffBar.style.display = 'none';
+  var fBar = document.getElementById('flaggedBulkBar');
+  if (fBar) fBar.classList.remove('active');
+
+  const cutoff = Date.now() - 7 * 86400000;
+  const now = Date.now();
+  const DAY = 86400000;
+
+  // Build list of new domains (added in last 7 days, not blocked)
+  var items = [];
+  for (var d in domainMap) {
+    var dm = domainMap[d];
+    if (dm.is_blocked) continue;
+    if (dm.merged_into) continue;
+    if (!dm.db_created_at) continue;
+    var addedTime = new Date(dm.db_created_at).getTime();
+    if (addedTime < cutoff) continue;
+    var name = companyNameCache[d] || KNOWN_BRANDS[d] || titleCase(d.split('.')[0].replace(/[-_]/g, ' '));
+    var daysAgo = Math.floor((now - addedTime) / DAY);
+    var totalSent = dm.sentIds ? dm.sentIds.size : 0;
+    var totalRecv = dm.receivedIds ? dm.receivedIds.size : 0;
+    items.push({ domain: d, name: name, addedTime: addedTime, daysAgo: daysAgo, totalEmails: totalSent + totalRecv });
+  }
+
+  // Sort
+  var sk = newDomainsSort.key;
+  var sa = newDomainsSort.asc;
+  items.sort(function(a, b) {
+    var va, vb;
+    if (sk === 'company') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
+    else if (sk === 'emails') { va = a.totalEmails; vb = b.totalEmails; }
+    else { va = a.addedTime; vb = b.addedTime; }
+    if (va < vb) return sa ? -1 : 1;
+    if (va > vb) return sa ? 1 : -1;
+    return 0;
+  });
+
+  // Sort arrow helper
+  var arrow = function(k) { return newDomainsSort.key === k ? (newDomainsSort.asc ? ' &#9650;' : ' &#9660;') : ''; };
+
+  // Render table header
+  document.getElementById('tableHead').innerHTML = '<tr>' +
+    '<th onclick="sortNewDomainsTable(\'company\')" style="cursor:pointer">Company' + arrow('company') + '</th>' +
+    '<th onclick="sortNewDomainsTable(\'emails\')" style="cursor:pointer">Total Emails' + arrow('emails') + '</th>' +
+    '<th onclick="sortNewDomainsTable(\'added\')" style="cursor:pointer">Added' + arrow('added') + '</th>' +
+    '<th style="text-align:right">Actions</th>' +
+  '</tr>';
+
+  var tbody = document.getElementById('tableBody');
+
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text2)">No new domains discovered in the past 7 days.</td></tr>';
+    updateViewTitleCount(0);
+    return;
+  }
+
+  tbody.innerHTML = items.map(function(item) {
+    var dSafe = item.domain.replace(/'/g, "\\'");
+    var addedLabel = item.daysAgo === 0 ? 'Today' : item.daysAgo === 1 ? '1 day ago' : item.daysAgo + ' days ago';
+    var addedDate = new Date(item.addedTime).toLocaleDateString();
+
+    return '<tr>' +
+      '<td><div class="company-cell" onclick="openNewDomainDetail(\'' + dSafe + '\')" style="cursor:pointer"><div class="company-logo" style="background:#1a73e8">' + item.domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(item.name) + '</span><span class="company-domain">' + esc(displayDomain(item.domain)) + '</span></div></div></td>' +
+      '<td style="font-size:12px;font-weight:600">' + item.totalEmails + '</td>' +
+      '<td style="font-size:12px;color:var(--text2)"><div>' + addedLabel + '</div><div style="font-size:11px;opacity:.7">' + addedDate + '</div></td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        '<button class="btn btn-ghost btn-sm" onclick="keepNewDomain(\'' + dSafe + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Keep</button> ' +
+        '<button class="btn btn-sm btn-danger" onclick="blockNewDomain(\'' + dSafe + '\')" style="font-size:11px">Block</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+
+  updateViewTitleCount(items.length);
+}
+
+let _cameFromNewDomains = false;
+function openNewDomainDetail(domain) {
+  var data = domainMap[domain];
+  if (!data) return;
+  var contactArr = Object.values(data.contacts);
+  for (var ct of contactArr) { ct.sent = ct.sentIds ? ct.sentIds.size : 0; ct.received = ct.receivedIds ? ct.receivedIds.size : 0; }
+  contactArr.sort(function(a, b) { return (b.sent + b.received) - (a.sent + a.received); });
+  var primary = contactArr[0] || { name: 'Unknown', email: '' };
+  var uniqueSent = data.sentIds ? data.sentIds.size : 0;
+  var uniqueReceived = data.receivedIds ? data.receivedIds.size : 0;
+  var companyName = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
+  var tempId = 99998;
+  var tempCompany = {
+    id: tempId, name: companyName, domain: domain,
+    contact: primary.name, contactEmail: primary.email,
+    sent: uniqueSent, received: uniqueReceived,
+    score: 0, lastDate: data.lastDate,
+    lastActivity: data.lastDate ? timeAgo(data.lastDate) : 'unknown',
+    allContacts: contactArr,
+  };
+  var existing = companies.findIndex(function(c) { return c.id === tempId; });
+  if (existing >= 0) companies.splice(existing, 1);
+  companies.push(tempCompany);
+  _cameFromNewDomains = true;
+  showingNewDomains = false;
+  showingFollowUp = false; hideFollowUpKanban();
+  showCompanyPanel(tempId);
+}
+
+function keepNewDomain(domain) {
+  // "Keep" means the user reviewed and accepts this domain — remove from "new" by backdating created_at
+  var d = domain.toLowerCase();
+  ensureDomain(d);
+  // Set db_created_at to 8 days ago so it falls outside the 7-day window
+  var oldDate = new Date(Date.now() - 8 * 86400000).toISOString();
+  domainMap[d].db_created_at = oldDate;
+  supabaseSaveCompanyField(d, 'created_at', oldDate);
+  updateNewDomainsCount();
+  showNewDomainsView();
+}
+
+function blockNewDomain(domain) {
+  showBlockConfirm(domain, function() {
+    updateNewDomainsCount();
+    showNewDomainsView();
+  });
+}
 
 // ──────────────────────────────────────────────
 // FOLLOW UP
@@ -6735,11 +6920,11 @@ function setFollowUpDate(domain, date) {
 function showFollowUp() {
   showingFollowUp = true;
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   currentFilter = 'all';
   currentTypeFilter = 'all';
   tableShowAll = false;
-  hideInbox(); hideSettingsView(); hideBlockedView();  document.getElementById('crmContent').classList.add('active');
+  hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
   document.querySelectorAll('.sidebar-item').forEach(e => e.classList.remove('active'));
@@ -7598,6 +7783,13 @@ function closePanel() {
     const tempIdx = companies.findIndex(c => c.id === 99999);
     if (tempIdx >= 0) companies.splice(tempIdx, 1);
     showFlaggedView();
+  }
+  // If we came from new domains view, restore it
+  if (_cameFromNewDomains) {
+    _cameFromNewDomains = false;
+    const tempIdx2 = companies.findIndex(c => c.id === 99998);
+    if (tempIdx2 >= 0) companies.splice(tempIdx2, 1);
+    showNewDomainsView();
   }
 }
 
@@ -8885,9 +9077,9 @@ async function testSupabaseConnection() {
 
 function showSettingsView() {
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideBlockedView();  // Hide all other views
+  hideBlockedView(); hideNewDomainsView();  // Hide all other views
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.remove('active');
   const dp = document.getElementById('detailPage');
@@ -9047,9 +9239,9 @@ let inboxLoading = false;
 
 function showInbox() {
 
-  showingFlagged = false;
+  showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
-  hideSettingsView(); hideBlockedView();  setViewTitle(null, false);
+  hideSettingsView(); hideBlockedView(); hideNewDomainsView();  setViewTitle(null, false);
   document.getElementById('crmContent').classList.remove('active');
   document.getElementById('inboxView').classList.add('active');
   const dp = document.getElementById('detailPage');
@@ -10191,6 +10383,7 @@ function esc(text) {
   loadFlaggedCompanies();
   loadMergedDomains();
   updateFlaggedCount();
+  updateNewDomainsCount();
   updateFollowUpCount();
   loadCompanyNameCache();
   loadContactNameOverrides();
@@ -10313,7 +10506,7 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
   }
   // Skip if clicking inside col-check area or in flagged view
   if (e.target.closest('.col-check')) return;
-  if (showingFlagged) return;
+  if (showingFlagged || showingNewDomains) return;
   // Row click → open detail
   const row = e.target.closest('tr[data-id]');
   if (row) openDetail(parseInt(row.dataset.id, 10));
