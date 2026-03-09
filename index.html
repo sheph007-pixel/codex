@@ -6715,7 +6715,7 @@ let showingBlocked = false;
 let showingNewDomains = false;
 
 // ──────────────────────────────────────────────
-// NEW DOMAINS (added in past 7 days)
+// NEW DOMAINS (added in past 3 days)
 // ──────────────────────────────────────────────
 
 let newDomainsSort = { key: 'added', asc: false };
@@ -6723,7 +6723,7 @@ let newDomainsSort = { key: 'added', asc: false };
 function updateNewDomainsCount() {
   const el = document.getElementById('newDomainsCount');
   if (!el) return;
-  const cutoff = Date.now() - 7 * 86400000;
+  const cutoff = Date.now() - 3 * 86400000;
   var count = 0;
   for (var d in domainMap) {
     if (domainMap[d].is_blocked) continue;
@@ -6768,11 +6768,11 @@ function showNewDomainsView() {
   var fBar = document.getElementById('flaggedBulkBar');
   if (fBar) fBar.classList.remove('active');
 
-  const cutoff = Date.now() - 7 * 86400000;
+  const cutoff = Date.now() - 3 * 86400000;
   const now = Date.now();
   const DAY = 86400000;
 
-  // Build list of new domains (added in last 7 days, not blocked)
+  // Build list of new domains (added in last 3 days, not blocked)
   var items = [];
   for (var d in domainMap) {
     var dm = domainMap[d];
@@ -6815,7 +6815,7 @@ function showNewDomainsView() {
   var tbody = document.getElementById('tableBody');
 
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text2)">No new domains discovered in the past 7 days.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text2)">No new domains discovered in the past 3 days.</td></tr>';
     updateViewTitleCount(0);
     return;
   }
