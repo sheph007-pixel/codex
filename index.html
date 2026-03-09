@@ -6085,11 +6085,11 @@ function openFlaggedDetail(domain) {
   // Clear any pending filter debounce to prevent it from re-rendering after detail opens
   clearTimeout(_flaggedFilterTimer);
   const contactArr = Object.values(data.contacts);
-  for (const ct of contactArr) { ct.sent = ct.sentIds.size; ct.received = ct.receivedIds.size; }
+  for (const ct of contactArr) { ct.sent = Math.max(ct.sentIds ? ct.sentIds.size : 0, ct._dbSentCount || 0); ct.received = Math.max(ct.receivedIds ? ct.receivedIds.size : 0, ct._dbReceivedCount || 0); }
   contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
   const primary = contactArr[0] || { name: 'Unknown', email: '' };
-  const uniqueSent = data.sentIds.size;
-  const uniqueReceived = data.receivedIds.size;
+  const uniqueSent = Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0);
+  const uniqueReceived = Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0);
   const domainSent = contactArr.reduce((s, ct) => s + ct.sent, 0);
   const domainReceived = contactArr.reduce((s, ct) => s + ct.received, 0);
   const totalEmails = uniqueSent + uniqueReceived;
@@ -6145,8 +6145,8 @@ function showFlaggedView() {
     const data = domainMap[domain];
     const lastDate = data ? data.lastDate : null;
     const daysSince = lastDate ? Math.floor((now - lastDate.getTime()) / DAY) : 9999;
-    const totalSent = data ? data.sentIds.size : 0;
-    const totalRecv = data ? data.receivedIds.size : 0;
+    const totalSent = data ? Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0) : 0;
+    const totalRecv = data ? Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0) : 0;
     const totalEmails = totalSent + totalRecv;
     const contactCount = data ? Object.keys(data.contacts).length : 0;
     const name = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
@@ -6155,7 +6155,7 @@ function showFlaggedView() {
     if (data && data.contacts) {
       let maxEmails = 0;
       for (var ce of Object.values(data.contacts)) {
-        var ct = (ce.sentIds ? ce.sentIds.size : 0) + (ce.receivedIds ? ce.receivedIds.size : 0);
+        var ct = Math.max(ce.sentIds ? ce.sentIds.size : 0, ce._dbSentCount || 0) + Math.max(ce.receivedIds ? ce.receivedIds.size : 0, ce._dbReceivedCount || 0);
         if (ct > maxEmails) { maxEmails = ct; primaryContact = ce; }
       }
     }
@@ -6832,12 +6832,12 @@ function showNewDomainsView() {
     if (addedTime < cutoff) continue;
     var name = companyNameCache[d] || KNOWN_BRANDS[d] || titleCase(d.split('.')[0].replace(/[-_]/g, ' '));
     var daysAgo = Math.floor((now - addedTime) / DAY);
-    var totalSent = dm.sentIds ? dm.sentIds.size : 0;
-    var totalRecv = dm.receivedIds ? dm.receivedIds.size : 0;
+    var totalSent = Math.max(dm.sentIds ? dm.sentIds.size : 0, dm._dbSentCount || 0);
+    var totalRecv = Math.max(dm.receivedIds ? dm.receivedIds.size : 0, dm._dbReceivedCount || 0);
     var totalEmails = totalSent + totalRecv;
     // Primary contact
     var contactArr = Object.values(dm.contacts || {});
-    contactArr.sort(function(a, b) { return ((b.sentIds ? b.sentIds.size : 0) + (b.receivedIds ? b.receivedIds.size : 0)) - ((a.sentIds ? a.sentIds.size : 0) + (a.receivedIds ? a.receivedIds.size : 0)); });
+    contactArr.sort(function(a, b) { return (Math.max(b.sentIds ? b.sentIds.size : 0, b._dbSentCount || 0) + Math.max(b.receivedIds ? b.receivedIds.size : 0, b._dbReceivedCount || 0)) - (Math.max(a.sentIds ? a.sentIds.size : 0, a._dbSentCount || 0) + Math.max(a.receivedIds ? a.receivedIds.size : 0, a._dbReceivedCount || 0)); });
     var primary = getPrimaryContact(d, contactArr) || contactArr[0] || null;
     var primaryName = '—';
     if (primary) {
@@ -6992,11 +6992,11 @@ function openNewDomainDetail(domain) {
   var data = domainMap[domain];
   if (!data) return;
   var contactArr = Object.values(data.contacts);
-  for (var ct of contactArr) { ct.sent = ct.sentIds ? ct.sentIds.size : 0; ct.received = ct.receivedIds ? ct.receivedIds.size : 0; }
+  for (var ct of contactArr) { ct.sent = Math.max(ct.sentIds ? ct.sentIds.size : 0, ct._dbSentCount || 0); ct.received = Math.max(ct.receivedIds ? ct.receivedIds.size : 0, ct._dbReceivedCount || 0); }
   contactArr.sort(function(a, b) { return (b.sent + b.received) - (a.sent + a.received); });
   var primary = contactArr[0] || { name: 'Unknown', email: '' };
-  var uniqueSent = data.sentIds ? data.sentIds.size : 0;
-  var uniqueReceived = data.receivedIds ? data.receivedIds.size : 0;
+  var uniqueSent = Math.max(data.sentIds ? data.sentIds.size : 0, data._dbSentCount || 0);
+  var uniqueReceived = Math.max(data.receivedIds ? data.receivedIds.size : 0, data._dbReceivedCount || 0);
   var companyName = companyNameCache[domain] || KNOWN_BRANDS[domain] || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
   var tempId = 99998;
   var tempCompany = {
@@ -7845,8 +7845,8 @@ function selectContact(email, domain, companyId) {
   if (!ct) return;
 
   // Ensure sent/received counts are always set
-  if (ct.sent === undefined) ct.sent = ct.sentIds ? ct.sentIds.size : 0;
-  if (ct.received === undefined) ct.received = ct.receivedIds ? ct.receivedIds.size : 0;
+  if (ct.sent === undefined) ct.sent = Math.max(ct.sentIds ? ct.sentIds.size : 0, ct._dbSentCount || 0);
+  if (ct.received === undefined) ct.received = Math.max(ct.receivedIds ? ct.receivedIds.size : 0, ct._dbReceivedCount || 0);
   const color = COLORS[(c ? c.id : 0) % COLORS.length];
   currentContactOverlay = { contact: ct, company: c, domain: domain, email: email.toLowerCase() };
   if (panelState) panelState.selectedContact = email.toLowerCase();
