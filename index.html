@@ -2337,6 +2337,7 @@ function formatContactName(rawName, email) {
 // ──────────────────────────────────────────────
 const companyNameCache = {};
 let companyNameCacheDirty = false;
+const _dbCompanyNames = new Set(); // domains with DB-stored company names (manual edits — skip AI overwrite)
 
 function loadCompanyNameCache() {
   // Defaults — Supabase will overwrite on load
@@ -3083,6 +3084,7 @@ async function loadFromSupabase() {
     Object.keys(starredContacts).forEach(k => delete starredContacts[k]);
     Object.keys(customColumnData).forEach(k => delete customColumnData[k]);
     Object.keys(companyNameCache).forEach(k => delete companyNameCache[k]);
+    _dbCompanyNames.clear();
     Object.keys(enrichmentCache).forEach(k => delete enrichmentCache[k]);
     Object.keys(contactEnrichment).forEach(k => delete contactEnrichment[k]);
     Object.keys(contactNameOverrides).forEach(k => delete contactNameOverrides[k]);
@@ -3129,7 +3131,7 @@ async function loadFromSupabase() {
         if (c.merged_into && !existing.merged_into) existing.merged_into = c.merged_into;
       }
       // Restore caches from company row
-      if (c.company_name) companyNameCache[domainKey] = c.company_name;
+      if (c.company_name) { companyNameCache[domainKey] = c.company_name; _dbCompanyNames.add(domainKey); }
       if (c.enrichment && Object.keys(c.enrichment).length > 0) enrichmentCache[domainKey] = c.enrichment;
       if (c.custom_data && Object.keys(c.custom_data).length > 0) customColumnData[domainKey] = c.custom_data;
     }
@@ -3312,7 +3314,7 @@ function applyCompanyChange(row) {
   ensureDomain(d);
   const entry = domainMap[d];
   // Update metadata directly on domainMap entry (single source of truth)
-  if (row.company_name) companyNameCache[d] = row.company_name;
+  if (row.company_name) { companyNameCache[d] = row.company_name; _dbCompanyNames.add(d); }
   if (row.company_type !== undefined) {
     entry.company_type = row.company_type ? row.company_type.replace(/\b\w/g, l => l.toUpperCase()) : null;
   }
@@ -4374,7 +4376,7 @@ async function aiImproveNames() {
     // Skip if user manually set this name via companyNameCache from Clearbit
     // But check if name still looks like a raw domain prefix (no spaces, all lowercase root, etc.)
     var rawFallback = titleCase(c.domain.split('.')[0].replace(/[-_]/g, ' '));
-    if (c.name === rawFallback && !contactNameOverrides['__company__' + c.domain]) {
+    if (c.name === rawFallback && !_dbCompanyNames.has(c.domain) && !contactNameOverrides['__company__' + c.domain]) {
       companyBatch.push({ domain: c.domain, currentName: c.name });
     }
   }
@@ -7026,6 +7028,7 @@ async function addCompanyManually() {
   // Cache the company name
   companyNameCache[domain] = name;
   companyNameCacheDirty = true;
+  _dbCompanyNames.add(domain); // protect from AI overwrite
   saveCompanyNameCache();
 
   // All companies are leads
@@ -7243,6 +7246,7 @@ async function saveCompanyNameEdit(domain, el) {
   // Save to cache
   companyNameCache[domain] = newName;
   companyNameCacheDirty = true;
+  _dbCompanyNames.add(domain); // protect from AI overwrite
   saveCompanyNameCache();
   // Save to companies table for cross-device sync — await to confirm
   var saved = await supabaseSaveCompanyField(domain, 'company_name', newName);
