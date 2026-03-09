@@ -2793,16 +2793,6 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
             .catch(function() {}); // column may not exist yet
         } catch(e) {}
       }
-      // Clean up duplicate empty user rows with the same email (created by previous failed logins)
-      // This prevents the problem from recurring.
-      supabaseClient.from('users')
-        .delete()
-        .ilike('email', email)
-        .neq('id', supabaseUserId)
-        .then(function(r) {
-          if (r.data && r.data.length > 0) console.log('Supabase: cleaned up ' + r.data.length + ' duplicate empty user rows');
-        })
-        .catch(function() {});
       return supabaseUserId;
     }
 
