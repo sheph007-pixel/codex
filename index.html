@@ -2685,7 +2685,8 @@ async function initSupabase() {
 // Previous logins may have created duplicate empty user rows with the same email,
 // so we can't just take the oldest — we must find the one with real data.
 async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
-  if (!supabaseReady) return null;
+  if (!supabaseReady) { console.warn('ensureUser: supabase not ready'); return null; }
+  console.log('ensureUser: authId=' + authId + ', email=' + email + ', supabaseAuthId=' + supabaseAuthId);
   try {
     var foundUser = null;
     var foundBy = '';
@@ -2699,11 +2700,12 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
           .select('id')
           .eq('supabase_auth_id', supabaseAuthId)
           .limit(1);
+        console.log('ensureUser step1 (supabase_auth_id): rows=' + (authRows ? authRows.length : 'null') + ', error=' + (authErr ? authErr.message : 'none'));
         if (!authErr && authRows && authRows.length > 0) {
           foundUser = authRows[0];
           foundBy = 'supabase_auth_id';
         }
-      } catch(e) { /* column doesn't exist yet — ignore */ }
+      } catch(e) { console.log('ensureUser step1: column missing, skipping'); }
     }
 
     // 2. Try email — but find the user who actually HAS companies data.
@@ -2715,6 +2717,8 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
         .from('users')
         .select('id')
         .ilike('email', email);
+      console.log('ensureUser step2 (email): rows=' + (rows ? rows.length : 'null') + ', error=' + (findErr ? findErr.message : 'none'));
+      if (rows) rows.forEach(function(r, i) { console.log('  user[' + i + '].id=' + r.id); });
       if (!findErr && rows && rows.length > 0) {
         if (rows.length === 1) {
           foundUser = rows[0];
@@ -3050,9 +3054,9 @@ async function supabaseFetchAll(table, selectCols, filters) {
 }
 
 async function loadFromSupabase() {
-  if (!supabaseReady || !supabaseUserId) return null;
+  if (!supabaseReady || !supabaseUserId) { console.warn('loadFromSupabase: not ready or no userId. ready=' + supabaseReady + ', userId=' + supabaseUserId); return null; }
   try {
-    console.log('Supabase: loading data...');
+    console.log('Supabase: loading data for userId=' + supabaseUserId);
     const loadStart = Date.now();
 
     // Simple: load everything in parallel, one query per table
@@ -3721,9 +3725,12 @@ async function authSignIn() {
 async function onAuthSignedIn(authUser) {
   // Store Supabase Auth UUID for cross-device identity linking
   supabaseAuthUuid = authUser.id;
+  console.log('onAuthSignedIn: authUser.id=' + authUser.id + ', email=' + authUser.email);
+  console.log('onAuthSignedIn: supabaseDataClient exists=' + !!supabaseDataClient);
   // Ensure user row exists in our users table.
   // Pass the Supabase Auth UUID so it gets stored on the user row for cross-device lookup.
   await supabaseEnsureUser(authUser.id, authUser.email, authUser.email, authUser.id);
+  console.log('onAuthSignedIn: after ensureUser, supabaseUserId=' + supabaseUserId);
   // Check if Microsoft email is already connected (MSAL cached account)
   var msReconnected = await tryReconnectMicrosoft();
   // If Microsoft account was found and its email differs from the Supabase Auth email,
