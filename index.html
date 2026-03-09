@@ -2673,8 +2673,9 @@ async function initSupabase() {
 }
 
 // Upsert user record on sign-in (returns user UUID)
-// Identity resolution priority: supabase_auth_id > email > microsoft_id
-// Once found, stores supabase_auth_id on the row for reliable cross-device lookup.
+// Identity resolution: finds the user who actually HAS data (companies).
+// Previous logins may have created duplicate empty user rows with the same email,
+// so we can't just take the oldest — we must find the one with real data.
 async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
   if (!supabaseReady) return null;
   try {
@@ -2682,29 +2683,54 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
     var foundBy = '';
 
     // 1. Try supabase_auth_id first (most reliable for Supabase Auth users)
+    // Wrapped in try-catch because the column may not exist yet (migration pending)
     if (supabaseAuthId) {
-      var { data: authRows, error: authErr } = await supabaseClient
-        .from('users')
-        .select('id')
-        .eq('supabase_auth_id', supabaseAuthId)
-        .limit(1);
-      if (!authErr && authRows && authRows.length > 0) {
-        foundUser = authRows[0];
-        foundBy = 'supabase_auth_id';
-      }
+      try {
+        var { data: authRows, error: authErr } = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('supabase_auth_id', supabaseAuthId)
+          .limit(1);
+        if (!authErr && authRows && authRows.length > 0) {
+          foundUser = authRows[0];
+          foundBy = 'supabase_auth_id';
+        }
+      } catch(e) { /* column doesn't exist yet — ignore */ }
     }
 
-    // 2. Try email (case-insensitive) — handles most normal logins
+    // 2. Try email — but find the user who actually HAS companies data.
+    // Previous failed logins created empty duplicate user rows with the same email,
+    // so taking the oldest user is wrong. Instead, get ALL users with this email
+    // and check which one owns companies.
     if (!foundUser) {
       var { data: rows, error: findErr } = await supabaseClient
         .from('users')
         .select('id')
-        .ilike('email', email)
-        .order('created_at', { ascending: true })
-        .limit(1);
+        .ilike('email', email);
       if (!findErr && rows && rows.length > 0) {
-        foundUser = rows[0];
-        foundBy = 'email';
+        if (rows.length === 1) {
+          foundUser = rows[0];
+          foundBy = 'email';
+        } else {
+          // Multiple users with same email — find the one with data
+          for (var i = 0; i < rows.length; i++) {
+            var { data: compCheck, error: compErr } = await supabaseClient
+              .from('companies')
+              .select('id')
+              .eq('user_id', rows[i].id)
+              .limit(1);
+            if (!compErr && compCheck && compCheck.length > 0) {
+              foundUser = rows[i];
+              foundBy = 'email (with data)';
+              break;
+            }
+          }
+          // If none have data, use the first one
+          if (!foundUser) {
+            foundUser = rows[0];
+            foundBy = 'email (no data)';
+          }
+        }
       }
     }
 
@@ -2721,68 +2747,68 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
       }
     }
 
-    // Found existing user — link supabase_auth_id for future cross-device logins
+    // 4. LAST RESORT: All lookups failed. Find ANY user who has companies data.
+    // This handles total identity mismatch (different email, no microsoft_id match).
+    if (!foundUser) {
+      console.warn('Supabase: no user found by auth_id/email/microsoft_id — searching for user with data...');
+      try {
+        var { data: dataUsers, error: dataErr } = await supabaseClient
+          .from('companies')
+          .select('user_id')
+          .limit(1);
+        if (!dataErr && dataUsers && dataUsers.length > 0) {
+          var dataUserId = dataUsers[0].user_id;
+          var { data: verifyRows } = await supabaseClient
+            .from('users')
+            .select('id')
+            .eq('id', dataUserId)
+            .limit(1);
+          if (verifyRows && verifyRows.length > 0) {
+            foundUser = verifyRows[0];
+            foundBy = 'companies data (last resort)';
+          }
+        }
+      } catch(e) {
+        console.warn('Supabase: data-based user lookup failed:', e);
+      }
+    }
+
+    // Found existing user — link identifiers for future logins
     if (foundUser) {
       supabaseUserId = foundUser.id;
       try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
-      console.log('Supabase: found existing user by ' + foundBy + ', id=' + supabaseUserId);
-      // Store supabase_auth_id on the row if not already set (enables cross-device lookup)
+      console.log('Supabase: found user by ' + foundBy + ', id=' + supabaseUserId);
+      // Update email + supabase_auth_id so future logins resolve directly
+      supabaseClient.from('users')
+        .update({ email: email })
+        .eq('id', supabaseUserId)
+        .then(function() {})
+        .catch(function() {});
       if (supabaseAuthId) {
-        supabaseClient.from('users')
-          .update({ supabase_auth_id: supabaseAuthId })
-          .eq('id', supabaseUserId)
-          .then(function() {})
-          .catch(function() {}); // fire-and-forget, column may not exist yet
+        try {
+          supabaseClient.from('users')
+            .update({ supabase_auth_id: supabaseAuthId })
+            .eq('id', supabaseUserId)
+            .then(function() {})
+            .catch(function() {}); // column may not exist yet
+        } catch(e) {}
       }
+      // Clean up duplicate empty user rows with the same email (created by previous failed logins)
+      // This prevents the problem from recurring.
+      supabaseClient.from('users')
+        .delete()
+        .ilike('email', email)
+        .neq('id', supabaseUserId)
+        .then(function(r) {
+          if (r.data && r.data.length > 0) console.log('Supabase: cleaned up ' + r.data.length + ' duplicate empty user rows');
+        })
+        .catch(function() {});
       return supabaseUserId;
     }
 
-    // 4. CRITICAL FALLBACK: All lookups failed. Before creating a new empty user,
-    // check if any existing user actually HAS data (companies). This handles identity
-    // mismatches where the Supabase Auth email differs from the stored email.
-    // For single-user CRM, this safely finds the right account.
-    console.warn('Supabase: no user found by auth_id, email, or microsoft_id. Checking for user with data...');
-    try {
-      var { data: dataUsers, error: dataErr } = await supabaseClient
-        .from('companies')
-        .select('user_id')
-        .limit(1);
-      if (!dataErr && dataUsers && dataUsers.length > 0) {
-        var dataUserId = dataUsers[0].user_id;
-        // Verify this user_id exists in users table
-        var { data: verifyRows } = await supabaseClient
-          .from('users')
-          .select('id')
-          .eq('id', dataUserId)
-          .limit(1);
-        if (verifyRows && verifyRows.length > 0) {
-          foundUser = verifyRows[0];
-          supabaseUserId = foundUser.id;
-          try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
-          console.log('Supabase: found user with data (fallback), id=' + supabaseUserId);
-          // Update the user's email to match this login so future lookups work directly
-          supabaseClient.from('users')
-            .update({ email: email })
-            .eq('id', supabaseUserId)
-            .then(function() { console.log('Supabase: updated user email to ' + email); })
-            .catch(function() {});
-          if (supabaseAuthId) {
-            supabaseClient.from('users')
-              .update({ supabase_auth_id: supabaseAuthId })
-              .eq('id', supabaseUserId)
-              .then(function() {})
-              .catch(function() {}); // fire-and-forget
-          }
-          return supabaseUserId;
-        }
-      }
-    } catch(e) {
-      console.warn('Supabase: data-based user lookup failed:', e);
-    }
-
-    // Truly no existing user — create new (first-time signup)
+    // Truly no existing user anywhere — create new (genuine first-time signup)
+    console.log('Supabase: no existing user found, creating new user for ' + email);
     var insertData = { email: email, display_name: displayName || email };
-    if (supabaseAuthId) insertData.supabase_auth_id = supabaseAuthId;
     if (authId && authId !== email) insertData.microsoft_id = authId;
     var { data, error } = await supabaseClient
       .from('users')
@@ -2790,10 +2816,8 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
       .select('id')
       .single();
     if (error) {
-      // Fallback: if insert fails (e.g. supabase_auth_id column doesn't exist yet),
-      // try the old upsert approach without supabase_auth_id
       console.warn('Supabase: insert failed, trying legacy upsert:', error.message);
-      var legacyData = { microsoft_id: authId, email: email, display_name: displayName || email };
+      var legacyData = { microsoft_id: authId || email, email: email, display_name: displayName || email };
       var { data: d2, error: e2 } = await supabaseClient
         .from('users')
         .upsert(legacyData, { onConflict: 'microsoft_id' })
