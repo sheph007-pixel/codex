@@ -1712,6 +1712,7 @@ let currentCompanyOverlay = null;  // company object for open overlay
 let currentContactOverlay = null;  // { contact, company, domain }
 let currentContactTab = 'all';
 let contactTimelineCache = {};  // "email" -> [{type,subject,date,...}]
+const TIMELINE_CACHE_MAX = 200;
 let companyFilesCache = {};     // "domain" -> [{name, size, messageId, attachmentId, date, from}, ...]
 let currentLeftTab = 'relationships'; // 'relationships' or 'files'
 
@@ -8365,6 +8366,11 @@ async function fetchContactTimeline(email, domain) {
     for (const item of items) { if (!seen.has(item.id)) { seen.add(item.id); unique.push(item); } }
     unique.sort((a, b) => b.date - a.date);
     contactTimelineCache[email] = unique;
+    // Evict oldest entries if cache too large
+    const tlKeys = Object.keys(contactTimelineCache);
+    if (tlKeys.length > TIMELINE_CACHE_MAX) {
+      for (const k of tlKeys.slice(0, tlKeys.length - Math.floor(TIMELINE_CACHE_MAX / 2))) delete contactTimelineCache[k];
+    }
 
     // Fix contact lastDate from real email data (most recent email date)
     if (unique.length > 0 && domain && domainMap[domain]) {
@@ -8469,7 +8475,16 @@ let currentViewerBodyText = '';
 let currentViewerBodyHtml = '';
 let currentViewerToRecipients = [];
 let currentViewerCcRecipients = [];
-let emailBodyCache = {}; // { messageId: { subject, from, date, plainText } } — grows as emails are opened
+let emailBodyCache = {}; // { messageId: { subject, from, date, plainText } }
+const EMAIL_BODY_CACHE_MAX = 500;
+function trimEmailBodyCache() {
+  const keys = Object.keys(emailBodyCache);
+  if (keys.length > EMAIL_BODY_CACHE_MAX) {
+    // Remove oldest half
+    const toRemove = keys.slice(0, keys.length - Math.floor(EMAIL_BODY_CACHE_MAX / 2));
+    for (const k of toRemove) delete emailBodyCache[k];
+  }
+}
 
 async function openEmailViewer(messageId) {
   currentViewerMsgId = messageId;
@@ -8539,6 +8554,7 @@ async function openEmailViewer(messageId) {
       date: currentViewerDate,
       plainText: currentViewerBodyText.substring(0, 2000)
     };
+    trimEmailBodyCache();
     const frame = document.getElementById('evBodyFrame');
     const baseStyle = 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:14px;color:#222;padding:24px 28px;margin:0;line-height:1.6;word-break:break-word}img{max-width:100%;height:auto}a{color:#1a73e8}pre,code{white-space:pre-wrap;word-break:break-all}blockquote{border-left:3px solid #ddd;margin:8px 0;padding:4px 12px;color:#555}';
     if (bodyType === 'html') {
@@ -10320,13 +10336,16 @@ async function aiScanAllEmails() {
     aiScanProgress.done = 0;
     // Store all email previews in a global cache for AI
     if (!window.aiEmailScanCache) window.aiEmailScanCache = [];
+    if (!window._aiScanIdSet) window._aiScanIdSet = new Set(window.aiEmailScanCache.map(function(e) { return e.id; }));
     msgs.forEach(function(m) {
       var fromAddr = (m.from && m.from.emailAddress ? m.from.emailAddress.address : '') || '';
       var fromName = (m.from && m.from.emailAddress ? m.from.emailAddress.name : '') || '';
       var toList = (m.toRecipients || []).map(function(r) { return r.emailAddress ? r.emailAddress.address : ''; }).join(', ');
-      // Avoid duplicates
-      var exists = window.aiEmailScanCache.some(function(e) { return e.id === m.id; });
-      if (!exists) {
+      // Avoid duplicates — use Set for O(1) lookup instead of O(n) .some()
+      if (!window._aiScanIdSet.has(m.id)) {
+        window._aiScanIdSet.add(m.id);
+        // Cap at 2000 entries to prevent memory exhaustion
+        if (window.aiEmailScanCache.length >= 2000) return;
         window.aiEmailScanCache.push({
           id: m.id,
           subject: m.subject || '(no subject)',
