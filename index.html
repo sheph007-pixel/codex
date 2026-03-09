@@ -1720,11 +1720,13 @@ let currentLeftTab = 'relationships'; // 'relationships' or 'files'
 const BUILTIN_COLUMNS = [
   { id:'company', label:'Company', sortKey:'company', removable:false },
   { id:'contact', label:'Primary Contact', sortKey:'contact', removable:true },
+  { id:'totalEmails', label:'Total Emails', sortKey:'totalEmails', removable:true },
   { id:'sent', label:'Sent', sortKey:'sent', removable:true },
   { id:'received', label:'Received', sortKey:'received', removable:true },
   { id:'emailFlow', label:'Email Ratio', sortKey:null, removable:true },
   { id:'companyType', label:'Type', sortKey:'companyType', removable:true },
   { id:'score', label:'AI Score', sortKey:'score', removable:true },
+  { id:'daysSinceContact', label:'Days Since Contact', sortKey:'daysSinceContact', removable:true },
   { id:'lastActivity', label:'Last Email', sortKey:'lastActivity', removable:true },
 ];
 
@@ -3193,6 +3195,20 @@ async function loadFromSupabase() {
                   const typeCol = { id: 'companyType', label: 'Type', type: 'builtin', visible: true };
                   columnConfig.push(typeCol);
                 }
+                // Inject totalEmails column if missing
+                if (!columnConfig.find(c => c.id === 'totalEmails')) {
+                  const sentIdx = columnConfig.findIndex(c => c.id === 'sent');
+                  const totalCol = { id: 'totalEmails', label: 'Total Emails', type: 'builtin', visible: true };
+                  if (sentIdx >= 0) columnConfig.splice(sentIdx, 0, totalCol);
+                  else columnConfig.push(totalCol);
+                }
+                // Inject daysSinceContact column if missing
+                if (!columnConfig.find(c => c.id === 'daysSinceContact')) {
+                  const lastIdx = columnConfig.findIndex(c => c.id === 'lastActivity');
+                  const dscCol = { id: 'daysSinceContact', label: 'Days Since Contact', type: 'builtin', visible: true };
+                  if (lastIdx >= 0) columnConfig.splice(lastIdx, 0, dscCol);
+                  else columnConfig.push(dscCol);
+                }
                 // Remove legacy status column if present
                 columnConfig = columnConfig.filter(c => c.id !== 'status');
               }
@@ -4006,6 +4022,7 @@ function ensureDomain(domain) {
     domainMap[domain] = {
       contacts: {}, sentIds: new Set(), receivedIds: new Set(),
       lastDate: null, lastSentDate: null, lastReceivedDate: null,
+      _dbSentCount: 0, _dbReceivedCount: 0,
       is_starred: false, is_blocked: false, is_flagged: false,
       is_followup: false,
       company_type: null, proposal_stage: null, proposal_notes: null,
@@ -4041,7 +4058,7 @@ function ensureContact(domain, email, name) {
   // If user manually overrode this contact's name, always use that
   if (contactNameOverrides[le]) {
     if (!domainMap[domain].contacts[le]) {
-      domainMap[domain].contacts[le] = { name: contactNameOverrides[le], email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null };
+      domainMap[domain].contacts[le] = { name: contactNameOverrides[le], email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null, _dbSentCount: 0, _dbReceivedCount: 0 };
     } else {
       domainMap[domain].contacts[le].name = contactNameOverrides[le];
     }
@@ -4049,7 +4066,7 @@ function ensureContact(domain, email, name) {
   }
   const formatted = formatContactName(name, le);
   if (!domainMap[domain].contacts[le]) {
-    domainMap[domain].contacts[le] = { name: formatted, email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null };
+    domainMap[domain].contacts[le] = { name: formatted, email: le, sentIds: new Set(), receivedIds: new Set(), lastDate: null, _dbSentCount: 0, _dbReceivedCount: 0 };
   } else {
     const existing = domainMap[domain].contacts[le].name;
     if (existing === le || existing === email || (name && name !== email && existing === formatContactName(null, le))) {
@@ -4327,6 +4344,8 @@ function buildCompaniesFromDomainMap() {
       || KNOWN_BRANDS[domain]
       || titleCase(domain.split('.')[0].replace(/[-_]/g, ' '));
 
+    const daysSinceContact = mergedLastDate ? Math.floor((now - mergedLastDate.getTime()) / DAY) : null;
+
     companies.push({
       id: id++,
       name: companyName,
@@ -4335,6 +4354,8 @@ function buildCompaniesFromDomainMap() {
       contactEmail: primary.email,
       sent: domainSent,
       received: domainReceived,
+      totalEmails: domainSent + domainReceived,
+      daysSinceContact: daysSinceContact,
       score: score,
       lastDate: mergedLastDate,
       lastActivity: mergedLastDate ? timeAgo(mergedLastDate) : 'unknown',
@@ -5149,6 +5170,8 @@ function buildCellHTML(col, c, color) {
         var initials = c.contact ? c.contact.split(' ').map(function(n){return n[0]}).join('').substring(0,2) : '';
         var ctTitle = getContactTitle(c.contactEmail || '');
         return '<div class="contact-cell"><div class="avatar" style="background:' + color + '">' + contactPhotoHTML(c.contactEmail || '', color, initials) + '</div><div><span class="contact-name">' + esc(c.contact) + '</span>' + (ctTitle ? '<div class="contact-title">' + esc(ctTitle) + '</div>' : '') + '</div></div>';
+      case 'totalEmails':
+        return '<span style="font-weight:600">' + c.totalEmails + '</span>';
       case 'sent':
         return '<span style="color:var(--accent2);font-weight:600">' + c.sent + '</span>';
       case 'received':
@@ -5168,6 +5191,11 @@ function buildCellHTML(col, c, color) {
       case 'score':
         var scoreColor = c.score >= 75 ? '#1e8e3e' : c.score >= 50 ? '#e8710a' : '#d93025';
         return '<div class="ai-score"><div class="score-num" style="color:' + scoreColor + ';border-color:' + scoreColor + '">' + c.score + '</div></div>';
+      case 'daysSinceContact':
+        if (c.daysSinceContact === null) return '<span style="color:var(--text2)">—</span>';
+        var dscColor = c.daysSinceContact <= 7 ? 'var(--green)' : c.daysSinceContact <= 30 ? 'var(--orange)' : 'var(--red)';
+        var dscLabel = c.daysSinceContact === 0 ? 'Today' : c.daysSinceContact;
+        return '<span style="color:' + dscColor + ';font-weight:600">' + dscLabel + '</span>';
       case 'lastActivity':
         return '<span style="color:var(--text2)">' + esc(c.lastActivity) + '</span>';
       default: return '';
@@ -5185,6 +5213,8 @@ function _getSortVal(c, colKey) {
   if (colKey === 'company') return (c.name || '').toString();
   if (colKey === 'contact') return (c.contact || '').toString();
   if (colKey === 'companyType') return getCompanyType(c.domain);
+  if (colKey === 'totalEmails') return c.totalEmails || 0;
+  if (colKey === 'daysSinceContact') return c.daysSinceContact !== null ? c.daysSinceContact : 99999;
   if (colKey === 'lastActivity') return c.lastDate ? c.lastDate.getTime() : 0;
   var cc = columnConfig.find(function(x) { return x.id === colKey; });
   if (cc && (cc.type === 'ai' || cc.type === 'custom')) return getCellValue(c, cc) || '';
