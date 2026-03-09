@@ -6804,7 +6804,15 @@ function showNewDomainsView() {
     var daysAgo = Math.floor((now - addedTime) / DAY);
     var totalSent = dm.sentIds ? dm.sentIds.size : 0;
     var totalRecv = dm.receivedIds ? dm.receivedIds.size : 0;
-    items.push({ domain: d, name: name, addedTime: addedTime, daysAgo: daysAgo, totalEmails: totalSent + totalRecv });
+    var totalEmails = totalSent + totalRecv;
+    // Primary contact
+    var contactArr = Object.values(dm.contacts || {});
+    contactArr.sort(function(a, b) { return ((b.sentIds ? b.sentIds.size : 0) + (b.receivedIds ? b.receivedIds.size : 0)) - ((a.sentIds ? a.sentIds.size : 0) + (a.receivedIds ? a.receivedIds.size : 0)); });
+    var primary = getPrimaryContact(d, contactArr) || contactArr[0] || null;
+    var primaryName = primary ? (primary.name || primary.email || '—') : '—';
+    // Days since last contact
+    var daysSinceContact = dm.lastDate ? Math.floor((now - dm.lastDate.getTime()) / DAY) : null;
+    items.push({ domain: d, name: name, addedTime: addedTime, daysAgo: daysAgo, totalEmails: totalEmails, sent: totalSent, received: totalRecv, primaryName: primaryName, daysSinceContact: daysSinceContact });
   }
 
   // Sort
@@ -6813,7 +6821,11 @@ function showNewDomainsView() {
   items.sort(function(a, b) {
     var va, vb;
     if (sk === 'company') { va = a.name.toLowerCase(); vb = b.name.toLowerCase(); }
+    else if (sk === 'contact') { va = a.primaryName.toLowerCase(); vb = b.primaryName.toLowerCase(); }
     else if (sk === 'emails') { va = a.totalEmails; vb = b.totalEmails; }
+    else if (sk === 'sent') { va = a.sent; vb = b.sent; }
+    else if (sk === 'received') { va = a.received; vb = b.received; }
+    else if (sk === 'dayssince') { va = a.daysSinceContact === null ? 9999 : a.daysSinceContact; vb = b.daysSinceContact === null ? 9999 : b.daysSinceContact; }
     else { va = a.addedTime; vb = b.addedTime; }
     if (va < vb) return sa ? -1 : 1;
     if (va > vb) return sa ? 1 : -1;
@@ -6827,15 +6839,17 @@ function showNewDomainsView() {
   document.getElementById('tableHead').innerHTML = '<tr>' +
     '<th class="col-check"><input type="checkbox" class="row-checkbox" id="newDomainsSelectAll" onchange="toggleNewDomainsSelectAll(this.checked)"></th>' +
     '<th onclick="sortNewDomainsTable(\'company\')" style="cursor:pointer">Company' + arrow('company') + '</th>' +
+    '<th onclick="sortNewDomainsTable(\'contact\')" style="cursor:pointer">Primary Contact' + arrow('contact') + '</th>' +
     '<th onclick="sortNewDomainsTable(\'emails\')" style="cursor:pointer">Total Emails' + arrow('emails') + '</th>' +
-    '<th onclick="sortNewDomainsTable(\'added\')" style="cursor:pointer">Added' + arrow('added') + '</th>' +
-    '<th style="text-align:right">Actions</th>' +
+    '<th onclick="sortNewDomainsTable(\'sent\')" style="cursor:pointer">Sent' + arrow('sent') + '</th>' +
+    '<th onclick="sortNewDomainsTable(\'received\')" style="cursor:pointer">Received' + arrow('received') + '</th>' +
+    '<th onclick="sortNewDomainsTable(\'dayssince\')" style="cursor:pointer">Days Since Contact' + arrow('dayssince') + '</th>' +
   '</tr>';
 
   var tbody = document.getElementById('tableBody');
 
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">No new domains discovered in the past 3 days.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">No new domains discovered in the past 3 days.</td></tr>';
     updateViewTitleCount(0);
     updateNewDomainsBulkBar();
     return;
@@ -6843,19 +6857,17 @@ function showNewDomainsView() {
 
   tbody.innerHTML = items.map(function(item) {
     var dSafe = item.domain.replace(/'/g, "\\'");
-    var addedLabel = item.daysAgo === 0 ? 'Today' : item.daysAgo === 1 ? '1 day ago' : item.daysAgo + ' days ago';
-    var addedDate = new Date(item.addedTime).toLocaleDateString();
     var sel = selectedNewDomains.has(item.domain);
+    var dscLabel = item.daysSinceContact === null ? '—' : (item.daysSinceContact === 0 ? 'Today' : item.daysSinceContact);
 
     return '<tr' + (sel ? ' class="row-selected"' : '') + ' data-new-domain="' + esc(item.domain) + '">' +
       '<td class="col-check"><input type="checkbox" class="row-checkbox" data-nd="' + esc(item.domain) + '"' + (sel ? ' checked' : '') + ' onchange="toggleNewDomainSelect(\'' + dSafe + '\', this.checked)"></td>' +
       '<td><div class="company-cell" onclick="openNewDomainDetail(\'' + dSafe + '\')" style="cursor:pointer"><div class="company-logo" style="background:#1a73e8">' + item.domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(item.name) + '</span><span class="company-domain">' + esc(displayDomain(item.domain)) + '</span></div></div></td>' +
+      '<td style="font-size:12px">' + esc(item.primaryName) + '</td>' +
       '<td style="font-size:12px;font-weight:600">' + item.totalEmails + '</td>' +
-      '<td style="font-size:12px;color:var(--text2)"><div>' + addedLabel + '</div><div style="font-size:11px;opacity:.7">' + addedDate + '</div></td>' +
-      '<td style="text-align:right;white-space:nowrap">' +
-        '<button class="btn btn-ghost btn-sm" onclick="keepNewDomain(\'' + dSafe + '\')" style="font-size:11px;color:var(--green);border-color:var(--green)">Keep</button> ' +
-        '<button class="btn btn-sm btn-danger" onclick="blockNewDomain(\'' + dSafe + '\')" style="font-size:11px">Block</button>' +
-      '</td>' +
+      '<td style="font-size:12px">' + item.sent + '</td>' +
+      '<td style="font-size:12px">' + item.received + '</td>' +
+      '<td style="font-size:12px;color:var(--text2)">' + dscLabel + '</td>' +
     '</tr>';
   }).join('');
 
