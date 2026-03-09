@@ -6809,7 +6809,16 @@ function showNewDomainsView() {
     var contactArr = Object.values(dm.contacts || {});
     contactArr.sort(function(a, b) { return ((b.sentIds ? b.sentIds.size : 0) + (b.receivedIds ? b.receivedIds.size : 0)) - ((a.sentIds ? a.sentIds.size : 0) + (a.receivedIds ? a.receivedIds.size : 0)); });
     var primary = getPrimaryContact(d, contactArr) || contactArr[0] || null;
-    var primaryName = primary ? (primary.name || primary.email || '—') : '—';
+    var primaryName = '—';
+    if (primary) {
+      var pn = primary.name || '';
+      // If name looks like an email or encoded URL, use just the local part or short email
+      if (!pn || pn === primary.email) {
+        primaryName = primary.email ? primary.email.split('@')[0] : '—';
+      } else {
+        primaryName = pn;
+      }
+    }
     // Days since last contact
     var daysSinceContact = dm.lastDate ? Math.floor((now - dm.lastDate.getTime()) / DAY) : null;
     items.push({ domain: d, name: name, addedTime: addedTime, daysAgo: daysAgo, totalEmails: totalEmails, sent: totalSent, received: totalRecv, primaryName: primaryName, daysSinceContact: daysSinceContact });
@@ -6863,11 +6872,11 @@ function showNewDomainsView() {
     return '<tr' + (sel ? ' class="row-selected"' : '') + ' data-new-domain="' + esc(item.domain) + '">' +
       '<td class="col-check"><input type="checkbox" class="row-checkbox" data-nd="' + esc(item.domain) + '"' + (sel ? ' checked' : '') + ' onchange="toggleNewDomainSelect(\'' + dSafe + '\', this.checked)"></td>' +
       '<td><div class="company-cell" onclick="openNewDomainDetail(\'' + dSafe + '\')" style="cursor:pointer"><div class="company-logo" style="background:#1a73e8">' + item.domain[0].toUpperCase() + '</div><div class="company-info"><span class="company-name">' + esc(item.name) + '</span><span class="company-domain">' + esc(displayDomain(item.domain)) + '</span></div></div></td>' +
-      '<td style="font-size:12px">' + esc(item.primaryName) + '</td>' +
-      '<td style="font-size:12px;font-weight:600">' + item.totalEmails + '</td>' +
-      '<td style="font-size:12px">' + item.sent + '</td>' +
-      '<td style="font-size:12px">' + item.received + '</td>' +
-      '<td style="font-size:12px;color:var(--text2)">' + dscLabel + '</td>' +
+      '<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(item.primaryName) + '</td>' +
+      '<td style="font-size:12px;font-weight:600;text-align:center">' + item.totalEmails + '</td>' +
+      '<td style="font-size:12px;text-align:center">' + item.sent + '</td>' +
+      '<td style="font-size:12px;text-align:center">' + item.received + '</td>' +
+      '<td style="font-size:12px;text-align:center;color:var(--text2)">' + dscLabel + '</td>' +
     '</tr>';
   }).join('');
 
