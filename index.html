@@ -2613,6 +2613,7 @@ let _sidebarCollapsed = false;
 let _domainScanLastTs = '0';
 const _deviceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
 let supabaseClient = null;
+let supabaseDataClient = null; // Separate anon client for data queries (unaffected by auth session)
 let supabaseUserId = null;
 let supabaseAuthUuid = null; // Supabase Auth UUID — stored for cross-device user lookup
 let supabaseReady = false;
@@ -2662,6 +2663,13 @@ async function initSupabase() {
   }
   try {
     supabaseClient = supabase.createClient(url, key);
+    // Create a separate client for data queries that always uses the anon key.
+    // When signInWithPassword is called on supabaseClient, it switches to the
+    // 'authenticated' role — but our RLS policies only allow 'anon'. This data
+    // client never has an auth session, so it always uses the anon role.
+    supabaseDataClient = supabase.createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
     supabaseReady = true;
     console.log('Supabase: initialized');
     return true;
@@ -2686,7 +2694,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
     // Wrapped in try-catch because the column may not exist yet (migration pending)
     if (supabaseAuthId) {
       try {
-        var { data: authRows, error: authErr } = await supabaseClient
+        var { data: authRows, error: authErr } = await supabaseDataClient
           .from('users')
           .select('id')
           .eq('supabase_auth_id', supabaseAuthId)
@@ -2703,7 +2711,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
     // so taking the oldest user is wrong. Instead, get ALL users with this email
     // and check which one owns companies.
     if (!foundUser) {
-      var { data: rows, error: findErr } = await supabaseClient
+      var { data: rows, error: findErr } = await supabaseDataClient
         .from('users')
         .select('id')
         .ilike('email', email);
@@ -2714,7 +2722,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
         } else {
           // Multiple users with same email — find the one with data
           for (var i = 0; i < rows.length; i++) {
-            var { data: compCheck, error: compErr } = await supabaseClient
+            var { data: compCheck, error: compErr } = await supabaseDataClient
               .from('companies')
               .select('id')
               .eq('user_id', rows[i].id)
@@ -2736,7 +2744,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
 
     // 3. Try microsoft_id (handles legacy MSAL users and email changes)
     if (!foundUser) {
-      var { data: msRows, error: msErr } = await supabaseClient
+      var { data: msRows, error: msErr } = await supabaseDataClient
         .from('users')
         .select('id')
         .eq('microsoft_id', authId)
@@ -2752,13 +2760,13 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
     if (!foundUser) {
       console.warn('Supabase: no user found by auth_id/email/microsoft_id — searching for user with data...');
       try {
-        var { data: dataUsers, error: dataErr } = await supabaseClient
+        var { data: dataUsers, error: dataErr } = await supabaseDataClient
           .from('companies')
           .select('user_id')
           .limit(1);
         if (!dataErr && dataUsers && dataUsers.length > 0) {
           var dataUserId = dataUsers[0].user_id;
-          var { data: verifyRows } = await supabaseClient
+          var { data: verifyRows } = await supabaseDataClient
             .from('users')
             .select('id')
             .eq('id', dataUserId)
@@ -2779,14 +2787,14 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
       try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
       console.log('Supabase: found user by ' + foundBy + ', id=' + supabaseUserId);
       // Update email + supabase_auth_id so future logins resolve directly
-      supabaseClient.from('users')
+      supabaseDataClient.from('users')
         .update({ email: email })
         .eq('id', supabaseUserId)
         .then(function() {})
         .catch(function() {});
       if (supabaseAuthId) {
         try {
-          supabaseClient.from('users')
+          supabaseDataClient.from('users')
             .update({ supabase_auth_id: supabaseAuthId })
             .eq('id', supabaseUserId)
             .then(function() {})
@@ -2800,7 +2808,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
     console.log('Supabase: no existing user found, creating new user for ' + email);
     var insertData = { email: email, display_name: displayName || email };
     if (authId && authId !== email) insertData.microsoft_id = authId;
-    var { data, error } = await supabaseClient
+    var { data, error } = await supabaseDataClient
       .from('users')
       .insert(insertData)
       .select('id')
@@ -2808,7 +2816,7 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
     if (error) {
       console.warn('Supabase: insert failed, trying legacy upsert:', error.message);
       var legacyData = { microsoft_id: authId || email, email: email, display_name: displayName || email };
-      var { data: d2, error: e2 } = await supabaseClient
+      var { data: d2, error: e2 } = await supabaseDataClient
         .from('users')
         .upsert(legacyData, { onConflict: 'microsoft_id' })
         .select('id')
@@ -2892,7 +2900,7 @@ async function syncToSupabase() {
     let companyFails = 0;
     for (let i = 0; i < companyRows.length; i += 200) {
       const batch = companyRows.slice(i, i + 200);
-      const { error } = await supabaseClient
+      const { error } = await supabaseDataClient
         .from('companies')
         .upsert(batch, { onConflict: 'user_id,domain' });
       if (error) {
@@ -2901,7 +2909,7 @@ async function syncToSupabase() {
         // Retry with smaller chunks if batch too large
         for (let j = 0; j < batch.length; j += 100) {
           const smallBatch = batch.slice(j, j + 100);
-          const { error: e2 } = await supabaseClient
+          const { error: e2 } = await supabaseDataClient
             .from('companies')
             .upsert(smallBatch, { onConflict: 'user_id,domain' });
           if (e2) console.warn('Supabase: company retry batch ' + (i+j) + ' failed:', e2.message);
@@ -2929,7 +2937,7 @@ async function syncToSupabase() {
     if (duplicateIds.length > 0) {
       console.log('Supabase: cleaning up', duplicateIds.length, 'duplicate mixed-case domain rows');
       for (let di = 0; di < duplicateIds.length; di += 100) {
-        await supabaseClient.from('companies').delete().in('id', duplicateIds.slice(di, di + 100));
+        await supabaseDataClient.from('companies').delete().in('id', duplicateIds.slice(di, di + 100));
       }
     }
 
@@ -2941,7 +2949,7 @@ async function syncToSupabase() {
         return rest;
       }).filter(c => c.company_id); // skip orphans
       if (batch.length === 0) continue;
-      const { error } = await supabaseClient
+      const { error } = await supabaseDataClient
         .from('contacts')
         .upsert(batch, { onConflict: 'user_id,email' });
       if (error) {
@@ -2949,7 +2957,7 @@ async function syncToSupabase() {
         // Retry with smaller chunks
         for (let j = 0; j < batch.length; j += 100) {
           const smallBatch = batch.slice(j, j + 100);
-          const { error: e2 } = await supabaseClient
+          const { error: e2 } = await supabaseDataClient
             .from('contacts')
             .upsert(smallBatch, { onConflict: 'user_id,email' });
           if (e2) console.warn('Supabase: contact retry batch ' + (i+j) + ' failed:', e2.message);
@@ -2975,7 +2983,7 @@ async function syncToSupabase() {
     };
     // Save all settings in parallel (was sequential — 12 round trips → 1)
     await Promise.all(Object.entries(settingsToSync).map(async ([key, value]) => {
-      const { error } = await supabaseClient
+      const { error } = await supabaseDataClient
         .from('user_settings')
         .upsert({ user_id: supabaseUserId, key: key, value: value },
                 { onConflict: 'user_id,key' });
@@ -2983,7 +2991,7 @@ async function syncToSupabase() {
     }));
 
     // Sync scan metadata (use fixed device_id 'primary' — one scan state per user)
-    await supabaseClient
+    await supabaseDataClient
       .from('scan_metadata')
       .upsert({
         user_id: supabaseUserId,
@@ -3014,7 +3022,7 @@ async function supabaseFetchAll(table, selectCols, filters) {
   let allData = [];
   let from = 0;
   while (true) {
-    let query = supabaseClient.from(table).select(selectCols).order('id', { ascending: true }).range(from, from + PAGE_SIZE - 1);
+    let query = supabaseDataClient.from(table).select(selectCols).order('id', { ascending: true }).range(from, from + PAGE_SIZE - 1);
     for (const [key, val] of Object.entries(filters || {})) {
       query = query.eq(key, val);
     }
@@ -3051,8 +3059,8 @@ async function loadFromSupabase() {
     const [companyData, contactData, settingsResult, scanResult] = await Promise.all([
       supabaseFetchAll('companies', '*', { user_id: supabaseUserId }),
       supabaseFetchAll('contacts', '*', { user_id: supabaseUserId }),
-      supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId),
-      supabaseClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
+      supabaseDataClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId),
+      supabaseDataClient.from('scan_metadata').select('*').eq('user_id', supabaseUserId).order('updated_at', { ascending: false }).limit(1).maybeSingle()
     ]);
 
     if (!companyData || companyData.length === 0) {
@@ -3212,7 +3220,7 @@ async function supabaseSaveCompanyField(domain, field, value) {
   if (!supabaseReady || !supabaseUserId) return;
   try {
     const row = { user_id: supabaseUserId, domain: domain, [field]: value };
-    await supabaseClient
+    await supabaseDataClient
       .from('companies')
       .upsert(row, { onConflict: 'user_id,domain' });
     clearPendingEdit(domain, field); // confirmed saved — remove from pending
@@ -3223,7 +3231,7 @@ async function supabaseSaveContactField(email, fields) {
   if (!supabaseReady || !supabaseUserId) return;
   try {
     var row = Object.assign({ user_id: supabaseUserId, email: email.toLowerCase() }, fields);
-    await supabaseClient
+    await supabaseDataClient
       .from('contacts')
       .upsert(row, { onConflict: 'user_id,email' });
   } catch(e) { console.warn('Supabase: contact field save failed:', e); }
@@ -3232,7 +3240,7 @@ async function supabaseSaveContactField(email, fields) {
 async function supabaseSaveSetting(key, value) {
   if (!supabaseReady || !supabaseUserId) return;
   try {
-    await supabaseClient
+    await supabaseDataClient
       .from('user_settings')
       .upsert({ user_id: supabaseUserId, key: key, value: value },
               { onConflict: 'user_id,key' });
@@ -3450,7 +3458,7 @@ async function refreshFromSupabase() {
         'domain, company_name, company_type, is_starred, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date',
         { user_id: supabaseUserId }),
       supabaseFetchAll('contacts', 'email, name, is_starred, sent_count, received_count', { user_id: supabaseUserId }),
-      supabaseClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId)
+      supabaseDataClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId)
         .in('key', ['contact_name_overrides', 'starred_contacts', 'company_name_cache'])
     ]);
     if (!remoteCompanies || remoteCompanies.length === 0) throw new Error('no data');
