@@ -10780,10 +10780,11 @@ document.getElementById('tableBody').addEventListener('click', function(e) {
     startCellEdit(customCell);
     return;
   }
-  // Checkbox handling — skip flagged view checkboxes (handled by their own onchange)
+  // Checkbox handling — skip flagged/new-domains view checkboxes (handled by their own onchange)
   const checkbox = e.target.closest('input.row-checkbox');
   if (checkbox) {
     if (checkbox.dataset.flaggedDomain !== undefined) return;
+    if (checkbox.dataset.nd !== undefined) return;
     e.stopPropagation();
     const rid = parseInt(checkbox.dataset.rid, 10);
     if (checkbox.checked) selectedIds.add(rid); else selectedIds.delete(rid);
