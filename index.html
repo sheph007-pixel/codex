@@ -2257,7 +2257,7 @@ function afterBlockCleanup() {
     renderInbox();
     updateInboxBadge();
   }
-  saveLocalCache();
+  saveLocalCacheDeferred();
 }
 
 
@@ -2624,7 +2624,13 @@ function clearLocalCache() {
   try { localStorage.removeItem(LOCAL_CACHE_KEY); } catch(e) {}
 }
 
-function persistData() { saveLocalCache(); }
+// Debounced saveLocalCache — prevents UI freezing from rapid successive calls
+let _saveCacheTimer = null;
+function saveLocalCacheDeferred() {
+  if (_saveCacheTimer) clearTimeout(_saveCacheTimer);
+  _saveCacheTimer = setTimeout(function() { _saveCacheTimer = null; saveLocalCache(); }, 300);
+}
+function persistData() { saveLocalCacheDeferred(); }
 function loadPersistedData() { return loadLocalCache(); }
 function clearPersistedData() { clearLocalCache(); }
 
@@ -3036,7 +3042,7 @@ async function syncToSupabase() {
     for (const domain in domainMap) domainMap[domain]._fromDb = true;
     updateDbRecordCounts();
     // Update local cache after successful sync
-    saveLocalCache();
+    saveLocalCacheDeferred();
   } catch(e) {
     console.warn('Supabase: sync error:', e);
     updateSupabaseBadge('error');
@@ -3567,7 +3573,7 @@ async function refreshFromSupabase() {
     updateFollowUpCount();
     updateLastSyncDisplay();
     updateSupabaseBadge('success');
-    saveLocalCache();
+    saveLocalCacheDeferred();
     lastRefreshTime = Date.now();
   } catch(e) {
     console.warn('Supabase: refresh failed:', e);
@@ -7059,7 +7065,7 @@ function toggleFollowUp(domain) {
   }
   saveFollowUpCompanies();
   supabaseSaveCompanyField(domain, 'is_followup', domainMap[domain].is_followup);
-  saveLocalCache();
+  saveLocalCacheDeferred();
   updateFollowUpCount();
   renderTable();
 }
@@ -7069,7 +7075,7 @@ function setFollowUpDate(domain, date) {
   var dateVal = date || null;
   domainMap[domain].followup_date = dateVal;
   supabaseSaveCompanyField(domain, 'followup_date', dateVal);
-  saveLocalCache();
+  saveLocalCacheDeferred();
   renderTable();
 }
 
@@ -7596,7 +7602,7 @@ async function saveCompanyNameEdit(domain, el) {
   } else {
     showSyncToast('Save failed — change may not sync to other devices', true);
   }
-  saveLocalCache();
+  saveLocalCacheDeferred();
   // Update in-memory company object
   var comp = companies.find(function(c) { return c.domain === domain; });
   if (comp) {
@@ -7962,7 +7968,7 @@ function toggleStar(domain, email) {
     starredContacts[domain] = email;
   }
   saveStarredContacts();
-  saveLocalCache();
+  saveLocalCacheDeferred();
   // Save is_starred directly to contacts table for cross-device sync
   if (prevStarred) supabaseSaveContactField(prevStarred, { is_starred: false });
   if (starredContacts[domain]) supabaseSaveContactField(email, { is_starred: true });
@@ -8267,7 +8273,6 @@ async function fetchContactTimeline(email, domain) {
     const emailPromise = (async () => {
       if (allKnownIds.length > 0) {
         // ── Fast path: fetch known IDs directly via $batch ──
-        // Cap at 100 most recent (if user has huge history, take newest)
         const idsToFetch = allKnownIds.slice(0, 100);
         const messages = await fetchMessagesByIds(idsToFetch);
         for (const m of messages) {
@@ -8275,35 +8280,58 @@ async function fetchContactTimeline(email, domain) {
           if (item) items.push(item);
         }
       } else {
-        // ── Fallback: no known IDs (e.g. DB-only counts), use $search ──
-        const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=75&' + select +
-          '&$search=' + encodeURIComponent('"participants:' + email + '"');
-        const searchResp = await fetch(searchUrl, { headers });
-        if (searchResp.ok) {
-          const searchData = await searchResp.json();
-          if (searchData.value) {
-            for (const m of searchData.value) {
-              const item = classifyMessage(m, knownSentSet, knownRecvSet);
-              if (item) items.push(item);
+        // ── No known IDs (page reload / DB-only counts) ──
+        // Run $filter for sent + received in parallel (more reliable than $search)
+        const sentFilterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
+          '&$orderby=sentDateTime desc&$filter=' + encodeURIComponent("recipients/any(r:r/emailAddress/address eq '" + email + "')");
+        const recvFilterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
+          '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
+
+        const [sentResp, recvResp] = await Promise.all([
+          fetch(sentFilterUrl, { headers }).catch(() => null),
+          fetch(recvFilterUrl, { headers }).catch(() => null)
+        ]);
+
+        const seenIds = new Set();
+        // Process sent emails
+        if (sentResp && sentResp.ok) {
+          const sentData = await sentResp.json();
+          for (const m of (sentData.value || [])) {
+            if (!seenIds.has(m.id)) {
+              seenIds.add(m.id);
+              items.push({ type: 'sent', subject: m.subject || '(no subject)', date: new Date(m.sentDateTime || m.receivedDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
             }
           }
         }
-        // If search missed received emails, try $filter fallback
-        if (!items.some(i => i.type === 'received')) {
+        // Process received emails
+        if (recvResp && recvResp.ok) {
+          const recvData = await recvResp.json();
+          for (const m of (recvData.value || [])) {
+            if (!seenIds.has(m.id)) {
+              seenIds.add(m.id);
+              items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
+            }
+          }
+        }
+
+        // If $filter for sent didn't work (some Graph tenants don't support recipients/any),
+        // fall back to $search for sent emails only
+        if (!items.some(i => i.type === 'sent') && sentResp && !sentResp.ok) {
           try {
-            const filterUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=25&' + select +
-              '&$orderby=receivedDateTime desc&$filter=' + encodeURIComponent("from/emailAddress/address eq '" + email + "'");
-            const filterResp = await fetch(filterUrl, { headers });
-            if (filterResp.ok) {
-              const filterData = await filterResp.json();
-              const existingIds = new Set(items.map(i => i.id));
-              for (const m of (filterData.value || [])) {
-                if (!existingIds.has(m.id)) {
-                  items.push({ type: 'received', subject: m.subject || '(no subject)', date: new Date(m.receivedDateTime || m.sentDateTime), preview: m.bodyPreview || '', id: m.id, conversationId: m.conversationId, webLink: m.webLink || '' });
+            const searchUrl = 'https://graph.microsoft.com/v1.0/me/messages?$top=50&' + select +
+              '&$search=' + encodeURIComponent('"to:' + email + '"');
+            const searchResp = await fetch(searchUrl, { headers });
+            if (searchResp.ok) {
+              const searchData = await searchResp.json();
+              for (const m of (searchData.value || [])) {
+                if (!seenIds.has(m.id)) {
+                  seenIds.add(m.id);
+                  const item = classifyMessage(m, knownSentSet, knownRecvSet);
+                  if (item) items.push(item);
                 }
               }
             }
-          } catch(e2) { console.warn('Received email filter fallback failed:', e2); }
+          } catch(e2) { console.warn('Sent email search fallback failed:', e2); }
         }
       }
     })();
