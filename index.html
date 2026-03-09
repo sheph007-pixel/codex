@@ -4356,8 +4356,12 @@ function buildCompaniesFromDomainMap() {
     const domainReceived = uniqueReceived;
 
     // SELECTIVE: only create company if user has sent at least 1 email to this domain
-    // Skip filter for DB-loaded domains — they were already vetted
+    // DB-loaded domains bypass this — unless they are zero-activity leads (no sent AND no received).
+    // Zero-activity leads are noise; user-typed companies (Current Client, Old Client) always show.
+    var isUserTyped = data.company_type && data.company_type !== 'Lead';
+    var totalActivity = uniqueSent + uniqueReceived;
     if (uniqueSent === 0 && !data._fromDb) { _skipCount.no_sent++; continue; }
+    if (data._fromDb && totalActivity === 0 && !isUserTyped && !data.is_starred && !data.is_followup) { _skipCount.no_sent++; continue; }
 
     contactArr.sort((a, b) => (b.sent + b.received) - (a.sent + a.received));
     const primary = getPrimaryContact(domain, contactArr) || { name: domain, email: '' };
