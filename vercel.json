@@ -7,6 +7,7 @@
     { "source": "/api/keepalive", "destination": "/api/keepalive.js" },
     { "source": "/api/openai", "destination": "/api/openai.js" },
     { "source": "/api/confirm-user", "destination": "/api/confirm-user.js" },
+    { "source": "/api/run-migration", "destination": "/api/run-migration.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

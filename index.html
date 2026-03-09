@@ -2737,7 +2737,50 @@ async function supabaseEnsureUser(authId, email, displayName, supabaseAuthId) {
       return supabaseUserId;
     }
 
-    // No existing user found — create new (first-time signup)
+    // 4. CRITICAL FALLBACK: All lookups failed. Before creating a new empty user,
+    // check if any existing user actually HAS data (companies). This handles identity
+    // mismatches where the Supabase Auth email differs from the stored email.
+    // For single-user CRM, this safely finds the right account.
+    console.warn('Supabase: no user found by auth_id, email, or microsoft_id. Checking for user with data...');
+    try {
+      var { data: dataUsers, error: dataErr } = await supabaseClient
+        .from('companies')
+        .select('user_id')
+        .limit(1);
+      if (!dataErr && dataUsers && dataUsers.length > 0) {
+        var dataUserId = dataUsers[0].user_id;
+        // Verify this user_id exists in users table
+        var { data: verifyRows } = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('id', dataUserId)
+          .limit(1);
+        if (verifyRows && verifyRows.length > 0) {
+          foundUser = verifyRows[0];
+          supabaseUserId = foundUser.id;
+          try { localStorage.setItem('kennion_sb_uid', supabaseUserId); } catch(e) {}
+          console.log('Supabase: found user with data (fallback), id=' + supabaseUserId);
+          // Update the user's email to match this login so future lookups work directly
+          supabaseClient.from('users')
+            .update({ email: email })
+            .eq('id', supabaseUserId)
+            .then(function() { console.log('Supabase: updated user email to ' + email); })
+            .catch(function() {});
+          if (supabaseAuthId) {
+            supabaseClient.from('users')
+              .update({ supabase_auth_id: supabaseAuthId })
+              .eq('id', supabaseUserId)
+              .then(function() {})
+              .catch(function() {}); // fire-and-forget
+          }
+          return supabaseUserId;
+        }
+      }
+    } catch(e) {
+      console.warn('Supabase: data-based user lookup failed:', e);
+    }
+
+    // Truly no existing user — create new (first-time signup)
     var insertData = { email: email, display_name: displayName || email };
     if (supabaseAuthId) insertData.supabase_auth_id = supabaseAuthId;
     if (authId && authId !== email) insertData.microsoft_id = authId;
