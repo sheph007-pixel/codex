@@ -2128,11 +2128,14 @@ function getCompanyType(domain) {
 
 function setCompanyType(domain, type, selectEl) {
   ensureDomain(domain);
+  var oldType = domainMap[domain].company_type || 'Lead';
   domainMap[domain].company_type = type;
   // Instant Supabase save for this specific domain
   supabaseSaveCompanyField(domain, 'company_type', type ? type.toLowerCase() : null);
   scheduleSupabaseSync();
-  updateTypeCounts();
+  // Debounced stats update instead of immediate full recount
+  if (_statsUpdateTimer) clearTimeout(_statsUpdateTimer);
+  _statsUpdateTimer = setTimeout(function() { _statsUpdateTimer = null; updateTypeCounts(); }, 300);
   // Update the dropdown badge class in-place instead of full re-render
   // This prevents the dropdown from being destroyed mid-interaction
   if (!selectEl) {
@@ -3515,6 +3518,7 @@ function stopRealtimeSubscription() {
 }
 
 // ── INCREMENTAL REFRESH: merge changes without clearing state ──
+var _lastRefreshTimestamp = null; // ISO timestamp of last successful refresh
 async function refreshFromSupabase() {
   if (!supabaseReady || !supabaseUserId || refreshInProgress) return;
   if (supabaseSyncInProgress) return;
@@ -3522,16 +3526,48 @@ async function refreshFromSupabase() {
   if (Date.now() - lastRefreshTime < 10000) return;
   refreshInProgress = true;
   try {
-    // Fetch companies, contacts, and key settings in parallel
-    const [remoteCompanies, remoteContacts, settingsResult] = await Promise.all([
-      supabaseFetchAll('companies',
-        'domain, company_name, company_type, is_starred, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date, created_at',
-        { user_id: supabaseUserId }),
-      supabaseFetchAll('contacts', 'email, name, is_starred, sent_count, received_count', { user_id: supabaseUserId }),
+    // Only fetch records updated since last refresh (incremental sync)
+    // Falls back to full fetch on first load or if _lastRefreshTimestamp is null
+    var companyCols = 'domain, company_name, company_type, is_starred, is_flagged, is_blocked, is_followup, followup_date, proposal_stage, proposal_notes, merged_into, enrichment, custom_data, sent_count, received_count, last_activity_date, created_at, updated_at';
+    var companyPromise, contactPromise;
+
+    if (_lastRefreshTimestamp) {
+      // Incremental: only fetch rows updated since last refresh
+      companyPromise = supabaseDataClient.from('companies')
+        .select(companyCols)
+        .eq('user_id', supabaseUserId)
+        .gt('updated_at', _lastRefreshTimestamp)
+        .order('updated_at', { ascending: false })
+        .limit(500);
+      contactPromise = supabaseDataClient.from('contacts')
+        .select('email, name, is_starred, sent_count, received_count, updated_at')
+        .eq('user_id', supabaseUserId)
+        .gt('updated_at', _lastRefreshTimestamp)
+        .order('updated_at', { ascending: false })
+        .limit(500);
+    } else {
+      // Full fetch on first load
+      companyPromise = supabaseFetchAll('companies',
+        companyCols,
+        { user_id: supabaseUserId });
+      contactPromise = supabaseFetchAll('contacts', 'email, name, is_starred, sent_count, received_count', { user_id: supabaseUserId });
+    }
+
+    const [companyResult, contactResult, settingsResult] = await Promise.all([
+      companyPromise,
+      contactPromise,
       supabaseDataClient.from('user_settings').select('key, value').eq('user_id', supabaseUserId)
         .in('key', ['contact_name_overrides', 'starred_contacts', 'company_name_cache'])
     ]);
-    if (!remoteCompanies || remoteCompanies.length === 0) throw new Error('no data');
+
+    // Handle both array (fetchAll) and {data} (query) results
+    var remoteCompanies = Array.isArray(companyResult) ? companyResult : (companyResult.data || []);
+    var remoteContacts = Array.isArray(contactResult) ? contactResult : (contactResult.data || []);
+
+    // On first full load, require data
+    if (!_lastRefreshTimestamp && (!remoteCompanies || remoteCompanies.length === 0)) throw new Error('no data');
+
+    var hasChanges = remoteCompanies.length > 0 || remoteContacts.length > 0;
 
     for (const row of remoteCompanies) {
       applyCompanyChange(row);
@@ -3548,16 +3584,21 @@ async function refreshFromSupabase() {
         applySettingChange(s.key, s.value);
       }
     }
-    buildCompaniesFromDomainMap();
-    renderTable();
-    updateStats();
-    updateBlockedCount();
-    updateFlaggedCount();
-    updateNewDomainsCount();
-    updateFollowUpCount();
+
+    // Only rebuild and re-render if there were actual changes
+    if (hasChanges || !_lastRefreshTimestamp) {
+      buildCompaniesFromDomainMap();
+      renderTable();
+      updateStats();
+      updateBlockedCount();
+      updateFlaggedCount();
+      updateNewDomainsCount();
+      updateFollowUpCount();
+    }
     updateLastSyncDisplay();
     updateSupabaseBadge('success');
-    saveLocalCacheDeferred();
+    if (hasChanges) saveLocalCacheDeferred();
+    _lastRefreshTimestamp = new Date().toISOString();
     lastRefreshTime = Date.now();
   } catch(e) {
     console.warn('Supabase: refresh failed:', e);
@@ -3571,12 +3612,12 @@ function startSupabasePolling() {
   if (supabaseRefreshTimer) return;
   // Start realtime subscription first
   startRealtimeSubscription();
-  // Poll every 30 seconds as safety net (realtime can silently disconnect)
+  // Poll every 60 seconds as safety net (realtime handles most updates instantly)
   supabaseRefreshTimer = setInterval(() => {
     if (!document.hidden && supabaseReady && supabaseUserId) {
       refreshFromSupabase();
     }
-  }, 30000);
+  }, 60000);
 
   // Refresh immediately when user switches back to this tab
   document.addEventListener('visibilitychange', function() {
@@ -5122,23 +5163,27 @@ function updateScanStatus() {
 // TABLE RENDERING (dynamic columns)
 // ──────────────────────────────────────────────
 const TABLE_PAGE_SIZE = 100;
+const TABLE_LOAD_MORE_SIZE = 100; // rows to add each time user scrolls near bottom
 let tableShowAll = false;
+let tableCurrentLimit = TABLE_PAGE_SIZE; // how many rows are currently rendered
+let _lastRenderedData = null; // cache filtered+sorted data to allow incremental append
 
 // Debounce buildCompaniesFromDomainMap to prevent UI freezing from rapid successive calls
 // (e.g. realtime events, cross-device sync triggering 50+ rebuilds in a row)
 let _buildCompaniesTimer = null;
 function scheduleBuildCompanies() {
   if (_buildCompaniesTimer) clearTimeout(_buildCompaniesTimer);
-  _buildCompaniesTimer = setTimeout(function() { _buildCompaniesTimer = null; buildCompaniesFromDomainMap(); scheduleRenderTable(); updateStats(); }, 200);
+  _buildCompaniesTimer = setTimeout(function() { _buildCompaniesTimer = null; buildCompaniesFromDomainMap(); scheduleRenderTable(); updateStats(); }, 500);
 }
 
 // Debounce renderTable to prevent UI freezing from rapid successive calls
 // (e.g. concurrent name resolution, email scan, AI improvement all triggering re-renders)
 let _renderTableTimer = null;
 let _renderTableImmediate = false;
+let _statsUpdateTimer = null;
 function scheduleRenderTable() {
   if (_renderTableTimer) clearTimeout(_renderTableTimer);
-  _renderTableTimer = setTimeout(function() { _renderTableTimer = null; renderTable(); }, 150);
+  _renderTableTimer = setTimeout(function() { _renderTableTimer = null; renderTable(); }, 250);
 }
 
 function renderTableHeader() {
@@ -5242,6 +5287,65 @@ function _getSortVal(c, colKey) {
   return v !== undefined && v !== null ? v : '';
 }
 
+function _buildRowHTML(c, cols) {
+  const color = COLORS[c.id % COLORS.length];
+  const sel = selectedIds.has(c.id);
+  let row = '<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">';
+  row += '<td class="col-check"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>';
+  for (const col of cols) {
+    const isCustom = col.type === 'ai' || col.type === 'custom';
+    row += '<td' + (isCustom ? ' class="custom-cell" data-col="' + col.id + '" data-domain="' + c.domain + '"' : '') + '>' + buildCellHTML(col, c, color) + '</td>';
+  }
+  row += '</tr>';
+  return row;
+}
+
+// Append more rows incrementally without rebuilding the entire table
+function tableLoadMore() {
+  if (!_lastRenderedData || tableCurrentLimit >= _lastRenderedData.length) return;
+  const cols = getVisibleColumns();
+  const colCount = cols.length + 1;
+  const data = _lastRenderedData;
+  const tbody = document.getElementById('tableBody');
+  // Remove the existing sentinel/load-more row
+  var sentinel = document.getElementById('tableScrollSentinel');
+  if (sentinel) sentinel.remove();
+  var loadMoreRow = tbody.querySelector('.show-more-row');
+  if (loadMoreRow) loadMoreRow.remove();
+
+  const prevLimit = tableCurrentLimit;
+  tableCurrentLimit = Math.min(tableCurrentLimit + TABLE_LOAD_MORE_SIZE, data.length);
+  const fragment = document.createDocumentFragment();
+  const temp = document.createElement('tbody');
+  const newRows = [];
+  for (let i = prevLimit; i < tableCurrentLimit; i++) {
+    newRows.push(_buildRowHTML(data[i], cols));
+  }
+  // Add load-more sentinel if there are still more rows
+  if (tableCurrentLimit < data.length) {
+    newRows.push('<tr class="show-more-row" data-action="showmore"><td colspan="' + colCount + '">Load more (' + (data.length - tableCurrentLimit).toLocaleString() + ' remaining of ' + data.length.toLocaleString() + ')</td></tr>');
+    newRows.push('<tr id="tableScrollSentinel" style="height:1px"></tr>');
+  }
+  temp.innerHTML = newRows.join('');
+  while (temp.firstChild) fragment.appendChild(temp.firstChild);
+  tbody.appendChild(fragment);
+  _setupScrollSentinel();
+}
+
+// IntersectionObserver for infinite scroll — loads more rows when sentinel is near viewport
+var _scrollObserver = null;
+function _setupScrollSentinel() {
+  var sentinel = document.getElementById('tableScrollSentinel');
+  if (!sentinel) return;
+  if (_scrollObserver) _scrollObserver.disconnect();
+  _scrollObserver = new IntersectionObserver(function(entries) {
+    if (entries[0].isIntersecting) {
+      tableLoadMore();
+    }
+  }, { rootMargin: '600px' });
+  _scrollObserver.observe(sentinel);
+}
+
 function renderTable() {
   // If showing flagged, blocked, or follow-up view, use those renderers instead
   if (showingFlagged) { showFlaggedView(); return; }
@@ -5310,6 +5414,9 @@ function renderTable() {
     return 0;
   });
 
+  // Cache filtered+sorted data for incremental loading
+  _lastRenderedData = data;
+
   const cols = getVisibleColumns();
   const colCount = cols.length + 1; // +1 for checkbox
   const tbody = document.getElementById('tableBody');
@@ -5321,28 +5428,28 @@ function renderTable() {
   }
 
   const totalCount = data.length;
-  const visible = tableShowAll ? data : data.slice(0, TABLE_PAGE_SIZE);
+  // Reset limit on full re-render (unless tableShowAll is set for backwards compat)
+  if (!tableShowAll) {
+    tableCurrentLimit = TABLE_PAGE_SIZE;
+  } else {
+    tableCurrentLimit = totalCount;
+  }
+  const visible = data.slice(0, tableCurrentLimit);
 
   const rows = [];
   for (let i = 0; i < visible.length; i++) {
-    const c = visible[i];
-    const color = COLORS[c.id % COLORS.length];
-    const sel = selectedIds.has(c.id);
-    let row = '<tr' + (sel ? ' class="row-selected"' : '') + ' data-id="' + c.id + '">';
-    row += '<td class="col-check"><input type="checkbox" class="row-checkbox"' + (sel ? ' checked' : '') + ' data-rid="' + c.id + '"></td>';
-    for (const col of cols) {
-      const isCustom = col.type === 'ai' || col.type === 'custom';
-      row += '<td' + (isCustom ? ' class="custom-cell" data-col="' + col.id + '" data-domain="' + c.domain + '"' : '') + '>' + buildCellHTML(col, c, color) + '</td>';
-    }
-    row += '</tr>';
-    rows.push(row);
+    rows.push(_buildRowHTML(visible[i], cols));
   }
 
-  if (!tableShowAll && totalCount > TABLE_PAGE_SIZE) {
-    rows.push('<tr class="show-more-row" data-action="showmore"><td colspan="' + colCount + '">Show all ' + totalCount + ' companies (' + (totalCount - TABLE_PAGE_SIZE) + ' more)</td></tr>');
+  if (tableCurrentLimit < totalCount) {
+    rows.push('<tr class="show-more-row" data-action="showmore"><td colspan="' + colCount + '">Load more (' + (totalCount - tableCurrentLimit).toLocaleString() + ' remaining of ' + totalCount.toLocaleString() + ')</td></tr>');
+    rows.push('<tr id="tableScrollSentinel" style="height:1px"></tr>');
   }
 
   tbody.innerHTML = rows.join('');
+
+  // Setup infinite scroll observer
+  _setupScrollSentinel();
 
   const selectAll = document.getElementById('selectAllCheckbox');
   if (selectAll) {
@@ -5354,13 +5461,15 @@ function renderTable() {
   }
 
   updateBulkBar();
-  document.getElementById('companyCount').textContent = companies.filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_flagged && !dm.is_blocked); }).length;
+  document.getElementById('companyCount').textContent = _cachedActiveCompanyCount;
   updateViewTitleCount(totalCount);
 }
 
+var _cachedActiveCompanyCount = 0;
 function updateStats() {
   // Exclude flagged and blocked from main stats
   const active = companies.filter(c => { var dm = domainMap[c.domain]; return !dm || (!dm.is_flagged && !dm.is_blocked); });
+  _cachedActiveCompanyCount = active.length;
   document.getElementById('statCompanies').textContent = active.length.toLocaleString();
   // Count by company type
   let leads = 0, existing = 0, old = 0;
@@ -5443,7 +5552,7 @@ function updateViewTitleCount(count) {
 
 function filterByType(type, el) {
   currentTypeFilter = type;
-  tableShowAll = false;
+  tableShowAll = false; tableCurrentLimit = TABLE_PAGE_SIZE;
 
   showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
@@ -5475,7 +5584,7 @@ function filterByStatCard(type, el) {
   }
   currentTypeFilter = type;
   currentFilter = 'all';
-  tableShowAll = false;
+  tableShowAll = false; tableCurrentLimit = TABLE_PAGE_SIZE;
 
   showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
@@ -5798,7 +5907,7 @@ function toggleSidebar() {
 function filterByStatus(status, el) {
   currentFilter = 'all';
   currentTypeFilter = status === 'all' ? 'all' : status;
-  tableShowAll = false;
+  tableShowAll = false; tableCurrentLimit = TABLE_PAGE_SIZE;
 
   showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
@@ -5817,7 +5926,7 @@ function filterByStatus(status, el) {
 function filterByClientType(type, el) {
   currentFilter = 'all';
   currentTypeFilter = type;
-  tableShowAll = false;
+  tableShowAll = false; tableCurrentLimit = TABLE_PAGE_SIZE;
 
   showingFlagged = false; showingNewDomains = false;
   showingFollowUp = false; hideFollowUpKanban();
@@ -6823,7 +6932,7 @@ function showFollowUp() {
   showingFlagged = false; showingNewDomains = false;
   currentFilter = 'all';
   currentTypeFilter = 'all';
-  tableShowAll = false;
+  tableShowAll = false; tableCurrentLimit = TABLE_PAGE_SIZE;
   hideInbox(); hideSettingsView(); hideBlockedView(); hideNewDomainsView();  document.getElementById('crmContent').classList.add('active');
   document.getElementById('crmContent').style.display = '';
   document.getElementById('detailPage').classList.remove('active');
@@ -10475,7 +10584,7 @@ document.addEventListener('visibilitychange', () => {
 document.getElementById('tableBody').addEventListener('click', function(e) {
   // "Show more" row
   const showMore = e.target.closest('[data-action="showmore"]');
-  if (showMore) { tableShowAll = true; renderTable(); return; }
+  if (showMore) { tableLoadMore(); return; }
   // Skip clicks on select dropdowns and their options (type dropdown, etc.)
   if (e.target.closest('select') || e.target.tagName === 'OPTION') return;
   // Inline editing for custom/AI cells
@@ -10538,7 +10647,7 @@ function finishCellEdit(td, colId, domain, value) {
 let _searchTimer = null;
 document.getElementById('searchInput').oninput = function() {
   clearTimeout(_searchTimer);
-  tableShowAll = false;
+  tableShowAll = false; tableCurrentLimit = TABLE_PAGE_SIZE;
   _searchTimer = setTimeout(renderTable, 150);
 };
 
