@@ -36,10 +36,10 @@ export default function ContactsLayout({
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user && !authError) {
+    if (!loading && !user) {
       router.replace("/login");
     }
-  }, [loading, user, authError, router]);
+  }, [loading, user, router]);
 
   if (loading) {
     return (
