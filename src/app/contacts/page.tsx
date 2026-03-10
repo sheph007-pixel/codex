@@ -65,19 +65,22 @@ export default function ContactsPage() {
       setActivities([]);
       return;
     }
+    let ignore = false;
     const fetchActivities = async () => {
       const { data } = await supabase
         .from("activities")
         .select("*")
+        .eq("user_id", crmUserId!)
         .or(
           `contact_id.eq.${selectedContact.id},company_id.eq.${selectedContact.company_id}`
         )
         .order("occurred_at", { ascending: false })
         .limit(50);
-      setActivities((data ?? []) as Activity[]);
+      if (!ignore) setActivities((data ?? []) as Activity[]);
     };
     fetchActivities();
-  }, [selectedContact]);
+    return () => { ignore = true; };
+  }, [selectedContact, crmUserId]);
 
   const filteredContacts = useMemo(() => {
     if (!search) return contacts;

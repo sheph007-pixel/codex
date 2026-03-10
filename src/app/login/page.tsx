@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
-  const { user, signIn, signUp, loading, error: authError } = useAuth();
+  const { user, signIn, signUp, loading } = useAuth();
   const router = useRouter();
 
   // If already authenticated (e.g. demo mode), skip login
@@ -68,12 +68,6 @@ export default function LoginPage() {
             {isSignUp ? "Create your account" : "Sign in to continue"}
           </p>
         </div>
-
-        {authError && (
-          <div className="text-sm text-destructive bg-destructive/10 rounded-md p-3">
-            {authError}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input

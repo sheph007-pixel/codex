@@ -11,15 +11,16 @@ import { supabase, isSupabaseConfigured } from "./supabase";
 import { DEMO_CRM_USER_ID } from "./demo-data";
 import type { User } from "@supabase/supabase-js";
 
+const DEMO = !isSupabaseConfigured();
+
 export function isDemoMode(): boolean {
-  return !isSupabaseConfigured();
+  return DEMO;
 }
 
 interface AuthState {
   user: User | null;
   crmUserId: string | null;
   loading: boolean;
-  error: string | null;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
@@ -29,7 +30,6 @@ const AuthContext = createContext<AuthState>({
   user: null,
   crmUserId: null,
   loading: true,
-  error: null,
   signIn: async () => null,
   signUp: async () => null,
   signOut: async () => {},
@@ -76,38 +76,21 @@ async function resolveCrmUserId(user: User): Promise<string | null> {
   return null;
 }
 
-const DEMO_USER = isDemoMode()
+const DEMO_USER = DEMO
   ? ({ id: "demo-user", email: "demo@kennion.crm" } as User)
   : null;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(DEMO_USER);
   const [crmUserId, setCrmUserId] = useState<string | null>(
-    isDemoMode() ? DEMO_CRM_USER_ID : null
+    DEMO ? DEMO_CRM_USER_ID : null
   );
-  const [loading, setLoading] = useState(!isDemoMode());
-  const error: string | null = null;
+  const [loading, setLoading] = useState(!DEMO);
 
   useEffect(() => {
-    if (isDemoMode()) return;
+    if (DEMO) return;
 
-    // Check existing session
-    supabase.auth
-      .getSession()
-      .then(async ({ data: { session } }) => {
-        if (session?.user) {
-          setUser(session.user);
-          const id = await resolveCrmUserId(session.user);
-          setCrmUserId(id);
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Auth session check failed:", err);
-        setLoading(false);
-      });
-
-    // Listen for auth changes
+    // Listen for auth changes (also fires INITIAL_SESSION on mount)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -119,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setCrmUserId(null);
       }
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -153,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, crmUserId, loading, error, signIn, signUp, signOut }}
+      value={{ user, crmUserId, loading, signIn, signUp, signOut }}
     >
       {children}
     </AuthContext.Provider>

@@ -32,7 +32,7 @@ export default function ContactsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, error: authError, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {

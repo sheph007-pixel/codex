@@ -13,7 +13,7 @@ import {
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Star, ArrowUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, companyTypeBadgeVariant } from "@/lib/utils";
 import type { ContactWithCompany } from "@/app/contacts/page";
 
 function formatDate(dateStr: string | null) {
@@ -27,19 +27,6 @@ function formatDate(dateStr: string | null) {
   if (diffDays < 7) return `${diffDays}d ago`;
   if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function companyTypeBadge(type: string | null | undefined) {
-  switch (type) {
-    case "Lead":
-      return <Badge variant="warning">Lead</Badge>;
-    case "Current Client":
-      return <Badge variant="success">Client</Badge>;
-    case "Old Client":
-      return <Badge variant="secondary">Old Client</Badge>;
-    default:
-      return <Badge variant="outline">Unknown</Badge>;
-  }
 }
 
 interface ContactsTableProps {
@@ -118,7 +105,10 @@ export function ContactsTable({ data, onSelectContact }: ContactsTableProps) {
         id: "type",
         accessorFn: (row) => row.company?.company_type,
         header: "Type",
-        cell: ({ row }) => companyTypeBadge(row.original.company?.company_type),
+        cell: ({ row }) => {
+          const type = row.original.company?.company_type;
+          return <Badge variant={companyTypeBadgeVariant(type)}>{type ?? "Unknown"}</Badge>;
+        },
         size: 100,
       },
       {

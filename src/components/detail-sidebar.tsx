@@ -22,7 +22,7 @@ import {
   CheckSquare,
   Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, companyTypeBadgeVariant } from "@/lib/utils";
 import type { ContactWithCompany } from "@/app/contacts/page";
 import type { Activity, Json } from "@/lib/database.types";
 
@@ -211,15 +211,7 @@ export function DetailSidebar({
                 <p className="text-sm text-muted-foreground">{contact.email}</p>
               </div>
               {contact.company?.company_type && (
-                <Badge
-                  variant={
-                    contact.company.company_type === "Current Client"
-                      ? "success"
-                      : contact.company.company_type === "Lead"
-                      ? "warning"
-                      : "secondary"
-                  }
-                >
+                <Badge variant={companyTypeBadgeVariant(contact.company.company_type)}>
                   {contact.company.company_type}
                 </Badge>
               )}
