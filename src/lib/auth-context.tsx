@@ -7,13 +7,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { supabase } from "./supabase";
+import { supabase, isSupabaseConfigured } from "./supabase";
 import type { User } from "@supabase/supabase-js";
 
 interface AuthState {
   user: User | null;
   crmUserId: string | null;
   loading: boolean;
+  error: string | null;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthState>({
   user: null,
   crmUserId: null,
   loading: true,
+  error: null,
   signIn: async () => null,
   signUp: async () => null,
   signOut: async () => {},
@@ -34,32 +36,36 @@ export function useAuth() {
 
 // Resolve supabase auth user -> CRM users table row
 async function resolveCrmUserId(user: User): Promise<string | null> {
-  // Try supabase_auth_id first
-  const { data: authRows } = await supabase
-    .from("users")
-    .select("id")
-    .eq("supabase_auth_id", user.id)
-    .limit(1);
+  try {
+    // Try supabase_auth_id first
+    const { data: authRows } = await supabase
+      .from("users")
+      .select("id")
+      .eq("supabase_auth_id", user.id)
+      .limit(1);
 
-  if (authRows && authRows.length > 0) {
-    return (authRows[0] as { id: string }).id;
-  }
+    if (authRows && authRows.length > 0) {
+      return (authRows[0] as { id: string }).id;
+    }
 
-  // Fallback: match by email
-  const { data: emailRows } = await supabase
-    .from("users")
-    .select("id")
-    .eq("email", user.email ?? "")
-    .limit(1);
+    // Fallback: match by email
+    const { data: emailRows } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", user.email ?? "")
+      .limit(1);
 
-  if (emailRows && emailRows.length > 0) {
-    const userId = (emailRows[0] as { id: string }).id;
-    // Link supabase_auth_id for future lookups
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.from("users") as any)
-      .update({ supabase_auth_id: user.id })
-      .eq("id", userId);
-    return userId;
+    if (emailRows && emailRows.length > 0) {
+      const userId = (emailRows[0] as { id: string }).id;
+      // Link supabase_auth_id for future lookups
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from("users") as any)
+        .update({ supabase_auth_id: user.id })
+        .eq("id", userId);
+      return userId;
+    }
+  } catch (err) {
+    console.error("Failed to resolve CRM user ID:", err);
   }
 
   return null;
@@ -69,17 +75,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [crmUserId, setCrmUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user);
-        const id = await resolveCrmUserId(session.user);
-        setCrmUserId(id);
-      }
+    if (!isSupabaseConfigured()) {
+      setError("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.");
       setLoading(false);
-    });
+      return;
+    }
+
+    // Check existing session
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session } }) => {
+        if (session?.user) {
+          setUser(session.user);
+          const id = await resolveCrmUserId(session.user);
+          setCrmUserId(id);
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Auth session check failed:", err);
+        setLoading(false);
+      });
 
     // Listen for auth changes
     const {
@@ -110,7 +129,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) return error.message;
     if (data.user) {
-      // Auto sign-in after signup
       const { error: signInErr } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -128,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, crmUserId, loading, signIn, signUp, signOut }}
+      value={{ user, crmUserId, loading, error, signIn, signUp, signOut }}
     >
       {children}
     </AuthContext.Provider>

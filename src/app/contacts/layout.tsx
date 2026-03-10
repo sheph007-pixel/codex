@@ -32,14 +32,14 @@ export default function ContactsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, error: authError, signOut } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !authError) {
       router.replace("/login");
     }
-  }, [loading, user, router]);
+  }, [loading, user, authError, router]);
 
   if (loading) {
     return (
