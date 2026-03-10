@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
-  const { signIn, signUp, loading } = useAuth();
+  const { signIn, signUp, loading, error: authError } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -61,6 +61,12 @@ export default function LoginPage() {
             {isSignUp ? "Create your account" : "Sign in to continue"}
           </p>
         </div>
+
+        {authError && (
+          <div className="text-sm text-destructive bg-destructive/10 rounded-md p-3">
+            {authError}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input
