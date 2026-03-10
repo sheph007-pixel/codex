@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Building2,
   Users,
@@ -5,9 +7,14 @@ import {
   Flag,
   Archive,
   LayoutDashboard,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
+import { useEffect } from "react";
+import { Button } from "@/components/ui/button";
 
 const APP_VERSION = "3.0.0";
 const PUBLISH_DATE = "2026-03-10";
@@ -25,6 +32,25 @@ export default function ContactsLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { user, loading, signOut } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-muted-foreground">
+        Loading...
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
@@ -63,6 +89,24 @@ export default function ContactsLayout({
           >
             v{APP_VERSION} &middot; {PUBLISH_DATE}
           </span>
+          <div className="flex items-center gap-2 ml-4 pl-4 border-l">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary px-2.5 py-1 rounded-md">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              {user.email}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await signOut();
+                router.replace("/login");
+              }}
+              className="h-7 text-xs"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign Out
+            </Button>
+          </div>
         </header>
         <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
       </div>

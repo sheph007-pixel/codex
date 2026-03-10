@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 import type { Contact, Company, Activity, Json } from "@/lib/database.types";
 import { ContactsTable } from "@/components/contacts-table";
 import { DetailSidebar } from "@/components/detail-sidebar";
@@ -15,6 +16,7 @@ export interface ContactWithCompany extends Contact {
 }
 
 export default function ContactsPage() {
+  const { crmUserId } = useAuth();
   const [contacts, setContacts] = useState<ContactWithCompany[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -27,10 +29,11 @@ export default function ContactsPage() {
   const [aiLoading, setAiLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
+    if (!crmUserId) { setLoading(false); return; }
     setLoading(true);
     const [contactsRes, companiesRes] = await Promise.all([
-      supabase.from("contacts").select("*").order("last_activity_date", { ascending: false }),
-      supabase.from("companies").select("*").order("last_activity_date", { ascending: false }),
+      supabase.from("contacts").select("*").eq("user_id", crmUserId).order("last_activity_date", { ascending: false }),
+      supabase.from("companies").select("*").eq("user_id", crmUserId).order("last_activity_date", { ascending: false }),
     ]);
 
     const companyData = (companiesRes.data ?? []) as Company[];
@@ -50,7 +53,7 @@ export default function ContactsPage() {
     setContacts(enrichedContacts);
     setCompanies(companyData);
     setLoading(false);
-  }, []);
+  }, [crmUserId]);
 
   useEffect(() => {
     fetchData();
