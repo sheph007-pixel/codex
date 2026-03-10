@@ -1,6 +1,5 @@
 {
   "framework": "nextjs",
-  "rootDirectory": "next",
   "headers": [
     {
       "source": "/(.*)",
@@ -9,12 +8,6 @@
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ]
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/keepalive",
-      "schedule": "0 0 * * *"
     }
   ]
 }
