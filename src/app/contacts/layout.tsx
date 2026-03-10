@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, isDemoMode } from "@/lib/auth-context";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -83,6 +83,11 @@ export default function ContactsLayout({
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex items-center justify-end gap-3 px-6 h-11 border-b bg-card shrink-0">
+          {isDemoMode() && (
+            <span className="text-[11px] font-medium text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">
+              Demo Mode
+            </span>
+          )}
           <span
             className="text-[11px] text-muted-foreground font-mono tabular-nums"
             title={`Version ${APP_VERSION} published ${PUBLISH_DATE}`}

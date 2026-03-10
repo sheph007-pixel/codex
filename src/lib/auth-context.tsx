@@ -8,7 +8,12 @@ import {
   type ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase";
+import { DEMO_CRM_USER_ID } from "./demo-data";
 import type { User } from "@supabase/supabase-js";
+
+export function isDemoMode(): boolean {
+  return !isSupabaseConfigured();
+}
 
 interface AuthState {
   user: User | null;
@@ -71,18 +76,20 @@ async function resolveCrmUserId(user: User): Promise<string | null> {
   return null;
 }
 
+const DEMO_USER = isDemoMode()
+  ? ({ id: "demo-user", email: "demo@kennion.crm" } as User)
+  : null;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [crmUserId, setCrmUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(DEMO_USER);
+  const [crmUserId, setCrmUserId] = useState<string | null>(
+    isDemoMode() ? DEMO_CRM_USER_ID : null
+  );
+  const [loading, setLoading] = useState(!isDemoMode());
+  const error: string | null = null;
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      setError("Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.");
-      setLoading(false);
-      return;
-    }
+    if (isDemoMode()) return;
 
     // Check existing session
     supabase.auth

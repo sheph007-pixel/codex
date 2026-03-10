@@ -1,14 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
-  const { signIn, signUp, loading, error: authError } = useAuth();
+  const { user, signIn, signUp, loading, error: authError } = useAuth();
   const router = useRouter();
+
+  // If already authenticated (e.g. demo mode), skip login
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/contacts");
+    }
+  }, [loading, user, router]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
