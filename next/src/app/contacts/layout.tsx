@@ -9,6 +9,9 @@ import {
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
+const APP_VERSION = "3.0.0";
+const PUBLISH_DATE = "2026-03-10";
+
 const navItems = [
   { label: "All Contacts", href: "/contacts", icon: Users },
   { label: "Companies", href: "/contacts?view=companies", icon: Building2 },
@@ -44,10 +47,25 @@ export default function ContactsLayout({
             </Link>
           ))}
         </nav>
+        {/* Version badge at bottom of sidebar */}
+        <div className="px-3 py-3 border-t text-[10px] text-muted-foreground/60">
+          v{APP_VERSION} &middot; {PUBLISH_DATE}
+        </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
+      {/* Main content area with top bar */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top bar */}
+        <header className="flex items-center justify-end gap-3 px-6 h-11 border-b bg-card shrink-0">
+          <span
+            className="text-[11px] text-muted-foreground font-mono tabular-nums"
+            title={`Version ${APP_VERSION} published ${PUBLISH_DATE}`}
+          >
+            v{APP_VERSION} &middot; {PUBLISH_DATE}
+          </span>
+        </header>
+        <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
+      </div>
     </div>
   );
 }
