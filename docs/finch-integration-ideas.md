@@ -1,70 +1,78 @@
 # Finch API Integration Ideas
 
 > Finch (tryfinch.com) provides a unified API for HRIS and Payroll data across 200+ providers.
-> The core insight: real payroll/employee data with zero manual entry = massive UX advantage.
+> **Persona:** Business owner, HR director, or finance lead who connects their company's payroll system (Gusto, ADP, Rippling, etc.) via Finch. They get full org visibility — all employees, comp, deductions, org structure.
+> **Core insight:** Real company-wide payroll data with zero setup = massive UX advantage over tools that require manual CSV uploads or spreadsheet wrangling.
 
 ## App Ideas
 
-### 1. PayPulse — Real-Time Comp Intelligence for Employees
-- **Proven category:** Salary transparency (Levels.fyi, Glassdoor)
-- **New twist:** Pulls *actual* payroll data (with consent) instead of crowdsourced/self-reported. AI benchmarks against market rates by role/geo/experience.
-- **Finch data used:** Pay statements, deductions, employment info
-- **Sticky because:** Auto-updates every pay cycle. Alerts when you fall behind market.
-- **Monetization:** Freemium + premium benchmarking reports
+### 1. PayEquity — Instant Pay Gap Analyzer
+- **Proven category:** Pay equity compliance (Syndio, Carta Total Comp)
+- **New twist:** Connect payroll, get an instant pay equity audit in 60 seconds. AI flags gender/role/tenure gaps, gives a score, generates a remediation plan. No consultants, no spreadsheets.
+- **Finch data used:** Directory, employment, pay statements
+- **Sticky because:** Regulatory pressure increasing (state pay transparency laws). Re-runs every pay cycle automatically.
+- **Monetization:** SaaS subscription ($99-299/mo based on headcount)
+- **Why now:** CA, NY, CO, IL all have new pay equity laws. Fear-driven purchase = fast sales.
 
-### 2. PayDay Planner — AI Financial Copilot Synced to Actual Pay
-- **Proven category:** Budgeting apps (YNAB, Mint)
-- **New twist:** Real net pay, deductions, tax withholdings, 401k contributions — no manual entry. AI projects actual take-home and auto-plans spending/saving.
-- **Finch data used:** Pay statements, deductions, tax info
-- **Sticky because:** Updates every pay cycle automatically. Knows exact deductions, benefits costs.
-- **Monetization:** Subscription ($5-10/mo)
+### 2. BurnBoard — Real-Time People Spend Dashboard
+- **Proven category:** FP&A / headcount planning (Mosaic, Jirav)
+- **New twist:** Zero-setup burn rate dashboard from actual payroll. Shows fully-loaded cost by department, role, location. AI projects runway, flags cost anomalies, models "what if we hire 3 more engineers?"
+- **Finch data used:** Organization, directory, pay statements, deductions
+- **Sticky because:** Founders check burn daily. Auto-updates every payroll run. Replaces messy spreadsheets.
+- **Monetization:** SaaS ($49-199/mo)
+- **Why now:** Tight funding market = obsessive cost management. Every founder needs this.
 
-### 3. BenefitsBrain — AI Benefits Advisor
-- **Proven category:** Benefits enrollment tools
-- **New twist:** Pulls current deductions/benefits via Finch. AI analyzes over/under-insurance, HSA/FSA optimization, 401k allocation. Recommends optimal elections.
-- **Finch data used:** Deductions, benefits, company benefits offerings
-- **Sticky because:** Open enrollment stress is annual. Year-round benefits monitoring.
-- **Monetization:** Per-enrollment-season fee or subscription
+### 3. CompCraft — AI Compensation Bands Generator
+- **Proven category:** Comp management (Pave, Levels.fyi for Business)
+- **New twist:** Pulls actual comp data, AI auto-generates salary bands by role/level/geo. Shows who's above/below band. Generates offer ranges for open roles instantly. No manual spreadsheet work.
+- **Finch data used:** Directory, employment, pay statements
+- **Sticky because:** Used every time you hire or do performance reviews. Becomes the comp source of truth.
+- **Monetization:** SaaS ($99-499/mo) + per-offer-letter pricing
+- **Why now:** Pay transparency laws require published salary ranges. Companies scrambling to create comp bands.
 
-### 4. QuitKit — AI "Should I Leave?" Calculator
-- **Proven category:** Career planning tools
-- **New twist:** Connects real total compensation (salary + bonus + 401k match + benefits value). AI calculates true total comp, compares to market, models scenarios including vesting schedules.
-- **Finch data used:** Pay statements, deductions, employment info
-- **Sticky because:** People agonize over job changes for months. Keep running scenarios.
-- **Monetization:** Freemium + premium scenario modeling
+### 4. AttritionAlert — AI Turnover Risk Predictor
+- **Proven category:** People analytics / retention tools
+- **New twist:** Analyzes payroll patterns — tenure, comp vs. market, recent raises (or lack thereof), team concentration risk. AI flags employees likely to leave and suggests retention actions (raise, title bump, role change).
+- **Finch data used:** Directory, employment, pay statements (historical)
+- **Sticky because:** Monthly risk reports. Managers get alerts. Prevents surprise departures.
+- **Monetization:** SaaS per-seat ($5-15/employee/mo)
 
-### 5. TaxPilot — Year-Round Tax Optimization
-- **Proven category:** Tax prep (TurboTax)
-- **New twist:** Real-time tax optimization throughout the year, not just filing season. Pulls actual W-2 withholdings, deductions, 401k via Finch. Mid-year alerts: "Increase 401k by $200/mo to drop a tax bracket."
-- **Finch data used:** Pay statements, tax withholdings, deductions
-- **Sticky because:** Saves real money. Updates every paycheck.
-- **Monetization:** Subscription ($10-20/mo) or % of savings
+### 5. TaxShield — Employer Tax & Compliance Monitor
+- **Proven category:** Payroll tax compliance
+- **New twist:** Pulls all withholdings and deductions across the company. AI audits for errors — wrong state tax jurisdictions, misclassified workers, missed 401k matches, benefits compliance gaps. Catches mistakes your payroll provider misses.
+- **Finch data used:** Pay statements, deductions, tax info, employment
+- **Sticky because:** Saves real money (IRS penalties). Runs every pay cycle. Peace of mind.
+- **Monetization:** SaaS + per-issue-found pricing
 
-### 6. OrgLens — Team/Company Health Dashboard for Founders
-- **Proven category:** People analytics (Lattice, Culture Amp)
-- **New twist:** Zero-setup. Connect payroll, AI instantly surfaces: headcount trends, comp distribution, department burn rates, attrition risk, pay equity gaps. No surveys needed.
+### 6. OrgPulse — One-Click Board & Investor People Report
+- **Proven category:** Board reporting / investor updates
+- **New twist:** Connect payroll, AI generates a polished people report: headcount growth, department breakdown, comp distribution, diversity metrics, turnover rate, new hires. Export as PDF/slides. Zero prep time.
 - **Finch data used:** Organization, directory, employment, pay statements
-- **Sticky because:** Founders/HR check dashboards daily. Auto-refreshes.
-- **Monetization:** SaaS per-seat pricing
-- **CRM synergy:** Fits as a module in existing CRM — enrich company/contact data with real org data.
+- **Sticky because:** Board meetings are quarterly — becomes the default report generator. Investors love data.
+- **Monetization:** SaaS ($49-149/mo)
 
-### 7. OfferDecode — Job Offer Comparison Engine
-- **Proven category:** Offer negotiation (Blind, Candor)
-- **New twist:** Pull current total comp from Finch, paste new offer, AI does apples-to-apples comparison factoring benefits, 401k match, tax implications, unvested equity.
-- **Finch data used:** Pay statements, deductions, benefits
-- **Sticky because:** Anyone with an offer needs this immediately. Viral referrals.
-- **Monetization:** Per-use fee ($10-20) or subscription
+### 7. HireModel — Headcount Planning Simulator
+- **Proven category:** Workforce planning (Planful, Anaplan)
+- **New twist:** Starts from *actual* payroll data, not guesses. Model scenarios: "Add a 5-person sales team in Austin" — AI calculates fully-loaded cost (salary + employer taxes + benefits + 401k match) using your real cost structure.
+- **Finch data used:** Organization, pay statements, deductions, benefits
+- **Sticky because:** Used for every hiring decision and budget cycle. Finance team lives in it.
+- **Monetization:** SaaS ($99-299/mo)
 
-## Recommendation
+## Top Picks
 
-**For CRM integration:** OrgLens (#6) — adds real org/payroll intelligence to your existing contacts, deals, and companies. Unique competitive moat.
+### Best standalone SaaS bets:
+1. **CompCraft (#3)** — Every growing company needs comp bands. Regulatory tailwind (pay transparency laws). Used at every hire and review. High willingness to pay.
+2. **BurnBoard (#2)** — Founders are obsessed with burn rate. Dead simple, auto-updating, replaces the spreadsheet everyone hates. Low price = easy sale.
+3. **PayEquity (#1)** — Fear of lawsuits/fines drives fast purchases. Regulatory moat keeps growing.
 
-**For standalone viral consumer app:** PayPulse (#1) or QuitKit (#4) — strong emotional triggers, zero-friction onboarding via Finch.
+### Best "all-in-one" play:
+Combine BurnBoard + CompCraft + OrgPulse into a single **"People Finance OS"** — one login, connect payroll once, get all three. Upsell path is natural.
 
 ## Key Principles Applied
-- **New thing in proven category:** Each targets a category people already pay for
-- **Different twist:** Real data via Finch replaces manual entry/crowdsourcing
-- **Super clean & easy:** Finch handles the hard part (payroll integration)
-- **Sticky:** Auto-updating data creates habitual usage
-- **AI-driven:** Every app uses AI to transform raw payroll data into actionable insights
-- **Secret Finch API:** The competitive moat — competitors can't easily replicate the data access
+- **Proven category, new twist:** Each targets a category businesses already pay for
+- **Different delivery:** Real data via Finch replaces CSV uploads, manual entry, and consultants
+- **Super clean & easy:** Connect payroll → instant value. No implementation, no onboarding calls
+- **Sticky:** Auto-updating data creates habitual usage tied to payroll cycles
+- **AI-driven behind the scenes:** AI transforms raw payroll data into insights, recommendations, and reports
+- **Secret Finch API:** Competitors require manual data entry or CSV — Finch connection is the moat
+- **Business buyer persona:** HR, finance, and founders with payroll admin credentials
