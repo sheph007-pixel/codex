@@ -9,57 +9,60 @@ import {
   Paperclip,
   ExternalLink,
 } from "lucide-react";
-import type { Email } from "@/lib/mail-types";
-
-interface EmailPreviewProps {
-  email: Email | null;
-}
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar } from "@/components/ui/avatar";
+import { useMailStore } from "@/stores/mail-store";
+import { useEmail } from "@/hooks/use-emails";
 
 function formatFullDate(date: Date): string {
   const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
   const month = date.toLocaleDateString("en-US", { month: "numeric" });
   const day = date.getDate();
   const year = date.getFullYear();
-  const time = date.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
   return `${weekday} ${month}/${day}/${year} ${time}`;
 }
 
-export function EmailPreview({ email }: EmailPreviewProps) {
+export function EmailPreview() {
+  const { selectedEmailId } = useMailStore();
+  const { data: email, isLoading } = useEmail(selectedEmailId);
+
+  if (!selectedEmailId || isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-[#1e1e2e] text-gray-500">
+        <p className="text-sm">{isLoading ? "Loading..." : "Select an email to read"}</p>
+      </div>
+    );
+  }
+
   if (!email) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#1e1e2e] text-gray-500">
-        <p className="text-sm">Select an email to read</p>
+        <p className="text-sm">Email not found</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[#1e1e2e] overflow-hidden">
-      {/* Header bar - notification strip */}
-      <div className="px-4 py-2 border-b border-[#333] bg-[#252536]">
-        <p className="text-[12px] text-gray-300 truncate">
-          {email.subject}
-        </p>
+    <div className="flex-1 flex flex-col bg-[#1e1e2e] overflow-hidden min-w-0">
+      {/* Subject strip */}
+      <div className="px-4 py-2 border-b border-[#333] bg-[#252536] shrink-0">
+        <p className="text-[12px] text-gray-300 truncate">{email.subject}</p>
       </div>
 
       {/* Email header */}
-      <div className="px-4 py-3 border-b border-[#333]">
+      <div className="px-4 py-3 border-b border-[#333] shrink-0">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            {/* Avatar */}
-            <div className="w-10 h-10 rounded-full bg-[#0078d4] flex items-center justify-center text-white text-sm font-semibold flex-shrink-0 mt-1">
-              {email.from.name.charAt(0).toUpperCase()}
-            </div>
+            <Avatar
+              fallback={email.from.name}
+              size="lg"
+              className="mt-0.5"
+            />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-[14px] font-semibold text-white">
-                  {email.from.name}
-                </span>
-              </div>
+              <span className="text-[14px] font-semibold text-white">
+                {email.from.name}
+              </span>
               <div className="text-[12px] text-gray-400 mt-1">
                 <span className="text-gray-500">To:</span>{" "}
                 {email.to.map((t, i) => (
@@ -87,27 +90,26 @@ export function EmailPreview({ email }: EmailPreviewProps) {
               )}
             </div>
           </div>
-          {/* Date and actions */}
           <div className="flex items-center gap-1 flex-shrink-0 ml-4">
             <span className="text-[12px] text-gray-400 mr-2">
               {formatFullDate(email.date)}
             </span>
-            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
+            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 transition-colors">
               <Settings size={16} />
             </button>
-            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
+            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 transition-colors">
               <Smile size={16} />
             </button>
-            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 border border-[#444] rounded-sm">
+            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 border border-[#444] transition-colors">
               <ExternalLink size={16} />
             </button>
-            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
+            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 transition-colors">
               <Trash2 size={16} />
             </button>
-            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
+            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 transition-colors">
               <Printer size={16} />
             </button>
-            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
+            <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 transition-colors">
               <MoreHorizontal size={16} />
             </button>
           </div>
@@ -115,11 +117,11 @@ export function EmailPreview({ email }: EmailPreviewProps) {
 
         {/* Attachments */}
         {email.attachments && email.attachments.length > 0 && (
-          <div className="flex items-center gap-2 mt-3 ml-[52px]">
+          <div className="flex items-center gap-2 mt-3 ml-[52px] flex-wrap">
             {email.attachments.map((att) => (
               <div
                 key={att.id}
-                className="flex items-center gap-2 bg-[#2a2a3a] border border-[#444] rounded px-3 py-1.5 cursor-pointer hover:bg-[#333]"
+                className="flex items-center gap-2 bg-[#2a2a3a] border border-[#444] rounded px-3 py-1.5 cursor-pointer hover:bg-[#333] transition-colors"
               >
                 <Paperclip size={14} className="text-gray-400" />
                 <span className="text-[12px] text-gray-300 truncate max-w-[200px]">
@@ -133,12 +135,12 @@ export function EmailPreview({ email }: EmailPreviewProps) {
       </div>
 
       {/* Email body */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <ScrollArea className="flex-1 p-6">
         <div
           className="text-[14px] text-gray-200 leading-relaxed max-w-[800px] mx-auto"
           dangerouslySetInnerHTML={{ __html: email.body }}
         />
-      </div>
+      </ScrollArea>
     </div>
   );
 }

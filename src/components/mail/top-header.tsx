@@ -1,53 +1,65 @@
 "use client";
 
 import {
-  Bell,
+  Search,
   Settings,
+  Bell,
   HelpCircle,
-  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
-import { SearchBar } from "./search-bar";
+import { useMailStore } from "@/stores/mail-store";
 
-interface TopHeaderProps {
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
-  onToggleSidebar: () => void;
-}
+export function TopHeader() {
+  const { searchQuery, setSearchQuery, sidebarOpen, setSidebarOpen } = useMailStore();
 
-export function TopHeader({ searchQuery, onSearchChange, onToggleSidebar }: TopHeaderProps) {
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 bg-[#1a1a28] border-b border-[#333] h-[44px]">
-      {/* Left: App name and hamburger */}
-      <button className="p-1 hover:bg-[#333] rounded text-gray-400" onClick={onToggleSidebar}>
-        <Menu size={18} />
+    <div className="flex items-center h-[40px] bg-[#1b1b2f] border-b border-[#2a2a3d] px-2 gap-2 shrink-0">
+      {/* Left: Logo + sidebar toggle */}
+      <button
+        className="p-1.5 rounded hover:bg-[#2a2a3d] text-gray-400 hover:text-white transition-colors"
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+      >
+        {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
       </button>
-      <div className="flex items-center gap-2">
-        <span className="text-[15px] font-semibold text-white">Outlook</span>
-      </div>
+      <span className="text-[15px] font-semibold text-white tracking-tight select-none">
+        Outlook
+      </span>
 
-      {/* Center: Search */}
-      <div className="flex-1 flex justify-center">
-        <SearchBar value={searchQuery} onChange={onSearchChange} />
-      </div>
-
-      {/* Right: Actions */}
-      <div className="flex items-center gap-1">
-        {/* Notification bell */}
-        <button className="p-1.5 hover:bg-[#333] rounded text-gray-400 relative">
-          <Bell size={18} />
-        </button>
-        <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
-          <Settings size={18} />
-        </button>
-        <button className="p-1.5 hover:bg-[#333] rounded text-gray-400">
-          <HelpCircle size={18} />
-        </button>
-
-        {/* Reminder card */}
-        <div className="ml-3 flex items-center gap-2 bg-[#2a2a3a] rounded px-2 py-1 text-[11px] max-w-[220px]">
-          <span className="text-gray-300 truncate">Hunter pick up Will from soccer</span>
-          <span className="text-gray-500 whitespace-nowrap">Tomorrow 5:45 PM</span>
+      {/* Center: Search bar */}
+      <div className="flex-1 max-w-[600px] mx-auto">
+        <div className="relative">
+          <Search
+            size={15}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"
+          />
+          <input
+            type="text"
+            placeholder="Search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-[28px] pl-9 pr-3 text-[13px] bg-[#2a2a3d] border border-[#3a3a4d] rounded-md text-gray-200 placeholder-gray-500 focus:outline-none focus:border-[#0078d4] focus:ring-1 focus:ring-[#0078d4] transition-colors"
+          />
         </div>
+      </div>
+
+      {/* Right: Actions + reminder */}
+      <div className="flex items-center gap-1">
+        {/* Reminder card */}
+        <div className="hidden xl:flex items-center gap-2 bg-[#2a2a3d] rounded px-3 py-1 mr-2 text-[11px]">
+          <span className="text-gray-300 font-medium">Hunter pick up Will from soccer</span>
+          <span className="text-[#0078d4]">Tomorrow 5:45 PM</span>
+        </div>
+
+        <button className="p-1.5 rounded hover:bg-[#2a2a3d] text-gray-400 hover:text-white transition-colors">
+          <Bell size={16} />
+        </button>
+        <button className="p-1.5 rounded hover:bg-[#2a2a3d] text-gray-400 hover:text-white transition-colors">
+          <Settings size={16} />
+        </button>
+        <button className="p-1.5 rounded hover:bg-[#2a2a3d] text-gray-400 hover:text-white transition-colors">
+          <HelpCircle size={16} />
+        </button>
       </div>
     </div>
   );
