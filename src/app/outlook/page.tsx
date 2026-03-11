@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Mail, ArrowUpDown, ArrowLeft, Search, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { Mail, ArrowUpDown, ArrowLeft, Search, Loader2, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
 interface Contact {
@@ -24,7 +24,7 @@ interface DomainData {
 type SortKey = "total" | "sent" | "received" | "lastCommunication" | "domain";
 
 export default function OutlookPage() {
-  const [token, setToken] = useState<string | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
   const [domains, setDomains] = useState<DomainData[]>([]);
   const [userEmail, setUserEmail] = useState("");
   const [scanning, setScanning] = useState(false);
@@ -35,31 +35,19 @@ export default function OutlookPage() {
   const [expandedDomain, setExpandedDomain] = useState<string | null>(null);
   const [scanned, setScanned] = useState(false);
 
-  // Grab token from URL params on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("token");
-    const err = params.get("error");
-    if (t) {
-      setToken(t);
-      // Clean URL
-      window.history.replaceState({}, "", "/outlook");
-    }
-    if (err) {
-      setError(decodeURIComponent(err));
-      window.history.replaceState({}, "", "/outlook");
-    }
-  }, []);
-
   const startScan = useCallback(async () => {
-    if (!token) return;
+    const token = tokenInput.trim();
+    if (!token) {
+      setError("Please paste your access token first.");
+      return;
+    }
     setScanning(true);
     setError(null);
     try {
       const res = await fetch("/api/outlook/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: token }),
+        body: JSON.stringify({ accessToken: token.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Scan failed");
@@ -71,7 +59,7 @@ export default function OutlookPage() {
     } finally {
       setScanning(false);
     }
-  }, [token]);
+  }, [tokenInput]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -160,35 +148,51 @@ export default function OutlookPage() {
           </div>
         </div>
 
-        {/* Auth / Scan Controls */}
-        {!token && !scanned && (
-          <div className="border border-border rounded-lg p-12 text-center">
+        {/* Token Input + Scan */}
+        {!scanned && (
+          <div className="border border-border rounded-lg p-8 max-w-2xl mx-auto">
             <Mail className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <h2 className="text-xl font-semibold mb-2">Connect Your Outlook Account</h2>
-            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-              Sign in with Microsoft to scan your emails. We&apos;ll analyze your inbox and sent
-              mail to show you who you communicate with most.
+            <h2 className="text-xl font-semibold mb-2 text-center">Scan Your Outlook Emails</h2>
+            <p className="text-muted-foreground mb-4 text-center text-sm">
+              Paste a Microsoft Graph access token to scan your inbox and sent mail.
             </p>
-            <a href="/api/outlook/auth">
-              <Button size="lg">
-                <Mail className="h-4 w-4 mr-2" />
-                Sign in with Microsoft
-              </Button>
-            </a>
-            {error && (
-              <p className="mt-4 text-sm text-red-400">{error}</p>
-            )}
-          </div>
-        )}
 
-        {token && !scanned && (
-          <div className="border border-border rounded-lg p-12 text-center">
-            <Mail className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <h2 className="text-xl font-semibold mb-2">Ready to Scan</h2>
-            <p className="text-muted-foreground mb-6">
-              Connected to Microsoft. Click below to scan your emails.
-            </p>
-            <Button size="lg" onClick={startScan} disabled={scanning}>
+            {/* How to get a token */}
+            <div className="bg-muted/30 border border-border rounded-md p-4 mb-6 text-sm">
+              <p className="font-medium text-foreground mb-2">How to get your access token:</p>
+              <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                <li>
+                  Open{" "}
+                  <a
+                    href="https://developer.microsoft.com/en-us/graph/graph-explorer"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline inline-flex items-center gap-1"
+                  >
+                    Microsoft Graph Explorer <ExternalLink className="h-3 w-3" />
+                  </a>
+                </li>
+                <li>Sign in with your Microsoft / Outlook account</li>
+                <li>Click the <strong className="text-foreground">Access token</strong> tab</li>
+                <li>Consent to <strong className="text-foreground">Mail.Read</strong> permission if prompted</li>
+                <li>Copy the token and paste it below</li>
+              </ol>
+            </div>
+
+            <textarea
+              placeholder="Paste your access token here..."
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              rows={4}
+              className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring font-mono resize-none mb-4"
+            />
+
+            <Button
+              size="lg"
+              onClick={startScan}
+              disabled={scanning || !tokenInput.trim()}
+              className="w-full"
+            >
               {scanning ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -197,12 +201,13 @@ export default function OutlookPage() {
               ) : (
                 <>
                   <Search className="h-4 w-4 mr-2" />
-                  Start Scan
+                  Scan Emails
                 </>
               )}
             </Button>
+
             {error && (
-              <p className="mt-4 text-sm text-red-400">{error}</p>
+              <p className="mt-4 text-sm text-red-400 text-center">{error}</p>
             )}
           </div>
         )}
