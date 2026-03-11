@@ -10,13 +10,11 @@ import {
   Reply,
   ReplyAll,
   Forward,
-  Calendar,
-  MessageSquare,
-  Share2,
-  Printer,
   MoreHorizontal,
   ChevronDown,
-  ShieldCheck,
+  Tag,
+  Clock,
+  MailOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMailStore } from "@/stores/mail-store";
@@ -29,6 +27,7 @@ function ToolbarButton({
   disabled,
   primary,
   hasDropdown,
+  hideLabel,
 }: {
   icon: React.ComponentType<{ size: number; className?: string }>;
   label: string;
@@ -36,28 +35,30 @@ function ToolbarButton({
   disabled?: boolean;
   primary?: boolean;
   hasDropdown?: boolean;
+  hideLabel?: boolean;
 }) {
   return (
     <button
       className={cn(
-        "flex items-center gap-1.5 px-3 py-1.5 rounded text-[13px] transition-colors whitespace-nowrap",
+        "flex items-center gap-1 px-2 py-1 rounded text-[13px] transition-colors whitespace-nowrap",
         primary
-          ? "bg-[#0078d4] text-white hover:bg-[#106ebe]"
+          ? "bg-[#0078d4] text-white hover:bg-[#106ebe] px-3"
           : "text-gray-300 hover:bg-[#333] hover:text-white",
         disabled && "opacity-40 pointer-events-none"
       )}
       onClick={onClick}
       disabled={disabled}
+      title={label}
     >
-      <Icon size={16} />
-      {label && <span>{label}</span>}
-      {hasDropdown && <ChevronDown size={12} className="ml-0.5 text-gray-400" />}
+      <Icon size={15} />
+      {!hideLabel && label && <span>{label}</span>}
+      {hasDropdown && <ChevronDown size={10} className="text-gray-400" />}
     </button>
   );
 }
 
 function ToolbarSeparator() {
-  return <div className="w-px h-6 bg-[#444] mx-1" />;
+  return <div className="w-px h-5 bg-[#3a3a4d] mx-0.5" />;
 }
 
 export function Toolbar() {
@@ -81,26 +82,23 @@ export function Toolbar() {
   };
 
   return (
-    <div className="flex items-center gap-0.5 px-2 py-1 bg-[#252536] border-b border-[#333] overflow-x-auto shrink-0">
-      <ToolbarButton icon={Plus} label="New mail" onClick={() => openCompose("new")} primary hasDropdown />
+    <div className="flex items-center gap-0.5 px-2 py-0.5 bg-[#252536] border-b border-[#333] shrink-0">
+      <ToolbarButton icon={Plus} label="Compose" onClick={() => openCompose("new")} primary />
       <ToolbarSeparator />
-      <ToolbarButton icon={Trash2} label="Delete" onClick={handleDelete} disabled={!hasSelected} hasDropdown />
-      <ToolbarButton icon={Archive} label="Archive" onClick={handleArchive} disabled={!hasSelected} />
-      <ToolbarButton icon={Flag} label="Report" disabled={!hasSelected} hasDropdown />
-      <ToolbarButton icon={ShieldAlert} label="Block" disabled={!hasSelected} hasDropdown />
-      <ToolbarButton icon={FolderInput} label="Move to" disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={Archive} label="Archive" onClick={handleArchive} disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={Trash2} label="Delete" onClick={handleDelete} disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={Flag} label="Report" disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={ShieldAlert} label="Block" disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={FolderInput} label="Move to" disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={Tag} label="Label" disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={Clock} label="Snooze" disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={MailOpen} label="Mark read" disabled={!hasSelected} hideLabel />
       <ToolbarSeparator />
-      <ToolbarButton icon={Reply} label="Reply" onClick={() => openCompose("reply")} disabled={!hasSelected} />
-      <ToolbarButton icon={ReplyAll} label="Reply all" onClick={() => openCompose("replyAll")} disabled={!hasSelected} />
-      <ToolbarButton icon={Forward} label="Forward" onClick={() => openCompose("forward")} disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={Reply} label="Reply" onClick={() => openCompose("reply")} disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={ReplyAll} label="Reply all" onClick={() => openCompose("replyAll")} disabled={!hasSelected} hideLabel />
+      <ToolbarButton icon={Forward} label="Forward" onClick={() => openCompose("forward")} disabled={!hasSelected} hideLabel />
       <ToolbarSeparator />
-      <ToolbarButton icon={Calendar} label="Meeting" disabled={!hasSelected} />
-      <ToolbarButton icon={MessageSquare} label="Chat" disabled={!hasSelected} hasDropdown />
-      <ToolbarButton icon={Share2} label="Share to Teams" disabled={!hasSelected} />
-      <ToolbarButton icon={ShieldCheck} label="Assign policy" disabled={!hasSelected} hasDropdown />
-      <ToolbarButton icon={Printer} label="Print" disabled={!hasSelected} />
-      <ToolbarSeparator />
-      <ToolbarButton icon={MoreHorizontal} label="" disabled={false} />
+      <ToolbarButton icon={MoreHorizontal} label="More" disabled={false} hideLabel />
     </div>
   );
 }

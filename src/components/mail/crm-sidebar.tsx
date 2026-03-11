@@ -114,7 +114,7 @@ export function CrmSidebar() {
   if (!crmSidebarOpen || !selectedEmailId) return null;
 
   return (
-    <div className="w-[320px] bg-[#1e1e2e] border-l border-[#333] flex flex-col shrink-0 overflow-hidden">
+    <div className="w-[280px] bg-[#1e1e2e] border-l border-[#2a2a3a] flex flex-col shrink-0 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#333] shrink-0">
         <div className="flex items-center gap-2">

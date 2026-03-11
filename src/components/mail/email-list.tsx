@@ -1,6 +1,6 @@
 "use client";
 
-import { Paperclip, Reply as ReplyIcon, ChevronDown, Star, Filter, ArrowDownUp } from "lucide-react";
+import { Paperclip, Reply as ReplyIcon, ChevronDown, Filter, ArrowDownUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMailStore } from "@/stores/mail-store";
@@ -33,40 +33,40 @@ function EmailRow({ email, isSelected, onSelect }: { email: Email; isSelected: b
   return (
     <div
       className={cn(
-        "flex items-start gap-2 px-3 py-2 cursor-pointer border-b border-[#2a2a3a] hover:bg-[#2a2a3a] min-h-[52px] transition-colors",
+        "flex items-start gap-2 px-3 py-1.5 cursor-pointer border-b border-[#2a2a3a]/50 hover:bg-[#2a2a3a] transition-colors",
         isSelected && "bg-[#1a3a5c] hover:bg-[#1a3a5c] border-l-2 border-l-[#0078d4]",
         !isSelected && "border-l-2 border-l-transparent",
         !email.isRead && !isSelected && "bg-[#1e1e30]"
       )}
       onClick={onSelect}
     >
-      <div className="flex flex-col flex-1 min-w-0 gap-[2px]">
+      <div className="flex flex-col flex-1 min-w-0 gap-px">
         <div className="flex items-center justify-between gap-2">
           <span
             className={cn(
               "text-[13px] truncate",
-              !email.isRead ? "font-semibold text-white" : "text-[#cccccc]",
+              !email.isRead ? "font-semibold text-white" : "text-[#bbbbbb]",
               email.from.name === "Hunter Shepherd" && "text-blue-400"
             )}
           >
             {email.from.name}
           </span>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {email.hasAttachment && <Paperclip size={13} className="text-gray-500" />}
-            {email.hasReplied && <ReplyIcon size={13} className="text-gray-500" />}
-            <span className="text-[11px] text-gray-400 whitespace-nowrap ml-1">
+          <div className="flex items-center gap-1 shrink-0">
+            {email.hasAttachment && <Paperclip size={12} className="text-gray-500" />}
+            {email.hasReplied && <ReplyIcon size={12} className="text-gray-500" />}
+            <span className="text-[11px] text-gray-500 whitespace-nowrap ml-0.5">
               {formatTime(email.date)}
             </span>
           </div>
         </div>
-        <div
+        <span
           className={cn(
-            "text-[13px] truncate",
-            !email.isRead ? "font-semibold text-white" : "text-[#aaaaaa]"
+            "text-[12px] truncate",
+            !email.isRead ? "text-gray-300" : "text-gray-500"
           )}
         >
           {email.subject}
-        </div>
+        </span>
       </div>
     </div>
   );
@@ -105,23 +105,17 @@ export function EmailList() {
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#1e1e2e] border-r border-[#333]">
+    <div className="h-full flex flex-col bg-[#1e1e2e] border-r border-[#2a2a3a]">
       {/* Folder header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#333] shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[15px] font-semibold text-white">{folderName}</span>
-          <Star size={14} className="text-gray-500 cursor-pointer hover:text-yellow-400 transition-colors" />
-        </div>
-        <div className="flex items-center gap-2 text-gray-400">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2a2a3a] shrink-0">
+        <span className="text-[14px] font-semibold text-white">{folderName}</span>
+        <div className="flex items-center gap-1 text-gray-500">
           <button className="p-1 hover:bg-[#333] rounded transition-colors" title="Filter">
-            <Filter size={14} />
+            <Filter size={13} />
           </button>
           <button className="p-1 hover:bg-[#333] rounded transition-colors" title="Sort">
-            <ArrowDownUp size={14} />
+            <ArrowDownUp size={13} />
           </button>
-          <span className="text-[12px] flex items-center gap-1 cursor-pointer hover:text-white transition-colors">
-            By Date <ChevronDown size={12} />
-          </span>
         </div>
       </div>
 
@@ -139,17 +133,17 @@ export function EmailList() {
           grouped.map((group) => (
             <div key={group.label}>
               <div
-                className="flex items-center gap-2 px-3 py-1 text-[12px] text-gray-400 cursor-pointer hover:text-white sticky top-0 bg-[#1e1e2e] z-10 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-[11px] text-gray-500 cursor-pointer hover:text-gray-300 sticky top-0 bg-[#1e1e2e] z-10 transition-colors uppercase tracking-wide font-medium"
                 onClick={() => toggleGroup(group.label)}
               >
                 <ChevronDown
-                  size={12}
+                  size={10}
                   className={cn(
                     "transition-transform",
                     collapsedGroups[group.label] && "-rotate-90"
                   )}
                 />
-                <span className="font-semibold">{group.label}</span>
+                <span>{group.label}</span>
               </div>
               {!collapsedGroups[group.label] &&
                 group.emails.map((email) => (

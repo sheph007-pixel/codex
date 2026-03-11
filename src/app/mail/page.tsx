@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/resizable";
 import { AppSidebar } from "@/components/mail/app-sidebar";
 import { TopHeader } from "@/components/mail/top-header";
-import { TabBar } from "@/components/mail/tab-bar";
 import { Toolbar } from "@/components/mail/toolbar";
 import { FolderSidebar } from "@/components/mail/folder-sidebar";
 import { EmailList } from "@/components/mail/email-list";
@@ -27,14 +26,11 @@ function MailApp() {
       {/* Top header with search */}
       <TopHeader />
 
-      {/* Tab bar */}
-      <TabBar />
-
-      {/* Toolbar */}
+      {/* Toolbar (compact, Gmail-style) */}
       <Toolbar />
 
       {/* Main content area */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* App sidebar (narrow icon strip) */}
         <AppSidebar activeApp={activeApp} onSelectApp={setActiveApp} />
 
@@ -45,36 +41,36 @@ function MailApp() {
             <>
               <ResizablePanel
                 id="folder-sidebar"
-                defaultSize="18%"
-                minSize="14%"
-                maxSize="28%"
+                defaultSize="16%"
+                minSize="12%"
+                maxSize="24%"
                 className="min-w-0"
               >
                 <FolderSidebar />
               </ResizablePanel>
-              <ResizableHandle className="bg-[#333] hover:bg-[#0078d4] transition-colors" />
+              <ResizableHandle className="bg-[#2a2a3a] hover:bg-[#0078d4] transition-colors w-[1px]" />
             </>
           )}
 
           {/* Email list */}
           <ResizablePanel
             id="email-list"
-            defaultSize="26%"
+            defaultSize="24%"
             minSize="18%"
-            maxSize="40%"
+            maxSize="36%"
             className="min-w-0"
           >
             <EmailList />
           </ResizablePanel>
-          <ResizableHandle className="bg-[#333] hover:bg-[#0078d4] transition-colors" />
+          <ResizableHandle className="bg-[#2a2a3a] hover:bg-[#0078d4] transition-colors w-[1px]" />
 
           {/* Reading pane */}
-          <ResizablePanel id="reading-pane" defaultSize="56%" minSize="30%" className="min-w-0">
+          <ResizablePanel id="reading-pane" defaultSize="60%" minSize="30%" className="min-w-0">
             <EmailPreview />
           </ResizablePanel>
         </ResizablePanelGroup>
 
-        {/* CRM Contact Sidebar (Unified View) */}
+        {/* CRM Contact Sidebar */}
         <CrmSidebar />
       </div>
 
