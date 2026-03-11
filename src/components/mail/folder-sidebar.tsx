@@ -22,14 +22,10 @@ import {
   MailOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { EmailFolder, EmailAccount } from "@/lib/mail-types";
-import { favoritesFolders } from "@/lib/mail-data";
-
-interface FolderSidebarProps {
-  accounts: EmailAccount[];
-  selectedFolderId: string;
-  onSelectFolder: (folderId: string) => void;
-}
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useMailStore } from "@/stores/mail-store";
+import type { EmailFolder } from "@/lib/mail-types";
+import { emailAccounts, favoritesFolders } from "@/lib/mail-data";
 
 function getFolderIcon(folder: EmailFolder, isOpen: boolean) {
   const size = 16;
@@ -86,19 +82,14 @@ function getSpecialIcon(name: string) {
 function FolderItem({
   folder,
   depth,
-  selectedFolderId,
-  onSelectFolder,
 }: {
   folder: EmailFolder;
   depth: number;
-  selectedFolderId: string;
-  onSelectFolder: (id: string) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(
-    folder.name === "KENNION" || folder.name === "Inbox" || folder.name === "TAXES 2026"
-  );
+  const { selectedFolderId, setSelectedFolder, collapsedSections, toggleSection } = useMailStore();
   const hasChildren = folder.children && folder.children.length > 0;
   const isSelected = folder.id === selectedFolderId;
+  const isOpen = !!(hasChildren && !collapsedSections[folder.id]);
 
   if (folder.name === "--------") {
     return <div className="border-t border-[#333] my-1 mx-4" />;
@@ -110,13 +101,13 @@ function FolderItem({
     <div>
       <div
         className={cn(
-          "flex items-center gap-1 px-2 py-[3px] cursor-pointer text-[13px] hover:bg-[#2a2a3a] group",
-          isSelected && "bg-[#0078d4] hover:bg-[#0078d4]"
+          "flex items-center gap-1 px-2 py-[3px] cursor-pointer text-[13px] hover:bg-[#2a2a3a] group transition-colors",
+          isSelected && "bg-[#0078d4] hover:bg-[#0069bf]"
         )}
         style={{ paddingLeft: `${8 + depth * 16}px` }}
         onClick={() => {
-          onSelectFolder(folder.id);
-          if (hasChildren) setIsOpen(!isOpen);
+          setSelectedFolder(folder.id);
+          if (hasChildren) toggleSection(folder.id);
         }}
       >
         {hasChildren ? (
@@ -147,8 +138,6 @@ function FolderItem({
               key={child.id}
               folder={child}
               depth={depth + 1}
-              selectedFolderId={selectedFolderId}
-              onSelectFolder={onSelectFolder}
             />
           ))}
         </div>
@@ -157,7 +146,8 @@ function FolderItem({
   );
 }
 
-export function FolderSidebar({ accounts, selectedFolderId, onSelectFolder }: FolderSidebarProps) {
+export function FolderSidebar() {
+  const { selectedFolderId, setSelectedFolder } = useMailStore();
   const [expandedAccounts, setExpandedAccounts] = useState<Record<string, boolean>>({
     hunter: true,
     sheph007: true,
@@ -168,7 +158,7 @@ export function FolderSidebar({ accounts, selectedFolderId, onSelectFolder }: Fo
   };
 
   return (
-    <div className="h-full bg-[#1e1e2e] text-[#cccccc] overflow-y-auto overflow-x-hidden border-r border-[#333] flex flex-col text-[13px] select-none">
+    <ScrollArea className="h-full bg-[#1e1e2e] text-[#cccccc] border-r border-[#333] select-none">
       {/* Favorites */}
       <div className="mt-1">
         <div className="flex items-center gap-1 px-2 py-[3px] cursor-pointer hover:bg-[#2a2a3a]">
@@ -183,11 +173,11 @@ export function FolderSidebar({ accounts, selectedFolderId, onSelectFolder }: Fo
             <div
               key={fav.id}
               className={cn(
-                "flex items-center gap-1 px-2 py-[3px] cursor-pointer hover:bg-[#2a2a3a]",
-                selectedFolderId === fav.linkedFolderId && "bg-[#0078d4] hover:bg-[#0078d4]"
+                "flex items-center gap-1 px-2 py-[3px] cursor-pointer hover:bg-[#2a2a3a] text-[13px] transition-colors",
+                selectedFolderId === fav.linkedFolderId && "bg-[#0078d4] hover:bg-[#0069bf]"
               )}
               style={{ paddingLeft: "28px" }}
-              onClick={() => onSelectFolder(fav.linkedFolderId)}
+              onClick={() => setSelectedFolder(fav.linkedFolderId)}
             >
               {getFavIcon(fav)}
               <span className="truncate ml-1">{fav.name}</span>
@@ -197,7 +187,7 @@ export function FolderSidebar({ accounts, selectedFolderId, onSelectFolder }: Fo
       </div>
 
       {/* Account folders */}
-      {accounts.map((account) => (
+      {emailAccounts.map((account) => (
         <div key={account.id} className="mt-2">
           <div
             className="flex items-center gap-1 px-2 py-[3px] cursor-pointer hover:bg-[#2a2a3a]"
@@ -216,20 +206,18 @@ export function FolderSidebar({ accounts, selectedFolderId, onSelectFolder }: Fo
                 key={folder.id}
                 folder={folder}
                 depth={1}
-                selectedFolderId={selectedFolderId}
-                onSelectFolder={onSelectFolder}
               />
             ))}
         </div>
       ))}
 
-      {/* Add account link */}
+      {/* Add account */}
       <div className="mt-2 mb-4">
         <div className="flex items-center gap-2 px-4 py-[3px] cursor-pointer hover:bg-[#2a2a3a] text-blue-400">
           <Mail size={14} />
           <span className="text-[12px]">Add account</span>
         </div>
       </div>
-    </div>
+    </ScrollArea>
   );
 }

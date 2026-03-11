@@ -8,11 +8,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface AppSidebarProps {
-  activeApp: string;
-  onSelectApp: (app: string) => void;
-}
+import { Tooltip } from "@/components/ui/tooltip";
 
 const apps = [
   { id: "mail", icon: Mail, label: "Mail" },
@@ -22,23 +18,28 @@ const apps = [
   { id: "more", icon: MoreHorizontal, label: "More" },
 ];
 
+interface AppSidebarProps {
+  activeApp: string;
+  onSelectApp: (app: string) => void;
+}
+
 export function AppSidebar({ activeApp, onSelectApp }: AppSidebarProps) {
   return (
-    <div className="w-[48px] bg-[#1a1a28] border-r border-[#333] flex flex-col items-center py-2 gap-1">
+    <div className="w-[48px] bg-[#1a1a28] border-r border-[#333] flex flex-col items-center py-2 gap-1 shrink-0">
       {apps.map((app) => (
-        <button
-          key={app.id}
-          className={cn(
-            "w-10 h-10 flex items-center justify-center rounded transition-colors",
-            activeApp === app.id
-              ? "bg-[#0078d4] text-white"
-              : "text-gray-400 hover:bg-[#2a2a3a] hover:text-white"
-          )}
-          onClick={() => onSelectApp(app.id)}
-          title={app.label}
-        >
-          <app.icon size={20} />
-        </button>
+        <Tooltip key={app.id} content={app.label} side="right">
+          <button
+            className={cn(
+              "w-10 h-10 flex items-center justify-center rounded transition-colors",
+              activeApp === app.id
+                ? "bg-[#0078d4] text-white"
+                : "text-gray-400 hover:bg-[#2a2a3a] hover:text-white"
+            )}
+            onClick={() => onSelectApp(app.id)}
+          >
+            <app.icon size={20} />
+          </button>
+        </Tooltip>
       ))}
     </div>
   );

@@ -19,16 +19,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface ToolbarProps {
-  onCompose: () => void;
-  onReply: () => void;
-  onReplyAll: () => void;
-  onForward: () => void;
-  onDelete: () => void;
-  onArchive: () => void;
-  hasSelectedEmail: boolean;
-}
+import { useMailStore } from "@/stores/mail-store";
+import { useDeleteEmail, useArchiveEmail } from "@/hooks/use-emails";
 
 function ToolbarButton({
   icon: Icon,
@@ -58,7 +50,7 @@ function ToolbarButton({
       disabled={disabled}
     >
       <Icon size={16} />
-      <span>{label}</span>
+      {label && <span>{label}</span>}
       {hasDropdown && <ChevronDown size={12} className="ml-0.5 text-gray-400" />}
     </button>
   );
@@ -68,43 +60,46 @@ function ToolbarSeparator() {
   return <div className="w-px h-6 bg-[#444] mx-1" />;
 }
 
-export function Toolbar({
-  onCompose,
-  onReply,
-  onReplyAll,
-  onForward,
-  onDelete,
-  onArchive,
-  hasSelectedEmail,
-}: ToolbarProps) {
+export function Toolbar() {
+  const { selectedEmailId, openCompose, setSelectedEmail } = useMailStore();
+  const deleteEmail = useDeleteEmail();
+  const archiveEmail = useArchiveEmail();
+  const hasSelected = !!selectedEmailId;
+
+  const handleDelete = () => {
+    if (selectedEmailId) {
+      deleteEmail.mutate(selectedEmailId);
+      setSelectedEmail(null);
+    }
+  };
+
+  const handleArchive = () => {
+    if (selectedEmailId) {
+      archiveEmail.mutate(selectedEmailId);
+      setSelectedEmail(null);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-0.5 px-2 py-1 bg-[#252536] border-b border-[#333] overflow-x-auto">
-      <ToolbarButton icon={Plus} label="New mail" onClick={onCompose} primary hasDropdown />
-
+    <div className="flex items-center gap-0.5 px-2 py-1 bg-[#252536] border-b border-[#333] overflow-x-auto shrink-0">
+      <ToolbarButton icon={Plus} label="New mail" onClick={() => openCompose("new")} primary hasDropdown />
       <ToolbarSeparator />
-
-      <ToolbarButton icon={Trash2} label="Delete" onClick={onDelete} disabled={!hasSelectedEmail} hasDropdown />
-      <ToolbarButton icon={Archive} label="Archive" onClick={onArchive} disabled={!hasSelectedEmail} />
-      <ToolbarButton icon={Flag} label="Report" disabled={!hasSelectedEmail} hasDropdown />
-      <ToolbarButton icon={ShieldAlert} label="Block" disabled={!hasSelectedEmail} hasDropdown />
-      <ToolbarButton icon={FolderInput} label="Move to" disabled={!hasSelectedEmail} hasDropdown />
-
+      <ToolbarButton icon={Trash2} label="Delete" onClick={handleDelete} disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={Archive} label="Archive" onClick={handleArchive} disabled={!hasSelected} />
+      <ToolbarButton icon={Flag} label="Report" disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={ShieldAlert} label="Block" disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={FolderInput} label="Move to" disabled={!hasSelected} hasDropdown />
       <ToolbarSeparator />
-
-      <ToolbarButton icon={Reply} label="Reply" onClick={onReply} disabled={!hasSelectedEmail} />
-      <ToolbarButton icon={ReplyAll} label="Reply all" onClick={onReplyAll} disabled={!hasSelectedEmail} />
-      <ToolbarButton icon={Forward} label="Forward" onClick={onForward} disabled={!hasSelectedEmail} hasDropdown />
-
+      <ToolbarButton icon={Reply} label="Reply" onClick={() => openCompose("reply")} disabled={!hasSelected} />
+      <ToolbarButton icon={ReplyAll} label="Reply all" onClick={() => openCompose("replyAll")} disabled={!hasSelected} />
+      <ToolbarButton icon={Forward} label="Forward" onClick={() => openCompose("forward")} disabled={!hasSelected} hasDropdown />
       <ToolbarSeparator />
-
-      <ToolbarButton icon={Calendar} label="Meeting" disabled={!hasSelectedEmail} />
-      <ToolbarButton icon={MessageSquare} label="Chat" disabled={!hasSelectedEmail} hasDropdown />
-      <ToolbarButton icon={Share2} label="Share to Teams" disabled={!hasSelectedEmail} />
-      <ToolbarButton icon={ShieldCheck} label="Assign policy" disabled={!hasSelectedEmail} hasDropdown />
-      <ToolbarButton icon={Printer} label="Print" disabled={!hasSelectedEmail} />
-
+      <ToolbarButton icon={Calendar} label="Meeting" disabled={!hasSelected} />
+      <ToolbarButton icon={MessageSquare} label="Chat" disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={Share2} label="Share to Teams" disabled={!hasSelected} />
+      <ToolbarButton icon={ShieldCheck} label="Assign policy" disabled={!hasSelected} hasDropdown />
+      <ToolbarButton icon={Printer} label="Print" disabled={!hasSelected} />
       <ToolbarSeparator />
-
       <ToolbarButton icon={MoreHorizontal} label="" disabled={false} />
     </div>
   );
